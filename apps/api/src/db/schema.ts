@@ -1,1 +1,1 @@
-// Define PostgreSQL tables here and export them for Drizzle.
+export * from './auth-schema.js';

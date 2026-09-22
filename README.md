@@ -25,6 +25,8 @@ docker compose up -d
 pnpm --filter @mercadoya/api db:push
 ```
 
+`BETTER_AUTH_SECRET` debe ser una clave aleatoria de al menos 32 caracteres. Puedes generarla con `openssl rand -base64 48` y guardarla en `.env`; `BETTER_AUTH_URL` apunta a `http://localhost:3001`.
+
 `docker-compose.yml` conserva los datos en el volumen `postgres_data`. Para detener PostgreSQL ejecuta `docker compose down`; `docker compose down -v` también elimina el volumen y sus datos.
 
 Los comandos de esquema disponibles son `pnpm --filter @mercadoya/api db:generate`, `db:migrate`, `db:push` y `db:studio`. Usa `db:generate` seguido de `db:migrate` para generar y aplicar migraciones SQL; `db:push` sincroniza el esquema directamente y está pensado para desarrollo local.
@@ -41,6 +43,52 @@ pnpm dev
 - API: <http://localhost:3001>
 
 También puedes iniciar una aplicación individualmente con `pnpm --filter @mercadoya/web dev` o `pnpm --filter @mercadoya/api dev`.
+
+## Autenticación local
+
+La API ofrece registro e inicio de sesión por email y contraseña en `/api/auth/*`, y `GET /api/me` devuelve la sesión actual o `401` si no hay una. El frontend debe enviar solicitudes con `credentials: 'include'` para conservar la cookie. CORS permite `http://localhost:5173` con credenciales.
+
+Después de iniciar PostgreSQL y aplicar el esquema, crea el administrador demo una vez:
+
+```sh
+pnpm dlx auth@latest create-admin --config apps/api/src/auth.ts --email admin@mercadoya.local --password 'MercadoYaLocalAdmin2026!' --name 'Admin MercadoYa' --role admin --yes
+```
+
+Credenciales demo locales: `admin@mercadoya.local` / `MercadoYaLocalAdmin2026!`.
+
+Registro e inspección de sesión con `curl` y un cookie jar:
+
+```sh
+curl -i -c /tmp/mercadoya-cookies.txt \
+  -H 'Origin: http://localhost:5173' \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Demo","email":"demo@mercadoya.local","password":"MercadoYaDemo2026!"}' \
+  http://localhost:3001/api/auth/sign-up/email
+
+curl -i -b /tmp/mercadoya-cookies.txt \
+  -H 'Origin: http://localhost:5173' \
+  http://localhost:3001/api/me
+```
+
+Login admin, consulta de sesión y logout con el mismo cookie jar:
+
+```sh
+curl -i -c /tmp/mercadoya-cookies.txt \
+  -H 'Origin: http://localhost:5173' \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"admin@mercadoya.local","password":"MercadoYaLocalAdmin2026!"}' \
+  http://localhost:3001/api/auth/sign-in/email
+
+curl -i -b /tmp/mercadoya-cookies.txt \
+  -H 'Origin: http://localhost:5173' \
+  http://localhost:3001/api/me
+
+curl -i -b /tmp/mercadoya-cookies.txt -c /tmp/mercadoya-cookies.txt \
+  -H 'Origin: http://localhost:5173' \
+  -H 'Content-Type: application/json' \
+  -d '{}' \
+  http://localhost:3001/api/auth/sign-out
+```
 
 ## Comandos
 
