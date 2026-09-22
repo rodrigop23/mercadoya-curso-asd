@@ -3,6 +3,7 @@ dist/
 .turbo/
 .env
 .env.*
+!.env.example
 uploads/
 .DS_Store
 *.tsbuildinfo

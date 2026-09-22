@@ -15,6 +15,20 @@ El campo `engines` documenta el mínimo de Node, `.node-version` fija la versió
 pnpm install
 ```
 
+## Base de datos local
+
+La API usa Drizzle ORM con el driver `node-postgres` (`pg`). Copia la configuración de ejemplo, inicia PostgreSQL y aplica el esquema:
+
+```sh
+cp .env.example .env
+docker compose up -d
+pnpm --filter @mercadoya/api db:push
+```
+
+`docker-compose.yml` conserva los datos en el volumen `postgres_data`. Para detener PostgreSQL ejecuta `docker compose down`; `docker compose down -v` también elimina el volumen y sus datos.
+
+Los comandos de esquema disponibles son `pnpm --filter @mercadoya/api db:generate`, `db:migrate`, `db:push` y `db:studio`. Usa `db:generate` seguido de `db:migrate` para generar y aplicar migraciones SQL; `db:push` sincroniza el esquema directamente y está pensado para desarrollo local.
+
 ## Desarrollo
 
 Inicia las dos aplicaciones en paralelo desde la raíz:
@@ -41,7 +55,7 @@ pnpm format     # Aplica oxfmt en los paquetes y la configuración de raíz
 
 ```text
 apps/
-  api/             Hono + TypeScript
+  api/             Hono + TypeScript + Drizzle ORM
   web/             React + Vite + TanStack Router + TypeScript
 packages/
   tsconfig/        Configuración compartida de TypeScript
