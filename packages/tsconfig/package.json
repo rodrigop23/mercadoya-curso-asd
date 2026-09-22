@@ -1,0 +1,8 @@
+{
+  "name": "@mercadoya/tsconfig",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "format": "oxfmt ."
+  }
+}

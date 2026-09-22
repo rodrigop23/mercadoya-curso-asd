@@ -1,0 +1,23 @@
+{
+  "name": "mercadoya",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "format": "turbo run format format:root",
+    "format:root": "oxfmt package.json turbo.json .oxlintrc.json .oxfmtrc.json",
+    "typecheck": "turbo run typecheck"
+  },
+  "devDependencies": {
+    "oxfmt": "^0.70.0",
+    "oxlint": "^1.85.0",
+    "turbo": "^2.11.3",
+    "typescript": "^7.0.2"
+  },
+  "engines": {
+    "node": ">=24.14.1"
+  },
+  "packageManager": "pnpm@11.8.0"
+}
