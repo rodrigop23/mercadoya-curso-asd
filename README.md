@@ -1,6 +1,10 @@
 # MercadoYa
 
-Monorepo inicial para MercadoYa con pnpm workspaces y Turborepo. Incluye una app React con Vite y TanStack Router y una API mínima con Hono. Todavía no contiene funcionalidades de negocio.
+Monorepo de MercadoYa con pnpm workspaces y Turborepo. Incluye una app React con Vite y TanStack Router y una API Hono. El V0 implementa productos naive, imágenes en disco local, catálogo público y creación desde el panel admin.
+
+## Demo V0 naive
+
+La rama congelada para la clase es [`v0-naive`](https://github.com/rodrigop23/mercadoya-curso-asd/tree/v0-naive). Sigue el [checklist de walkthrough](docs/demo-v0.md) para levantar el demo, recorrerlo y mostrar el acoplamiento de esta versión.
 
 ## Requisitos
 
