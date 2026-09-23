@@ -20,7 +20,7 @@ Organizamos el backend (y, donde aplique, el front por features) en módulos **`
 - Queda **prohibido** importar implementaciones internas, tablas o modelos privados del otro módulo.
 - Catálogo no modela usuarios: para proteger el admin pregunta al contrato de Identidad (p.ej. `requireAdmin()` / `currentUser()`).
 - Better Auth vive dentro de Identity. Catalog no importa Better Auth, el esquema de usuarios ni inspecciona `session.user.role`.
-- `identity/schema.ts` y `catalog/schema.ts` son dueños de sus tablas. Cada módulo configura su cliente Drizzle con su esquema; ambos comparten el pool de `db/connection.ts`. `db/schema.ts` reúne los esquemas para Drizzle Kit, mientras que las consultas de productos se quedan en Catalog.
+- `identity/schema.ts` y `catalog/schema.ts` son dueños de sus tablas. `db/index.ts` compone esos esquemas y crea una única instancia Drizzle y un único pool compartido. Las consultas de productos se quedan en Catalog.
 - `apps/api/src/index.ts` compone ambos módulos en el mismo Hono. Se mantiene un deploy y una base PostgreSQL.
 - En la web, la ruta admin compone el gate de Identity con el formulario de Catalog.
 

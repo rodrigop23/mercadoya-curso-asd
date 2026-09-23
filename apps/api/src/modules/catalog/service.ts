@@ -3,7 +3,7 @@ import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { desc } from 'drizzle-orm';
 
-import { db } from './db.js';
+import { db } from '../../db/index.js';
 import { product } from './schema.js';
 import type { CatalogContract, CreateProductInput } from './contract.js';
 

@@ -42,7 +42,7 @@ Abre estos tres archivos para recorrer la dependencia:
 2. [`identity/service.ts`](../apps/api/src/modules/identity/service.ts): implementación del contrato que encapsula Better Auth y el chequeo de rol.
 3. [`catalog/routes.ts`](../apps/api/src/modules/catalog/routes.ts): Catalog recibe `IdentityContract` y pide autorización; no importa Better Auth ni lee la sesión o tablas de usuario.
 
-El wiring del monolito está en [`apps/api/src/index.ts`](../apps/api/src/index.ts). Identity y Catalog mantienen sus esquemas y clientes Drizzle dentro de sus carpetas; ambos comparten el pool de [`db/connection.ts`](../apps/api/src/db/connection.ts). `db/schema.ts` reúne los esquemas para los comandos de Drizzle Kit.
+El wiring del monolito está en [`apps/api/src/index.ts`](../apps/api/src/index.ts). Identity y Catalog mantienen sus esquemas en sus carpetas; ambos importan la única instancia Drizzle y el pool compartido de [`db/index.ts`](../apps/api/src/db/index.ts). `db/schema.ts` reúne los esquemas para esa instancia y para los comandos de Drizzle Kit.
 
 ## Contrastar con V0
 
