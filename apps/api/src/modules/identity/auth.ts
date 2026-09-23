@@ -3,9 +3,9 @@ import { config } from 'dotenv';
 import { betterAuth } from 'better-auth';
 import { admin } from 'better-auth/plugins';
 import { fileURLToPath } from 'node:url';
-import { db } from './db/index.js';
+import { db } from './db.js';
 
-config({ path: fileURLToPath(new URL('../../../.env', import.meta.url)) });
+config({ path: fileURLToPath(new URL('../../../../../.env', import.meta.url)) });
 
 const secret = process.env.BETTER_AUTH_SECRET;
 

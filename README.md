@@ -6,6 +6,10 @@ Monorepo de MercadoYa con pnpm workspaces y Turborepo. Incluye una app React con
 
 La rama congelada para la clase es [`v0-naive`](https://github.com/rodrigop23/mercadoya-curso-asd/tree/v0-naive). Sigue el [checklist de walkthrough](docs/demo-v0.md) para levantar el demo, recorrerlo y mostrar el acoplamiento de esta versión.
 
+## Demo V1 modular
+
+La rama `v1-modular` conserva el refactor de Identity y Catalog con acoplamiento por contrato. Sigue el [checklist de walkthrough](docs/demo-v1.md) para levantar la versión modular y recorrer los mismos flujos.
+
 ## Requisitos
 
 - Node.js `24.14.1` o superior. El scaffold se creó usando el Node ya instalado en el sistema: `v24.14.1`.
@@ -55,7 +59,7 @@ La API ofrece registro e inicio de sesión por email y contraseña en `/api/auth
 Después de iniciar PostgreSQL y aplicar el esquema, crea el administrador demo una vez:
 
 ```sh
-pnpm dlx auth@latest create-admin --config apps/api/src/auth.ts --email admin@mercadoya.local --password 'MercadoYaLocalAdmin2026!' --name 'Admin MercadoYa' --role admin --yes
+pnpm dlx auth@latest create-admin --config apps/api/src/modules/identity/auth.ts --email admin@mercadoya.local --password 'MercadoYaLocalAdmin2026!' --name 'Admin MercadoYa' --role admin --yes
 ```
 
 Credenciales demo locales: `admin@mercadoya.local` / `MercadoYaLocalAdmin2026!`.
