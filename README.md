@@ -8,7 +8,15 @@ La rama congelada para la clase es [`v0-naive`](https://github.com/rodrigop23/me
 
 ## Demo V1 modular
 
-La rama `v1-modular` conserva el refactor de Identity y Catalog con acoplamiento por contrato. Sigue el [checklist de walkthrough](docs/demo-v1.md) para levantar la versión modular y recorrer los mismos flujos.
+La rama [`v1-modular`](https://github.com/rodrigop23/mercadoya-curso-asd/tree/v1-modular) conserva el refactor de Identity y Catalog con acoplamiento por contrato. Sigue el [checklist de walkthrough](docs/demo-v1.md) para levantar la versión modular y recorrer los mismos flujos.
+
+## Arquitectura y decisiones
+
+Material para el walkthrough:
+
+- Demos: [V0 naive](docs/demo-v0.md) en la rama [`v0-naive`](https://github.com/rodrigop23/mercadoya-curso-asd/tree/v0-naive) y [V1 modular](docs/demo-v1.md) en la rama [`v1-modular`](https://github.com/rodrigop23/mercadoya-curso-asd/tree/v1-modular).
+- ADRs: [0001 — monolito primero](docs/adr/0001-usar-monolito-primero.md), [0002 — stack React, Hono y Postgres](docs/adr/0002-elegir-stack-react-hono-postgres.md) y [0003 — Identity y Catalog por contrato](docs/adr/0003-modular-identity-catalog-por-contrato.md).
+- Diagramas C4 en Mermaid: [nivel 1 — contexto](docs/diagrams/c4-1-context.md), [nivel 2 — contenedores](docs/diagrams/c4-2-containers.md) y [nivel 3 — componentes V1](docs/diagrams/c4-3-components.md).
 
 ## Requisitos
 
