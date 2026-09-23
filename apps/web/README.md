@@ -1,7 +1,7 @@
 # MercadoYa Web
 
-Scaffold de React, Vite y TanStack Router creado con `@tanstack/cli` en modo router-only.
+SPA de React 19, Vite y TanStack Router. Las rutas file-based viven en `src/routes/`; el plugin de TanStack genera `src/routeTree.gen.ts` al ejecutar Vite.
 
-Las rutas file-based están en `src/routes/` y el árbol inicial generado por TanStack está versionado en `src/routeTree.gen.ts`. Para mantener Prettier fuera del lockfile, el generador automático no queda instalado; al agregar o renombrar archivos de ruta, regenera ese árbol con el CLI de TanStack.
+TanStack Query está disponible en el contexto del Router para precargar datos desde los loaders. La sesión y las acciones de autenticación usan Better Auth contra `http://localhost:3001`. Los componentes shadcn/ui usan Base UI y Tailwind CSS v4.
 
 Desde la raíz del monorepo, ejecuta `pnpm --filter @mercadoya/web dev`. La web responde en <http://localhost:5173>.
