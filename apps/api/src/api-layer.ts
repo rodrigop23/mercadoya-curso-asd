@@ -10,8 +10,8 @@ import { createOrdersModule } from './modules/orders/index.js';
 
 export function createApiLayer() {
   const identity = createIdentityModule();
-  const catalog = createCatalogModule(identity.contract);
   const media = createMediaModule();
+  const catalog = createCatalogModule(identity.contract, media.contract);
   const orders = createOrdersModule();
   const inventory = createInventoryModule();
   const notifications = createNotificationsModule();

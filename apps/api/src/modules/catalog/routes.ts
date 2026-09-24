@@ -4,9 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
 import type { IdentityContract } from '../identity/contract.js';
-import { catalogContract } from './service.js';
-
-const maximumImageSize = 5 * 1024 * 1024;
+import { InvalidMediaError } from '../media/contract.js';
+import type { CatalogContract } from './contract.js';
 
 const productFormSchema = z.object({
   title: z.string().trim().min(1, 'El título es obligatorio.').max(160),
@@ -25,7 +24,7 @@ const productFormSchema = z.object({
     .pipe(z.number().int().min(0).max(2_147_483_647)),
 });
 
-export function createCatalogRoutes(identity: IdentityContract) {
+export function createCatalogRoutes(identity: IdentityContract, catalogContract: CatalogContract) {
   const routes = new Hono();
 
   routes.get('/api/catalog/health', (c) => c.json({ module: 'catalog', ok: true }));
@@ -75,22 +74,18 @@ export function createCatalogRoutes(identity: IdentityContract) {
     }
 
     const image = formData.get('image');
-    if (!(image instanceof File) || image.size === 0) {
+    if (!(image instanceof File)) {
       return c.json({ error: 'Debes seleccionar una imagen.' }, 400);
-    }
-
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(image.type)) {
-      return c.json({ error: 'La imagen debe ser JPG, PNG o WebP.' }, 400);
-    }
-
-    if (image.size > maximumImageSize) {
-      return c.json({ error: 'La imagen no puede superar los 5 MB.' }, 400);
     }
 
     try {
       const product = await catalogContract.createProduct({ ...parsedProduct.data, image });
       return c.json({ product }, 201);
     } catch (error) {
+      if (error instanceof InvalidMediaError) {
+        return c.json({ error: error.message }, 400);
+      }
+
       console.error('No se pudo crear el producto:', error);
       return c.json({ error: 'No se pudo crear el producto.' }, 500);
     }

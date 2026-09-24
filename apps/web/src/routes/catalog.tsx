@@ -4,7 +4,7 @@ import { ArrowRight, PackageOpen } from 'lucide-react';
 
 import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { API_BASE_URL, productsQueryOptions } from '@/lib/products';
+import { productImageUrl, productsQueryOptions } from '@/lib/products';
 
 export const Route = createFileRoute('/catalog')({
   loader: ({ context: { queryClient } }) => queryClient.ensureQueryData(productsQueryOptions),
@@ -53,7 +53,7 @@ function CatalogPage() {
             <li key={product.id}>
               <Card className="h-full shadow-sm">
                 <img
-                  src={`${API_BASE_URL}/uploads/${encodeURIComponent(product.imagePath)}`}
+                  src={productImageUrl(product.imagePath)}
                   alt={product.title}
                   className="aspect-[4/3] w-full object-cover"
                   loading="lazy"
