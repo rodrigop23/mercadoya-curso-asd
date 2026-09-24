@@ -1,7 +1,8 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 
 import { db } from '../../db/index.js';
-import type { InventoryReservationPort } from './ports.js';
+import type { EventBus } from '../../events/event-bus.js';
+import { orderPlacedEventSchema, orderPlacedSubject } from './events.js';
 import { orderRecord, type OrderStatus } from './schema.js';
 
 export type CreateOrderInput = {
@@ -10,7 +11,7 @@ export type CreateOrderInput = {
   buyerId: string | null;
 };
 
-export function createOrdersService(inventory: InventoryReservationPort) {
+export function createOrdersService(eventBus: EventBus) {
   return {
     async createOrder(input: CreateOrderInput) {
       const [createdOrder] = await db
@@ -27,28 +28,46 @@ export function createOrdersService(inventory: InventoryReservationPort) {
         throw new Error('No se pudo guardar el pedido.');
       }
 
-      // Orders invokes Inventory through the sync port until prompt 05 replaces it with events.
-      const reservation = await inventory.reserve({
+      // El pedido queda pending mientras Inventory reserva stock y publica su resultado.
+      const event = orderPlacedEventSchema.parse({
+        version: 1,
         orderId: createdOrder.id,
         productId: input.productId,
         quantity: input.quantity,
+        buyerId: input.buyerId,
+        occurredAt: new Date().toISOString(),
       });
-      const status: OrderStatus = reservation.reserved ? 'confirmed' : 'rejected';
+      await eventBus.publish(orderPlacedSubject, event);
+
+      return { order: createdOrder };
+    },
+
+    async getOrder(orderId: string) {
+      const [order] = await db
+        .select()
+        .from(orderRecord)
+        .where(eq(orderRecord.id, orderId))
+        .limit(1);
+
+      return order ?? null;
+    },
+
+    async recordInventoryResult(input: {
+      orderId: string;
+      status: Extract<OrderStatus, 'confirmed' | 'rejected'>;
+      rejectionReason: string | null;
+    }) {
       const [order] = await db
         .update(orderRecord)
         .set({
-          status,
-          rejectionReason: reservation.reserved ? null : reservation.reason,
+          status: input.status,
+          rejectionReason: input.rejectionReason,
           updatedAt: new Date(),
         })
-        .where(eq(orderRecord.id, createdOrder.id))
+        .where(and(eq(orderRecord.id, input.orderId), eq(orderRecord.status, 'pending')))
         .returning();
 
-      if (!order) {
-        throw new Error('No se pudo actualizar el estado del pedido.');
-      }
-
-      return { order, reservation };
+      return order ?? null;
     },
   };
 }

@@ -2,8 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 
 import type { IdentityContract } from '../identity/contract.js';
-import type { InventoryReservationPort } from './ports.js';
-import { createOrdersService } from './service.js';
+import type { createOrdersService } from './service.js';
 
 const createOrderSchema = z.object({
   productId: z.string().uuid(),
@@ -11,13 +10,27 @@ const createOrderSchema = z.object({
 });
 
 export function createOrdersRoutes(
-  inventory: InventoryReservationPort,
+  orders: ReturnType<typeof createOrdersService>,
   identity: IdentityContract,
 ) {
   const routes = new Hono({ strict: false });
-  const orders = createOrdersService(inventory);
 
   routes.get('/health', (c) => c.json({ module: 'orders', ok: true }));
+
+  routes.get('/:orderId', async (c) => {
+    const parsedOrderId = z.string().uuid().safeParse(c.req.param('orderId'));
+    if (!parsedOrderId.success) {
+      return c.json({ error: 'El identificador del pedido no es válido.' }, 400);
+    }
+
+    try {
+      const order = await orders.getOrder(parsedOrderId.data);
+      return order ? c.json({ order }, 200) : c.json({ error: 'El pedido no existe.' }, 404);
+    } catch (error) {
+      console.error('No se pudo consultar el pedido:', error);
+      return c.json({ error: 'No se pudo consultar el pedido.' }, 500);
+    }
+  });
 
   routes.post('/', async (c) => {
     let body: unknown;
@@ -45,25 +58,7 @@ export function createOrdersRoutes(
         buyerId: session?.user.id ?? null,
       });
 
-      if (!result.reservation.reserved) {
-        const error =
-          result.reservation.reason === 'insufficient_stock'
-            ? 'No hay stock suficiente para este producto.'
-            : result.reservation.reason === 'product_not_found'
-              ? 'El producto no existe.'
-              : 'No se pudo reservar el stock.';
-
-        return c.json(
-          {
-            order: result.order,
-            error,
-            reason: result.reservation.reason,
-          },
-          409,
-        );
-      }
-
-      return c.json({ order: result.order, reservation: result.reservation }, 201);
+      return c.json({ order: result.order }, 202);
     } catch (error) {
       console.error('No se pudo crear el pedido:', error);
       return c.json({ error: 'No se pudo crear el pedido.' }, 500);
