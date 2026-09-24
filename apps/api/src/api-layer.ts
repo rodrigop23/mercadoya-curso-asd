@@ -8,6 +8,7 @@ import { createMediaModule } from './modules/media/index.js';
 import { createNotificationsModule } from './modules/notifications/index.js';
 import { createOrdersModule } from './modules/orders/index.js';
 import type { EventBus } from './events/event-bus.js';
+import { createEventsRoutes } from './events/routes.js';
 import {
   inventoryRejectedEventSchema,
   inventoryReservedEventSchema,
@@ -19,7 +20,7 @@ export async function createApiLayer(eventBus: EventBus) {
   const catalog = createCatalogModule(identity.contract, media.contract);
   const inventory = createInventoryModule(catalog.contract, eventBus);
   const orders = createOrdersModule(eventBus, identity.contract);
-  const notifications = createNotificationsModule();
+  const notifications = createNotificationsModule(eventBus.transport);
   const app = new Hono();
 
   await eventBus.subscribe('orders.placed', 'inventory.reserve', inventory.onOrderPlaced);
@@ -53,6 +54,7 @@ export async function createApiLayer(eventBus: EventBus) {
   app.route('/', catalog.routes);
   app.route('/api/media', media.routes);
   app.route('/api/orders', orders.routes);
+  app.route('/api/events', createEventsRoutes());
   app.route('/api/inventory', inventory.routes);
   app.route('/api/notifications', notifications.routes);
 

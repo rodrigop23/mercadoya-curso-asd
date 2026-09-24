@@ -53,6 +53,13 @@ function RootLayout() {
             >
               Catálogo
             </Link>
+            <Link
+              to="/events"
+              className="rounded-lg px-3 py-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              activeProps={{ className: 'bg-emerald-50 text-primary' }}
+            >
+              Eventos
+            </Link>
             {isAdmin && (
               <Link
                 to="/admin/products"
@@ -92,9 +99,7 @@ function RootLayout() {
                         <AvatarFallback>{userInitial}</AvatarFallback>
                       </Avatar>
                       <span className="grid min-w-0 text-sm leading-tight">
-                        <span className="truncate font-semibold text-foreground">
-                          {userName}
-                        </span>
+                        <span className="truncate font-semibold text-foreground">{userName}</span>
                         <span className="truncate text-xs font-normal text-muted-foreground">
                           {session.user.email}
                         </span>

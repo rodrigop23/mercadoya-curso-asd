@@ -18,6 +18,7 @@ export function createOrdersModule(eventBus: EventBus, identity: IdentityContrac
 
       logEvent({
         type: order ? 'orders.status_updated' : 'orders.status_ignored',
+        transport: eventBus.transport,
         orderId: event.orderId,
         status: 'confirmed',
       });
@@ -31,6 +32,7 @@ export function createOrdersModule(eventBus: EventBus, identity: IdentityContrac
 
       logEvent({
         type: order ? 'orders.status_updated' : 'orders.status_ignored',
+        transport: eventBus.transport,
         orderId: event.orderId,
         status: 'rejected',
         reason: event.reason,

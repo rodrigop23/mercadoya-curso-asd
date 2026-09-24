@@ -1,19 +1,22 @@
+import { appendRecentEvent } from './recent-store.js';
+
 export function logEvent(entry: Record<string, unknown>) {
-  console.info(JSON.stringify({ timestamp: new Date().toISOString(), ...entry }));
+  const event = appendRecentEvent(entry);
+  console.info(JSON.stringify(event));
 }
 
 export function logEventHandlerError(input: {
   subject: string;
   consumer: string;
   transport: string;
+  orderId?: string;
   error: unknown;
 }) {
-  console.error(
-    JSON.stringify({
-      timestamp: new Date().toISOString(),
-      type: 'event.handler_error',
-      ...input,
-      error: input.error instanceof Error ? input.error.message : String(input.error),
-    }),
-  );
+  const event = appendRecentEvent({
+    ...input,
+    type: 'event.handler_error',
+    error: input.error instanceof Error ? input.error.message : String(input.error),
+  });
+
+  console.error(JSON.stringify(event));
 }

@@ -1,10 +1,14 @@
-import { useSuspenseQuery } from '@tanstack/react-query';
-import { createFileRoute, Link } from '@tanstack/react-router';
-import { ArrowRight, PackageOpen } from 'lucide-react';
+import { useState } from 'react';
+import { useMutation, useSuspenseQuery } from '@tanstack/react-query';
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
+import { ArrowRight, LoaderCircle, PackageOpen, ShoppingCart } from 'lucide-react';
 
-import { buttonVariants } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { productImageUrl, productsQueryOptions } from '@/lib/products';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { createOrder } from '@/lib/orders';
+import { productImageUrl, productsQueryOptions, type Product } from '@/lib/products';
 
 export const Route = createFileRoute('/catalog')({
   loader: ({ context: { queryClient } }) => queryClient.ensureQueryData(productsQueryOptions),
@@ -51,34 +55,94 @@ function CatalogPage() {
         <ul className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {products.map((product) => (
             <li key={product.id}>
-              <Card className="h-full shadow-sm">
-                <img
-                  src={productImageUrl(product.imagePath)}
-                  alt={product.title}
-                  className="aspect-[4/3] w-full object-cover"
-                  loading="lazy"
-                />
-                <CardContent className="flex h-full flex-col gap-3 p-5">
-                  <div className="flex items-start justify-between gap-4">
-                    <h2 className="text-lg font-semibold leading-snug">{product.title}</h2>
-                    <p className="shrink-0 font-semibold text-primary">
-                      {priceFormatter.format(product.price)}
-                    </p>
-                  </div>
-                  <p className="line-clamp-3 flex-1 text-sm leading-6 text-muted-foreground">
-                    {product.description}
-                  </p>
-                  <p className="text-xs font-medium text-muted-foreground">
-                    {product.stock > 0
-                      ? `${product.stock} unidades disponibles`
-                      : 'Sin stock por ahora'}
-                  </p>
-                </CardContent>
-              </Card>
+              <ProductCard product={product} />
             </li>
           ))}
         </ul>
       )}
     </main>
+  );
+}
+
+function ProductCard({ product }: { product: Product }) {
+  const [quantity, setQuantity] = useState('1');
+  const navigate = useNavigate();
+  const mutation = useMutation({
+    mutationFn: () => createOrder({ productId: product.id, quantity: Number(quantity) }),
+    onSuccess: (order) => navigate({ to: '/orders/$orderId', params: { orderId: order.id } }),
+  });
+  const numericQuantity = Number(quantity);
+  const quantityIsValid =
+    Number.isInteger(numericQuantity) && numericQuantity > 0 && numericQuantity <= product.stock;
+  const quantityInputId = `quantity-${product.id}`;
+
+  return (
+    <Card className="h-full shadow-sm">
+      <img
+        src={productImageUrl(product.imagePath)}
+        alt={product.title}
+        className="aspect-[4/3] w-full object-cover"
+        loading="lazy"
+      />
+      <CardContent className="flex h-full flex-col gap-3 p-5">
+        <div className="flex items-start justify-between gap-4">
+          <h2 className="text-lg font-semibold leading-snug">{product.title}</h2>
+          <p className="shrink-0 font-semibold text-primary">
+            {priceFormatter.format(product.price)}
+          </p>
+        </div>
+        <p className="line-clamp-3 flex-1 text-sm leading-6 text-muted-foreground">
+          {product.description}
+        </p>
+        <p className="text-xs font-medium text-muted-foreground">
+          {product.stock > 0 ? `${product.stock} unidades disponibles` : 'Sin stock por ahora'}
+        </p>
+        <form
+          className="flex items-end gap-3 border-t border-border pt-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (quantityIsValid && !mutation.isPending) mutation.mutate();
+          }}
+        >
+          <div className="w-24 shrink-0 space-y-1.5">
+            <Label htmlFor={quantityInputId} className="text-xs text-muted-foreground">
+              Unidades
+            </Label>
+            <Input
+              id={quantityInputId}
+              type="number"
+              min={1}
+              max={product.stock}
+              step={1}
+              value={quantity}
+              disabled={product.stock === 0 || mutation.isPending}
+              aria-invalid={quantity.length > 0 && !quantityIsValid}
+              onChange={(event) => setQuantity(event.currentTarget.value)}
+              className="h-9 text-center tabular-nums"
+            />
+          </div>
+          <Button
+            type="submit"
+            className="h-9 flex-1"
+            disabled={product.stock === 0 || !quantityIsValid || mutation.isPending}
+          >
+            {mutation.isPending ? (
+              <LoaderCircle
+                data-icon="inline-start"
+                className="animate-spin motion-reduce:animate-none"
+              />
+            ) : (
+              <ShoppingCart data-icon="inline-start" />
+            )}
+            {mutation.isPending ? 'Creando pedido…' : 'Comprar'}
+          </Button>
+        </form>
+        {mutation.error && (
+          <p role="alert" className="text-xs leading-5 text-destructive">
+            {mutation.error.message}
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }

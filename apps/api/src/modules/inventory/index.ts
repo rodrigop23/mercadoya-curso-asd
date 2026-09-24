@@ -40,6 +40,7 @@ export function createInventoryModule(catalog: CatalogContract, eventBus: EventB
         await eventBus.publish(inventoryReservedSubject, reservationEvent);
         logEvent({
           type: 'inventory.reservation',
+          transport: eventBus.transport,
           outcome: 'reserved',
           orderId: event.orderId,
           productId: event.productId,
@@ -60,6 +61,7 @@ export function createInventoryModule(catalog: CatalogContract, eventBus: EventB
       await eventBus.publish(inventoryRejectedSubject, rejectionEvent);
       logEvent({
         type: 'inventory.reservation',
+        transport: eventBus.transport,
         outcome: 'rejected',
         orderId: event.orderId,
         productId: event.productId,

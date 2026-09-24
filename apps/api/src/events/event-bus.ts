@@ -49,6 +49,7 @@ export function createInProcessEventBus(): EventBus {
               subject,
               consumer: subscriber.consumer,
               transport: 'inprocess',
+              ...eventMetadata(message),
               error,
             });
           });
@@ -79,8 +80,9 @@ export function createNatsEventBus(connection: NatsConnection): EventBus {
       const subscription = connection.subscribe(subject);
       void (async () => {
         for await (const message of subscription) {
+          let payload: unknown;
           try {
-            const payload = JSON.parse(new TextDecoder().decode(message.data)) as unknown;
+            payload = JSON.parse(new TextDecoder().decode(message.data)) as unknown;
             logEvent({
               type: 'event.consume',
               transport: 'nats',
@@ -90,7 +92,13 @@ export function createNatsEventBus(connection: NatsConnection): EventBus {
             });
             await handler(payload as Parameters<typeof handler>[0]);
           } catch (error) {
-            logEventHandlerError({ subject, consumer, transport: 'nats', error });
+            logEventHandlerError({
+              subject,
+              consumer,
+              transport: 'nats',
+              ...eventMetadata(payload),
+              error,
+            });
           }
         }
       })().catch((error: unknown) => {
