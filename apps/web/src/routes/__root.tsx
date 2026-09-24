@@ -1,7 +1,18 @@
 import type { QueryClient } from '@tanstack/react-query';
 import { Link, Outlet, createRootRouteWithContext } from '@tanstack/react-router';
+import { ChevronDownIcon, LogOutIcon } from 'lucide-react';
 
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { authClient } from '@/lib/auth-client';
 import '../styles.css';
 
@@ -11,6 +22,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootLayout() {
   const { data: session, isPending } = authClient.useSession();
+  const isAdmin = session
+    ? (session.user as typeof session.user & { role?: string | null }).role === 'admin'
+    : false;
+  const userName = session?.user.name?.trim() || session?.user.email || 'Usuario';
+  const userInitial = Array.from(userName)[0]?.toLocaleUpperCase() ?? '?';
 
   return (
     <div className="min-h-screen bg-background">
@@ -37,13 +53,15 @@ function RootLayout() {
             >
               Catálogo
             </Link>
-            <Link
-              to="/admin/products"
-              className="rounded-lg px-3 py-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-              activeProps={{ className: 'bg-emerald-50 text-primary' }}
-            >
-              Administración
-            </Link>
+            {isAdmin && (
+              <Link
+                to="/admin/products"
+                className="rounded-lg px-3 py-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                activeProps={{ className: 'bg-emerald-50 text-primary' }}
+              >
+                Administración
+              </Link>
+            )}
           </nav>
 
           <div className="flex shrink-0 items-center gap-1 sm:gap-2">
@@ -52,44 +70,72 @@ function RootLayout() {
                 Revisando sesión…
               </span>
             ) : session ? (
-              <>
-                <span className="hidden max-w-36 truncate text-sm text-muted-foreground md:inline">
-                  {session.user.name || session.user.email}
-                </span>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void authClient.signOut()}
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon-lg"
+                      className="rounded-full"
+                      aria-label={`Abrir el menú de cuenta de ${userName}`}
+                    />
+                  }
                 >
-                  Salir
-                </Button>
-              </>
+                  <Avatar>
+                    <AvatarFallback>{userInitial}</AvatarFallback>
+                  </Avatar>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel className="flex items-center gap-2">
+                      <Avatar>
+                        <AvatarFallback>{userInitial}</AvatarFallback>
+                      </Avatar>
+                      <span className="grid min-w-0 text-sm leading-tight">
+                        <span className="truncate font-semibold text-foreground">
+                          {userName}
+                        </span>
+                        <span className="truncate text-xs font-normal text-muted-foreground">
+                          {session.user.email}
+                        </span>
+                      </span>
+                    </DropdownMenuLabel>
+                  </DropdownMenuGroup>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuGroup>
+                    <DropdownMenuItem
+                      onClick={() => void authClient.signOut()}
+                      className="cursor-pointer"
+                    >
+                      <LogOutIcon data-icon="inline-start" />
+                      Cerrar sesión
+                    </DropdownMenuItem>
+                  </DropdownMenuGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
             ) : (
-              <>
-                <Link
-                  to="/login"
-                  className="rounded-lg px-2 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:px-3"
-                >
-                  Ingresar
-                </Link>
-                <Link
-                  to="/register"
-                  className="rounded-lg bg-primary px-2.5 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:px-3.5"
-                >
-                  Crear cuenta
-                </Link>
-              </>
+              <DropdownMenu>
+                <DropdownMenuTrigger render={<Button size="lg" className="font-semibold" />}>
+                  Cuenta
+                  <ChevronDownIcon data-icon="inline-end" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuGroup>
+                    <DropdownMenuItem render={<Link to="/login" />} className="cursor-pointer">
+                      Ingresar
+                    </DropdownMenuItem>
+                    <DropdownMenuItem render={<Link to="/register" />} className="cursor-pointer">
+                      Registrarse
+                    </DropdownMenuItem>
+                  </DropdownMenuGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
           </div>
         </div>
       </header>
 
       <Outlet />
-
-      <footer className="border-t border-border/70 px-4 py-6 text-center text-xs text-muted-foreground">
-        MercadoYa · Tu mercado local, más cerca.
-      </footer>
     </div>
   );
 }
