@@ -12,8 +12,9 @@ export function createApiLayer() {
   const identity = createIdentityModule();
   const media = createMediaModule();
   const catalog = createCatalogModule(identity.contract, media.contract);
-  const orders = createOrdersModule();
-  const inventory = createInventoryModule();
+  const inventory = createInventoryModule(catalog.contract);
+  // TEMP sync — reemplazar en prompt 05
+  const orders = createOrdersModule(inventory.contract, identity.contract);
   const notifications = createNotificationsModule();
   const app = new Hono();
 

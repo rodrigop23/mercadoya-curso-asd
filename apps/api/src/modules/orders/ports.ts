@@ -1,7 +1,1 @@
-export interface InventoryReservationPort {
-  reserve(input: {
-    orderId: string;
-    productId: string;
-    quantity: number;
-  }): Promise<{ reserved: boolean }>;
-}
+export type { InventoryPort as InventoryReservationPort } from '../inventory/ports.js';
