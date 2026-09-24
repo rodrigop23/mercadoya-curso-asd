@@ -39,6 +39,8 @@ function requestWithValidatedBody(request: Request, body: unknown) {
 export function createIdentityRoutes(identity: IdentityContract) {
   const routes = new Hono();
 
+  routes.get('/api/identity/health', (c) => c.json({ module: 'identity', ok: true }));
+
   routes.post('/api/auth/sign-up/email', zValidator('json', signUpSchema), (c) => {
     return auth.handler(requestWithValidatedBody(c.req.raw, c.req.valid('json')));
   });

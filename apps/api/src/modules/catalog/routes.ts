@@ -28,6 +28,8 @@ const productFormSchema = z.object({
 export function createCatalogRoutes(identity: IdentityContract) {
   const routes = new Hono();
 
+  routes.get('/api/catalog/health', (c) => c.json({ module: 'catalog', ok: true }));
+
   routes.get(
     '/uploads/*',
     serveStatic({ root: fileURLToPath(new URL('../../../', import.meta.url)) }),
