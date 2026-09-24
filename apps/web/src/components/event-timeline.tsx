@@ -55,8 +55,13 @@ const rejectionReasons: Record<string, string> = {
 };
 
 const timestampFormatter = new Intl.DateTimeFormat('es-PE', {
-  dateStyle: 'short',
-  timeStyle: 'medium',
+  day: '2-digit',
+  month: '2-digit',
+  year: '2-digit',
+  hour: 'numeric',
+  minute: '2-digit',
+  second: '2-digit',
+  fractionalSecondDigits: 3,
 });
 
 function getTone(event: TimelineEvent) {
