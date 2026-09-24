@@ -62,21 +62,23 @@ export function AuthPage({ mode }: AuthPageProps) {
   return (
     <main className="mx-auto grid min-h-[calc(100svh-10rem)] max-w-6xl items-center gap-10 px-4 py-12 sm:px-6 lg:grid-cols-[1fr_28rem] lg:gap-16">
       <section className="hidden max-w-xl space-y-6 lg:block">
-        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-primary">
-          Mercado local, sin vueltas
-        </p>
         <h1 className="text-5xl font-semibold leading-[1.08] tracking-tight text-foreground">
           Lo que necesitas, <span className="text-primary">más cerca.</span>
         </h1>
         <p className="max-w-md text-lg leading-8 text-muted-foreground">
           Entra a MercadoYa para descubrir productos de tu comunidad y tener tu mercado a mano.
         </p>
-        <div className="flex gap-3 pt-1 text-sm text-muted-foreground">
-          <span className="rounded-full border border-border bg-card px-4 py-2">Fácil de usar</span>
-          <span className="rounded-full border border-border bg-card px-4 py-2">
+        <p className="text-sm font-semibold text-primary">Mercado local, sin vueltas</p>
+        <ul className="flex flex-wrap gap-x-6 gap-y-2 pt-1 text-sm text-muted-foreground">
+          <li className="flex items-center gap-2">
+            <span className="size-1.5 rounded-full bg-primary" aria-hidden="true" />
+            Fácil de usar
+          </li>
+          <li className="flex items-center gap-2">
+            <span className="size-1.5 rounded-full bg-primary" aria-hidden="true" />
             Hecho para tu barrio
-          </span>
-        </div>
+          </li>
+        </ul>
       </section>
 
       <Card className="mx-auto w-full max-w-md border border-border/80 shadow-xl shadow-emerald-950/[0.04]">
