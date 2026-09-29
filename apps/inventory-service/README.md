@@ -4,6 +4,8 @@ Inventory corre en dos contenedores Node/Hono: `inventory-v1` en `:3003` e `inve
 
 El [OpenAPI de Inventory](openapi.yaml) documenta `health` y la lectura de reservas por HTTP. Los eventos NATS v1 y los puertos `InventoryPort` y `CatalogStockContract` viven en [@mercadoya/contracts](../../packages/contracts/README.md). La reserva entra por `orders.placed`, no por una ruta HTTP.
 
+Explora ese mismo contrato en [Swagger UI v1](http://localhost:3003/docs) o [Swagger UI v2](http://localhost:3005/docs). Ambos procesos sirven el archivo de git sin transformarlo en [`/openapi.yaml`](http://localhost:3003/openapi.yaml). La UI carga sus recursos desde un CDN y requiere conexión a internet.
+
 ## Imagen y arranque
 
 Desde la raíz, configura `CATALOG_INTERNAL_TOKEN` en `.env`, aplica el esquema y construye la imagen:
@@ -14,7 +16,7 @@ pnpm demo:infra
 pnpm dev
 ```
 
-La imagen se construye con `apps/inventory-service/Dockerfile` desde el contexto de la raíz. Su segunda etapa contiene solo Node, el código compilado y dependencias de producción. Compose crea dos servicios con la misma imagen y `SERVICE_VERSION=v1|v2`; publica `3003` y `3005`, conecta la base en `postgres:5432`, NATS en `nats:4222`, Catalog e Identity en `host.docker.internal:3001`. El mapeo `host-gateway` también permite esa dirección en Linux. El API y Orders continúan como procesos Node iniciados por `pnpm dev`.
+La imagen se construye con `apps/inventory-service/Dockerfile` desde el contexto de la raíz. Su segunda etapa contiene Node, el código compilado, dependencias de producción y el `openapi.yaml` canónico. Compose crea dos servicios con la misma imagen y `SERVICE_VERSION=v1|v2`; publica `3003` y `3005`, conecta la base en `postgres:5432`, NATS en `nats:4222`, Catalog e Identity en `host.docker.internal:3001`. El mapeo `host-gateway` también permite esa dirección en Linux. El API y Orders continúan como procesos Node iniciados por `pnpm dev`.
 
 Prueba los healthchecks mediante el gateway con `curl -i http://localhost:3001/api/inventory/v1/health` y `curl -i http://localhost:3001/api/inventory/v2/health`. Ambos responden con `serviceVersion` y `X-Service-Version` distintos. Docker consulta el healthcheck de cada contenedor cada 10 segundos. Indica que responde el proceso; no comprueba conectividad con Catalog. El API debe estar levantado antes de crear pedidos.
 
@@ -52,6 +54,10 @@ docker compose ps inventory-v1 inventory-v2
 La respuesta v1 contiene `reservation.id`, `orderId`, `productId`, `quantity` y `createdAt`. La v2 añade `status: "reserved"`. Ambas consultas usan la misma cookie y la misma reserva. Sin cookie, las dos responden `401`.
 
 ## Guion de clase
+
+Abre Swagger y expande las rutas v1 y v2 de `reservations`, con v1 marcada como deprecated. Compara sus schemas: solo v2 exige `reservation.status: "reserved"`. Abre también `:3005/docs` para mostrar el mismo contrato en dos procesos; sus healthchecks y `X-Service-Version` distinguen los despliegues.
+
+Para ejecutar health desde `:3003/docs`, expande `/api/inventory/v1/health`, pulsa **Try it out** y selecciona el server directo `http://localhost:3003` en esa operación; desde `:3005/docs`, expande la ruta v2, pulsa **Try it out** y selecciona `http://localhost:3005`. Así la solicitud usa el mismo origen. Reservations requieren sesión Better Auth: usa los comandos con cookie vía gateway de arriba para la prueba autenticada. Un `401` sin sesión o un bloqueo CORS al seleccionar otro origen en Swagger no impiden comparar los contratos.
 
 Ejecuta `docker compose ps inventory-v1 inventory-v2` para mostrar los despliegues y sus puertos. Ejecuta `docker compose logs -f inventory-v1` durante un pedido para mostrar el consumo de `orders.placed` y la publicación del resultado. Compara con `apps/orders-service`, que arranca como proceso Node con `pnpm dev`. Ambos comparten NATS y PostgreSQL, pero Inventory tiene un runtime empaquetado y se comunica con Catalog por HTTP.
 

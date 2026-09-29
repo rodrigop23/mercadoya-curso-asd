@@ -17,6 +17,7 @@ FROM node:24-bookworm-slim
 WORKDIR /app
 ENV NODE_ENV=production PORT=3003 IDENTITY_URL=http://host.docker.internal:3001
 COPY --from=build /runtime ./
+COPY --from=build /workspace/apps/inventory-service/openapi.yaml ./openapi.yaml
 USER node
 EXPOSE 3003
 HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 \
