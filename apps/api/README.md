@@ -16,6 +16,14 @@ pnpm --filter @mercadoya/api db:push
 
 Para generar migraciones versionadas usa `pnpm --filter @mercadoya/api db:generate` y después `pnpm --filter @mercadoya/api db:migrate`. El cliente y el esquema extensible están en `src/db/`.
 
+Para borrar los datos de PostgreSQL y reconstruir las tablas desde las migraciones, ejecuta:
+
+```sh
+pnpm --filter @mercadoya/api db:reset --yes
+```
+
+El comando elimina los esquemas `public` y `drizzle` de la base indicada por `DATABASE_URL`, incluidos sus datos y el historial de migraciones. Después aplica las migraciones de `drizzle/`. La operación es irreversible; detén la API antes de ejecutarla.
+
 ## Pedidos y reservas de stock
 
 Orders guarda cada pedido como `pending` y publica `orders.placed` con un payload versionado y validado con Zod. Inventory consume el evento y reserva stock con la misma lógica y el contrato de Catalog; luego publica `inventory.reserved` o `inventory.rejected`. Orders actualiza el estado a `confirmed` o `rejected` cuando recibe ese resultado. El `POST /api/orders` responde `202` con el pedido pendiente; consulta `GET /api/orders/:orderId` para ver su estado eventual. Si hay una sesión activa, `buyerId` se toma de ella; de lo contrario queda en `null`.
