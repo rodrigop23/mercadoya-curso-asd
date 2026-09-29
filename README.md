@@ -1,6 +1,6 @@
 # MercadoYa
 
-Monorepo de MercadoYa con pnpm workspaces y Turborepo. Incluye una app React con Vite y TanStack Router y una API Hono. El V0 implementa productos naive, imágenes en disco local, catálogo público y creación desde el panel admin.
+Monorepo de MercadoYa con pnpm workspaces y Turborepo. Incluye una app React con Vite y TanStack Router y una API Hono. V0 implementa productos naive; V1 separa Identity y Catalog por contrato; V2 agrega Media, Orders, Inventory, Notifications y procesamiento de pedidos por eventos.
 
 ## Demo V0 naive
 
@@ -10,13 +10,20 @@ La rama congelada para la clase es [`v0-naive`](https://github.com/rodrigop23/me
 
 La rama [`v1-modular`](https://github.com/rodrigop23/mercadoya-curso-asd/tree/v1-modular) conserva el refactor de Identity y Catalog con acoplamiento por contrato. Sigue el [checklist de walkthrough](docs/demo-v1.md) para levantar la versión modular y recorrer los mismos flujos.
 
+## Demo V2 integración
+
+La rama [`v2-integration`](https://github.com/rodrigop23/mercadoya-curso-asd/tree/v2-integration) combina el pipeline local de imágenes, módulos de dominio y pedidos con fan-out por NATS. Sigue el [guion y checklist de 50 minutos](docs/demo-v2.md) para preparar y recorrer la demo.
+
+`docker-compose.yml` inicia Postgres y NATS. El apéndice [`apps/cloud-pipeline-demo`](apps/cloud-pipeline-demo/README.md) muestra un pipeline S3→Lambda→S3 aislado; no participa en el publish de MercadoYa ni requiere credenciales AWS para `pnpm dev`.
+
 ## Arquitectura y decisiones
 
 Material para el walkthrough:
 
-- Demos: [V0 naive](docs/demo-v0.md) en la rama [`v0-naive`](https://github.com/rodrigop23/mercadoya-curso-asd/tree/v0-naive) y [V1 modular](docs/demo-v1.md) en la rama [`v1-modular`](https://github.com/rodrigop23/mercadoya-curso-asd/tree/v1-modular).
-- ADRs: [0001 — monolito primero](docs/adr/0001-usar-monolito-primero.md), [0002 — stack React, Hono y Postgres](docs/adr/0002-elegir-stack-react-hono-postgres.md) y [0003 — Identity y Catalog por contrato](docs/adr/0003-modular-identity-catalog-por-contrato.md).
-- Diagramas C4 en Mermaid: [nivel 1 — contexto](docs/diagrams/c4-1-context.md), [nivel 2 — contenedores](docs/diagrams/c4-2-containers.md) y [nivel 3 — componentes V1](docs/diagrams/c4-3-components.md).
+- Demos: [V0 naive](docs/demo-v0.md) en la rama [`v0-naive`](https://github.com/rodrigop23/mercadoya-curso-asd/tree/v0-naive), [V1 modular](docs/demo-v1.md) en la rama [`v1-modular`](https://github.com/rodrigop23/mercadoya-curso-asd/tree/v1-modular) y [V2 integración](docs/demo-v2.md) en la rama [`v2-integration`](https://github.com/rodrigop23/mercadoya-curso-asd/tree/v2-integration).
+- ADRs: [0001 — monolito primero](docs/adr/0001-usar-monolito-primero.md), [0002 — stack React, Hono y Postgres](docs/adr/0002-elegir-stack-react-hono-postgres.md), [0003 — Identity y Catalog por contrato](docs/adr/0003-modular-identity-catalog-por-contrato.md), [0004 — pipeline local de imágenes](docs/adr/0004-media-pipeline-pipes-filters.md), [0005 — módulos service-based](docs/adr/0005-service-based-api-layer-schemas.md), [0006 — pedidos por eventos con NATS](docs/adr/0006-nats-order-placed-event-driven.md) y [0007 — demo cloud S3 aislada](docs/adr/0007-cloud-pipeline-demo-s3-aislado.md).
+- C4 en Mermaid para S4 / V2: [nivel 1, contexto](docs/diagrams/c4-1-context.md), [nivel 2, contenedores](docs/diagrams/c4-2-containers.md) y [nivel 3, componentes](docs/diagrams/c4-3-components.md).
+- Secuencias Mermaid: [pipeline local de imágenes](docs/diagrams/seq-media-pipeline.md) y [fan-out de `orders.placed`](docs/diagrams/seq-order-placed-fanout.md).
 
 ## Requisitos
 
@@ -33,7 +40,7 @@ pnpm install
 
 ## Base de datos local
 
-La API usa Drizzle ORM con el driver `node-postgres` (`pg`). Copia la configuración de ejemplo, inicia PostgreSQL y aplica el esquema:
+La API usa Drizzle ORM con el driver `node-postgres` (`pg`). Copia la configuración de ejemplo, inicia PostgreSQL y NATS, y aplica el esquema:
 
 ```sh
 cp .env.example .env
@@ -41,9 +48,9 @@ docker compose up -d
 pnpm --filter @mercadoya/api db:push
 ```
 
-`BETTER_AUTH_SECRET` debe ser una clave aleatoria de al menos 32 caracteres. Puedes generarla con `openssl rand -base64 48` y guardarla en `.env`; `BETTER_AUTH_URL` apunta a `http://localhost:3001`.
+`BETTER_AUTH_SECRET` debe ser una clave aleatoria de al menos 32 caracteres. Puedes generarla con `openssl rand -base64 48` y guardarla en `.env`; `BETTER_AUTH_URL` apunta a `http://localhost:3001`. La API usa `EVENT_BUS=nats` y `NATS_URL=nats://localhost:4222`; si NATS no está disponible al arrancar, cambia a `EVENT_BUS=inprocess` o la API usará ese transporte como fallback.
 
-`docker-compose.yml` conserva los datos en el volumen `postgres_data`. Para detener PostgreSQL ejecuta `docker compose down`; `docker compose down -v` también elimina el volumen y sus datos.
+`docker-compose.yml` conserva PostgreSQL en el volumen `postgres_data`. NATS expone el cliente en `4222` y el endpoint de monitoreo en `8222`. Para detener ambos servicios ejecuta `docker compose down`; `docker compose down -v` también elimina los datos de PostgreSQL.
 
 Los comandos de esquema disponibles son `pnpm --filter @mercadoya/api db:generate`, `db:migrate`, `db:push` y `db:studio`. Usa `db:generate` seguido de `db:migrate` para generar y aplicar migraciones SQL; `db:push` sincroniza el esquema directamente y está pensado para desarrollo local.
 
@@ -121,6 +128,7 @@ pnpm format     # Aplica oxfmt en los paquetes y la configuración de raíz
 apps/
   api/             Hono + TypeScript + Drizzle ORM
   web/             React + Vite + TanStack Router + TypeScript
+  cloud-pipeline-demo/ CDK + Lambda, demo aislada de S3
 packages/
   tsconfig/        Configuración compartida de TypeScript
 ```

@@ -1,44 +1,67 @@
-# C4 nivel 3 — Components (V1 modular)
+# C4 nivel 3: componentes de MercadoYa en S4 / V2
 
-La API compone los módulos Identity y Catalog dentro de un único proceso Node/Hono.
+La API compone seis módulos en un proceso Hono. NATS conecta los handlers de eventos; Catalog no consume `orders.placed`.
 
 ```mermaid
 flowchart LR
-  subgraph api["@mercadoya/api · un solo proceso Node/Hono"]
+  subgraph mercadoya["MercadoYa · vista S4 / V2"]
     direction LR
 
-    wiring["index.ts<br/>Composition root<br/>crea módulos, inyecta contrato<br/>y monta las rutas en Hono"]
-
-    subgraph identity["Módulo Identity"]
+    subgraph api["API Hono · un proceso Node"]
       direction TB
-      identityRoutes["routes.ts<br/>rutas de sesión y auth"]
-      identityContract["IdentityContract<br/>getSession(headers)<br/>requireAdmin(headers)"]
-      identityService["service.ts<br/>implementación del contrato"]
-      betterAuth["Better Auth<br/>interno de Identity"]
+      composition["Composition root<br/>createApiLayer()"]
+      identity["Identity<br/>auth, sesión y IdentityContract"]
+      catalog["Catalog<br/>rutas y CatalogContract"]
 
-      identityRoutes -->|"consulta sesión"| identityContract
-      identityService -->|"implementa"| identityContract
-      identityService -->|"usa internamente"| betterAuth
+      subgraph media["Media · MediaContract"]
+        direction LR
+        validate["Validate"] --> sanitize["Sanitize"] --> resize["Resize"] --> persist["Persist"] --> attach["Attach"]
+      end
+
+      orders["Orders<br/>crear pedido y actualizar estado"]
+      inventory["Inventory<br/>reservar stock"]
+      notifications["Notifications<br/>sender stub"]
+      eventBus["EventBus adapter<br/>NATS o in-process"]
+      eventsApi["Events API<br/>GET /api/events"]
+      recent["Recent event store<br/>en memoria"]
     end
 
-    subgraph catalog["Módulo Catalog"]
-      direction TB
-      catalogRoutes["routes.ts<br/>rutas de productos"]
-      catalogService["service.ts<br/>lógica y persistencia de productos"]
-      catalogRoutes --> catalogService
-    end
-
-    wiring -->|"crea y monta"| identityRoutes
-    wiring -->|"createCatalogModule(identity.contract)"| catalogRoutes
-    catalogRoutes -->|"IdentityContract en proceso<br/>requireAdmin(headers) · getSession(headers)"| identityContract
+    postgres[("PostgreSQL<br/>una base compartida<br/>tablas propiedad de cada módulo")]
+    uploads[("Disco local<br/>uploads/")]
+    nats["NATS<br/>broker de Docker Compose"]
   end
 
-  postgres[("PostgreSQL<br/>base compartida")]
-  uploads[("Disco local<br/>uploads/")]
+  composition -->|crea y monta| identity
+  composition -->|crea y monta| catalog
+  composition -->|crea y monta| media
+  composition -->|crea y monta| orders
+  composition -->|crea y monta| inventory
+  composition -->|crea y monta| notifications
+  composition -->|registra handlers| eventBus
 
-  betterAuth -->|"persistencia de auth"| postgres
-  catalogService -->|"productos · Drizzle"| postgres
-  catalogService -->|"escritura de imágenes"| uploads
+  catalog -->|IdentityContract: requireAdmin| identity
+  catalog -->|MediaContract: processProductImage| media
+  media -->|guarda imágenes| uploads
+
+  identity -->|tablas de auth| postgres
+  catalog -->|tabla product| postgres
+  orders -->|tabla orders_order| postgres
+  inventory -->|tabla inventory_reservations| postgres
+  inventory -->|CatalogContract: getAvailableStock / adjustStock| catalog
+
+  orders -->|publica orders.placed| eventBus
+  eventBus -->|entrega inventory.reserved / inventory.rejected| orders
+  eventBus -->|entrega orders.placed| inventory
+  inventory -->|publica inventory.reserved / inventory.rejected| eventBus
+  eventBus -->|entrega orders.placed e inventory.*| notifications
+  eventBus <-->|publish / subscribe| nats
+
+  eventBus -->|logEvent()| recent
+  eventsApi -->|lee eventos recientes| recent
 ```
 
-Las flechas entre Identity, Catalog y `index.ts` son llamadas y composición en el mismo proceso: no hay red ni despliegues separados entre módulos. PostgreSQL y `uploads/` son recursos usados por el monolito.
+`apps/api/src/api-layer.ts` crea Identity, Catalog, Media, Orders, Inventory y Notifications en el mismo proceso. Inventory obtiene y ajusta el stock mediante `CatalogContract`; no importa las tablas de Catalog. Catalog no se suscribe a `orders.placed`.
+
+Drizzle reúne los archivos `schema.ts` de los módulos en un cliente y una base PostgreSQL. Las tablas nuevas usan prefijos de módulo; Identity y Catalog conservan nombres anteriores como `user`, `session` y `product`. Notifications registra eventos mediante un stub y no envía correo.
+
+La demo `cloud-pipeline-demo` no es un componente de la API. Se describe como sistema opcional en las vistas de contexto y contenedores.

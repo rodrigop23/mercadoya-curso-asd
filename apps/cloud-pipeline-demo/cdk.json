@@ -1,0 +1,3 @@
+{
+  "app": "tsx cdk/bin/cloud-pipeline-demo.ts"
+}

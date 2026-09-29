@@ -1,0 +1,160 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Pipeline de imágenes de productos",
+    "output": "docs/diagrams/flujo-pipeline/image-pipeline.html",
+    "quality_profile": "showcase",
+    "viewBox": [1080, 980]
+  },
+  "stages": [
+    { "label": "Carga" },
+    { "label": "API" },
+    { "label": "Validación" },
+    { "label": "Transformación" },
+    { "label": "Guardado" }
+  ],
+  "nodes": [
+    {
+      "id": "admin-form",
+      "type": "frontend",
+      "label": "Formulario admin",
+      "sublabel": "UI indica 5 MB",
+      "tag": "admin-product-form.tsx",
+      "stage": 0,
+      "row": 0,
+      "width": 136
+    },
+    {
+      "id": "product-endpoint",
+      "type": "backend",
+      "label": "POST /api/products",
+      "sublabel": "admin guard · multipart",
+      "tag": "catalog/routes.ts",
+      "stage": 1,
+      "row": 0,
+      "width": 160
+    },
+    {
+      "id": "validate-image",
+      "type": "backend",
+      "label": "validateImage",
+      "sublabel": "≤2 MiB · MIME + firma",
+      "tag": "pipeline/validate.ts",
+      "stage": 2,
+      "row": 0,
+      "width": 160
+    },
+    {
+      "id": "sanitize-image",
+      "type": "backend",
+      "label": "sanitizeImage",
+      "sublabel": "rota EXIF · quita metadatos",
+      "tag": "pipeline/sanitize.ts",
+      "stage": 3,
+      "row": 0,
+      "width": 160
+    },
+    {
+      "id": "resize-image",
+      "type": "backend",
+      "label": "resizeImage",
+      "sublabel": "full 1920 px · thumb 320 px",
+      "tag": "pipeline/resize.ts",
+      "stage": 3,
+      "row": 2,
+      "width": 160
+    },
+    {
+      "id": "persist-image",
+      "type": "backend",
+      "label": "persistImage",
+      "sublabel": "UUID · uploads/media/",
+      "tag": "pipeline/persist.ts",
+      "stage": 4,
+      "row": 0,
+      "width": 160
+    },
+    {
+      "id": "attach-image",
+      "type": "backend",
+      "label": "attachImage",
+      "sublabel": "rutas + URLs full/thumb",
+      "tag": "pipeline/attach.ts",
+      "stage": 4,
+      "row": 2,
+      "width": 160
+    },
+    {
+      "id": "products-table",
+      "type": "database",
+      "label": "Tabla products",
+      "sublabel": "guarda solo imagePath",
+      "tag": "catalog/service.ts",
+      "stage": 4,
+      "row": 4,
+      "width": 160
+    }
+  ],
+  "flows": [
+    {
+      "from": "admin-form",
+      "to": "product-endpoint",
+      "label": "form-data + cookie",
+      "labelDy": 54
+    },
+    {
+      "from": "product-endpoint",
+      "to": "validate-image",
+      "label": "createProduct(image)",
+      "labelDy": 54
+    },
+    {
+      "from": "validate-image",
+      "to": "sanitize-image",
+      "label": "MIME + firma válidos",
+      "labelDy": 54
+    },
+    {
+      "from": "sanitize-image",
+      "to": "resize-image",
+      "label": "bytes saneados",
+      "labelDy": 24
+    },
+    {
+      "from": "resize-image",
+      "to": "persist-image",
+      "label": "full + miniatura",
+      "labelDy": 48
+    },
+    {
+      "from": "persist-image",
+      "to": "attach-image",
+      "label": "rutas full/thumb",
+      "labelDy": 24
+    },
+    {
+      "from": "attach-image",
+      "to": "products-table",
+      "label": "INSERT · imagePath",
+      "labelDy": 48
+    }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "Límite efectivo",
+      "items": [
+        "El formulario anuncia 5 MB, pero la API rechaza imágenes que superan 2 MiB."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Errores y limpieza",
+      "items": [
+        "InvalidMediaError se responde como HTTP 400; otros fallos como HTTP 500.",
+        "Si falla una escritura parcial, Attach o el INSERT, el pipeline borra los archivos que alcanzó a guardar."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Compra con NATS",
+    "output": "flujo-compra-nats.html",
+    "viewBox": [1500, 1040],
+    "column_fit": "spread",
+    "quality_profile": "showcase"
+  },
+  "participants": [
+    { "id": "buyer", "type": "external", "label": "Cliente" },
+    { "id": "web", "type": "frontend", "label": "MercadoYa Web" },
+    { "id": "api", "type": "backend", "label": "MercadoYa API" },
+    { "id": "nats", "type": "messagebus", "label": "NATS" },
+    { "id": "inventory", "type": "backend", "label": "Inventory" },
+    { "id": "notifications", "type": "backend", "label": "Notifications" }
+  ],
+  "segments": [
+    { "from": 160, "to": 250, "label": "Crear pedido" },
+    { "from": 285, "to": 360, "label": "orders.placed · fan-out" },
+    { "from": 375, "to": 510, "label": "ALT A · inventory.reserved" },
+    { "from": 525, "to": 660, "label": "ALT B · inventory.rejected" },
+    { "from": 675, "to": 850, "label": "Estado y timeline · polling" }
+  ],
+  "messages": [
+    { "id": "buy-click", "from": "buyer", "to": "web", "y": 170, "label": "click Comprar", "variant": "emphasis" },
+    { "id": "create-order", "from": "web", "to": "api", "y": 205, "label": "POST /api/orders", "variant": "emphasis" },
+    { "id": "publish-placed", "from": "api", "to": "nats", "y": 240, "label": "publish orders.placed", "variant": "dashed" },
+    { "id": "order-accepted", "from": "api", "to": "web", "y": 255, "label": "202 Accepted · pedido pending", "variant": "return" },
+    { "id": "placed-inventory", "from": "nats", "to": "inventory", "y": 310, "label": "orders.placed · consumer inventory.reserve", "variant": "dashed" },
+    { "id": "placed-notifications", "from": "nats", "to": "notifications", "y": 345, "label": "orders.placed · consumer notifications.order-placed", "variant": "dashed" },
+    { "id": "publish-reserved", "from": "inventory", "to": "nats", "y": 395, "label": "ALT A · publish inventory.reserved", "variant": "dashed", "note": "Solo si Inventory reservó stock." },
+    { "id": "reserved-orders", "from": "nats", "to": "api", "y": 430, "label": "inventory.reserved · consumer orders.confirm", "variant": "dashed", "note": "Orders persiste status confirmed." },
+    { "id": "reserved-notifications", "from": "nats", "to": "notifications", "y": 465, "label": "inventory.reserved · consumer notifications.order-confirmed", "variant": "dashed" },
+    { "id": "publish-rejected", "from": "inventory", "to": "nats", "y": 540, "label": "ALT B · publish inventory.rejected", "variant": "dashed", "note": "Solo si Inventory no pudo reservar stock." },
+    { "id": "rejected-orders", "from": "nats", "to": "api", "y": 575, "label": "inventory.rejected · consumer orders.reject", "variant": "dashed", "note": "Orders persiste status rejected." },
+    { "id": "rejected-notifications", "from": "nats", "to": "notifications", "y": 610, "label": "inventory.rejected · consumer notifications.order-rejected", "variant": "dashed" },
+    { "id": "poll-order", "from": "web", "to": "api", "y": 700, "label": "GET /api/orders/:orderId · cada 750 ms mientras pending", "variant": "default" },
+    { "id": "order-status", "from": "api", "to": "web", "y": 735, "label": "pending → confirmed | rejected", "variant": "return" },
+    { "id": "poll-events", "from": "web", "to": "api", "y": 780, "label": "GET /api/events?limit=100&orderId=… · polling", "variant": "default" },
+    { "id": "timeline-events", "from": "api", "to": "web", "y": 815, "label": "RecentStore en memoria → EventTimeline", "variant": "return", "note": "Incluye event.publish/consume, inventory.reservation, orders.status_updated y notification.stub." }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Límites reales del flujo",
+      "items": [
+        "Orders, Inventory y Notifications son módulos del mismo API; su coordinación pasa por EventBus y NATS, sin llamadas síncronas entre ellos.",
+        "Notifications usa un sender stub que registra notification.stub; no envía correo real.",
+        "El navegador consulta el estado y la traza por HTTP; no recibe eventos directamente desde NATS."
+      ]
+    }
+  ]
+}

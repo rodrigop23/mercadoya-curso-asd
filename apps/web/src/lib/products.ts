@@ -2,6 +2,11 @@ import { queryOptions } from '@tanstack/react-query';
 
 export const API_BASE_URL = 'http://localhost:3001';
 
+export function productImageUrl(imagePath: string) {
+  const encodedPath = imagePath.split('/').map(encodeURIComponent).join('/');
+  return `${API_BASE_URL}/uploads/${encodedPath}`;
+}
+
 export type Product = {
   id: string;
   title: string;

@@ -1,60 +1,79 @@
-import { randomUUID } from 'node:crypto';
-import { mkdir, unlink, writeFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
-import { desc } from 'drizzle-orm';
+import { and, desc, eq, gte, lte, sql } from 'drizzle-orm';
 
 import { db } from '../../db/index.js';
+import type { MediaContract } from '../media/contract.js';
 import { product } from './schema.js';
 import type { CatalogContract, CreateProductInput } from './contract.js';
 
-const uploadsDirectory = fileURLToPath(new URL('../../../uploads/', import.meta.url));
+export function createCatalogContract(media: MediaContract): CatalogContract {
+  return {
+    async listProducts() {
+      return db.select().from(product).orderBy(desc(product.createdAt));
+    },
 
-export const catalogContract: CatalogContract = {
-  async listProducts() {
-    return db.select().from(product).orderBy(desc(product.createdAt));
-  },
+    async createProduct(input: CreateProductInput) {
+      const image = await media.processProductImage(input.image);
 
-  async createProduct(input: CreateProductInput) {
-    const extensionByMimeType = {
-      'image/jpeg': 'jpg',
-      'image/png': 'png',
-      'image/webp': 'webp',
-    } as const;
-    const extension = extensionByMimeType[input.image.type as keyof typeof extensionByMimeType];
+      try {
+        const [createdProduct] = await db
+          .insert(product)
+          .values({
+            title: input.title,
+            description: input.description,
+            price: input.price,
+            stock: input.stock,
+            imagePath: image.imagePath,
+          })
+          .returning();
 
-    if (!extension) {
-      throw new Error('La imagen debe ser JPG, PNG o WebP.');
-    }
+        return createdProduct;
+      } catch (error) {
+        await media.deleteProductImage(image).catch(() => undefined);
+        throw error;
+      }
+    },
 
-    const imagePath = `${randomUUID()}.${extension}`;
-    const absoluteImagePath = new URL(`../../../uploads/${imagePath}`, import.meta.url);
-    let imageWasSaved = false;
+    async getAvailableStock(productId) {
+      const [result] = await db
+        .select({ stock: product.stock })
+        .from(product)
+        .where(eq(product.id, productId))
+        .limit(1);
 
-    try {
-      await mkdir(uploadsDirectory, { recursive: true });
-      await writeFile(absoluteImagePath, Buffer.from(await input.image.arrayBuffer()), {
-        flag: 'wx',
-      });
-      imageWasSaved = true;
+      return result?.stock ?? null;
+    },
 
-      const [createdProduct] = await db
-        .insert(product)
-        .values({
-          title: input.title,
-          description: input.description,
-          price: input.price,
-          stock: input.stock,
-          imagePath,
-        })
-        .returning();
-
-      return createdProduct;
-    } catch (error) {
-      if (imageWasSaved) {
-        await unlink(absoluteImagePath).catch(() => undefined);
+    async adjustStock(productId, delta) {
+      if (!Number.isSafeInteger(delta) || delta === 0) {
+        throw new RangeError('El ajuste de stock debe ser un entero distinto de cero.');
       }
 
-      throw error;
-    }
-  },
-};
+      const conditions = [eq(product.id, productId)];
+      if (delta < 0) {
+        conditions.push(gte(product.stock, -delta));
+      } else {
+        conditions.push(lte(product.stock, 2_147_483_647 - delta));
+      }
+
+      const [updatedProduct] = await db
+        .update(product)
+        .set({ stock: sql`${product.stock} + ${delta}`, updatedAt: new Date() })
+        .where(and(...conditions))
+        .returning({ stock: product.stock });
+
+      if (updatedProduct) {
+        return { adjusted: true, availableStock: updatedProduct.stock };
+      }
+
+      const availableStock = await this.getAvailableStock(productId);
+      if (availableStock === null) {
+        return { adjusted: false, reason: 'product_not_found' };
+      }
+
+      return {
+        adjusted: false,
+        reason: delta < 0 ? 'insufficient_stock' : 'stock_limit',
+      };
+    },
+  };
+}

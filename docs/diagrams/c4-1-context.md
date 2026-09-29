@@ -1,15 +1,17 @@
-# C4 nivel 1 — System Context
+# C4 nivel 1: contexto de MercadoYa en S4
 
-MercadoYa ofrece un catálogo público y permite al administrador dar de alta productos.
+MercadoYa permite consultar el catálogo y crear pedidos. El admin publica productos desde la interfaz de administración.
 
 ```mermaid
 flowchart LR
   buyer(["Comprador<br/>Actor"])
   admin(["Admin<br/>Actor"])
-  mercadoya["MercadoYa<br/>Sistema<br/>Catálogo público y administración de productos"]
+  mercadoya["MercadoYa<br/>Sistema<br/>Catálogo, pedidos y administración"]
+  cloud["AWS cloud-pipeline-demo<br/>S3 inbox → Lambda → S3 outbox<br/>Sistema externo opcional"]
 
-  buyer -->|"consulta el catálogo público"| mercadoya
-  admin -->|"da de alta productos"| mercadoya
+  buyer -->|consulta el catálogo y compra| mercadoya
+  admin -->|administra productos| mercadoya
+  admin -.->|opera la demo separada desde AWS Console| cloud
 ```
 
-No se muestran sistemas externos: el alcance actual no depende de servicios externos.
+`cloud-pipeline-demo` es un apéndice fuera del publish de MercadoYa. La aplicación no envía imágenes a AWS.

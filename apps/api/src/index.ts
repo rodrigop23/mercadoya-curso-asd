@@ -1,20 +1,11 @@
 import { serve } from '@hono/node-server';
-import { Hono } from 'hono';
-import { cors } from 'hono/cors';
+import { createApiLayer } from './api-layer.js';
+import { createEventBusFromEnv } from './events/bootstrap.js';
 
-import { createCatalogModule } from './modules/catalog/index.js';
-import { createIdentityModule } from './modules/identity/index.js';
+const eventBus = await createEventBusFromEnv();
+const app = await createApiLayer(eventBus);
 
-const identity = createIdentityModule();
-const catalog = createCatalogModule(identity.contract);
-const app = new Hono();
-
-app.use('/api/*', cors({ origin: 'http://localhost:5173', credentials: true }));
-app.get('/', (c) => c.text('MercadoYa API está lista.'));
-app.route('/', identity.routes);
-app.route('/', catalog.routes);
-
-serve(
+const server = serve(
   {
     fetch: app.fetch,
     port: Number(process.env.PORT ?? 3001),
@@ -23,3 +14,11 @@ serve(
     console.log(`MercadoYa API listening on http://localhost:${info.port}`);
   },
 );
+
+const shutdown = async () => {
+  server.close();
+  await eventBus.close();
+};
+
+process.once('SIGINT', () => void shutdown());
+process.once('SIGTERM', () => void shutdown());
