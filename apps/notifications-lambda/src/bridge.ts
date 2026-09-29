@@ -13,9 +13,9 @@ const invokeToken = process.env.NOTIFICATIONS_INVOKE_TOKEN ?? '';
 if (!invokeToken) throw new Error('Configura NOTIFICATIONS_INVOKE_TOKEN.');
 const functionUrl = process.env.NOTIFICATIONS_FUNCTION_URL?.trim();
 const subjects = [
-  ['orders.placed', 'notifications.order-placed'],
-  ['inventory.reserved', 'notifications.order-confirmed'],
-  ['inventory.rejected', 'notifications.order-rejected'],
+  ['payment.succeeded', 'notifications.payment-succeeded'],
+  ['payment.failed', 'notifications.payment-failed'],
+  ['inventory.rejected', 'notifications.inventory-rejected'],
 ] as const;
 const connection = await connect({
   servers: process.env.NATS_URL?.trim() || 'nats://localhost:4222',

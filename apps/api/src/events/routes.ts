@@ -11,13 +11,17 @@ const eventsQuerySchema = z.object({
 });
 
 const notificationSchema = z.strictObject({
-  type: z.literal('notification.stub'),
+  type: z.enum(['notification.stub', 'notification.email']),
+  emailStatus: z.enum(['stub', 'sent', 'error']),
+  emailError: z.boolean().optional(),
+  emailId: z.string().optional(),
+  stubReason: z.string().optional(),
   orderId: z.string().uuid(),
   recipient: z.string().min(1),
   notificationSubject: z.string().min(1),
   body: z.string().min(1),
   transport: z.literal('lambda'),
-  subject: z.enum(['orders.placed', 'inventory.reserved', 'inventory.rejected']),
+  subject: z.enum(['payment.succeeded', 'inventory.rejected', 'payment.failed']),
 });
 
 function authorized(token: string | undefined, received: string | undefined) {

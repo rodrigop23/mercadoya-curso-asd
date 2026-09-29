@@ -33,6 +33,28 @@ export class NotificationsStack extends Stack {
       noEcho: true,
       description: 'Token que el bridge envía a la Function URL.',
     });
+    const resendKey = new CfnParameter(this, 'ResendApiKey', {
+      type: 'String',
+      noEcho: true,
+      default: '',
+      description: 'API key de Resend; vacío usa stub por defecto.',
+    });
+    const resendFrom = new CfnParameter(this, 'ResendFrom', {
+      type: 'String',
+      default: '',
+      description: 'Remitente del dominio verificado en Resend.',
+    });
+    const demoEmail = new CfnParameter(this, 'DemoNotifyEmail', {
+      type: 'String',
+      default: '',
+      description: 'Correo destinatario de la demo.',
+    });
+    const emailMode = new CfnParameter(this, 'EmailMode', {
+      type: 'String',
+      default: '',
+      allowedValues: ['', 'stub', 'resend'],
+      description: 'Vacío elige resend con key o stub sin key.',
+    });
     const logGroup = new logs.LogGroup(this, 'NotificationsLogGroup', {
       logGroupName: `/aws/lambda/${functionName}`,
       retention: logs.RetentionDays.ONE_WEEK,
@@ -40,6 +62,7 @@ export class NotificationsStack extends Stack {
     });
     const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
     const notification = new nodejs.NodejsFunction(this, 'Notifications', {
+      depsLockFilePath: join(projectRoot, '../../pnpm-lock.yaml'),
       entry: join(projectRoot, 'src/handler.ts'),
       handler: 'handler',
       functionName,
@@ -51,6 +74,10 @@ export class NotificationsStack extends Stack {
         EVENTS_INGEST_URL: ingestUrl.valueAsString,
         NOTIFICATIONS_INGEST_TOKEN: ingestToken.valueAsString,
         NOTIFICATIONS_INVOKE_TOKEN: invokeToken.valueAsString,
+        RESEND_API_KEY: resendKey.valueAsString,
+        RESEND_FROM: resendFrom.valueAsString,
+        DEMO_NOTIFY_EMAIL: demoEmail.valueAsString,
+        EMAIL_MODE: emailMode.valueAsString,
       },
       bundling: { externalModules: [], minify: true, sourceMap: true, target: 'node22' },
     });

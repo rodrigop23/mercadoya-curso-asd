@@ -1,6 +1,14 @@
 # Notifications en AWS Lambda
 
-Notifications recibe `orders.placed`, `inventory.reserved` e `inventory.rejected`. El handler valida el evento v1 con Zod, construye el destinatario y el mensaje, escribe un log JSON y envía `notification.stub` a `POST /api/events/ingest`. No entrega correo ni escribe en `notifications_messages`.
+Notifications recibe solo los desenlaces `payment.succeeded`, `inventory.rejected` y `payment.failed`. Valida los eventos con los schemas de `@mercadoya/contracts`, renderiza tres templates React Email en español y envía HTML y texto con Resend. Después registra el resultado en `POST /api/events/ingest`. No escribe en `notifications_messages`.
+
+| Subject | Template | Asunto |
+| --- | --- | --- |
+| `payment.succeeded` | `order-confirmed` | Pedido confirmado |
+| `inventory.rejected` | `order-rejected-stock` | No pudimos completar tu pedido |
+| `payment.failed` | `order-rejected-payment` | El pago no se completó |
+
+El bridge no se suscribe a `orders.placed`, `inventory.reserved` ni `inventory.released`. Si llegan directamente al handler autenticado, responde 202 sin enviar ni ingestar. La reserva de stock no confirma un pedido.
 
 NATS no invoca Lambda por sí mismo. `src/bridge.ts` mantiene tres suscripciones NATS con grupos de cola distintos. Si `NOTIFICATIONS_FUNCTION_URL` está vacía, llama al mismo `handler` en el proceso local. Si tiene una URL, hace `POST` a la Function URL. Las reglas de notificación viven en `src/handler.ts`, fuera del bridge.
 
@@ -12,13 +20,48 @@ Desde la raíz, copia `.env.example` a `.env` y reemplaza los dos tokens de Noti
 pnpm install
 docker compose up -d postgres nats
 pnpm --filter @mercadoya/api db:push
-docker compose up -d --build inventory
+docker compose up -d --build inventory-v1 inventory-v2
 pnpm dev
 ```
 
-`pnpm dev` inicia la web, API, Orders y el bridge. El bridge escucha en `:3004`; `GET http://localhost:3001/api/notifications/health` pasa por el proxy de la API. Crea un pedido desde la web o con `POST /api/orders`, y consulta `GET /api/events?orderId=<uuid>`. Deben aparecer `notification.stub` para el pedido recibido y para el resultado de Inventory. La timeline de la web usa el mismo endpoint.
+`pnpm dev` inicia la web, API, Orders y el bridge. El bridge escucha en `:3004`; `GET http://localhost:3001/api/notifications/health` pasa por el proxy de la API. Crea un pedido desde la web o con `POST /api/orders`, y consulta `GET /api/events?orderId=<uuid>`. Debe aparecer una notificación de desenlace por pedido, `notification.stub` en modo stub o `notification.email` cuando se intenta enviar correo. `emailStatus` distingue `stub`, `sent` y `error`. La timeline de la web usa el mismo endpoint.
 
-El API solo acepta `notification.stub` con los campos esperados y exige `x-ingest-token`. El handler exige `x-invoke-token` tanto en local como por Function URL. Los tokens no se envían a la web.
+El API acepta `notification.stub` y `notification.email` de los tres desenlaces con los campos esperados y exige `x-ingest-token`. El handler exige `x-invoke-token` tanto en local como por Function URL. Los tokens no se envían a la web.
+
+## Correo real y smoke
+
+Configura las siguientes variables en `.env` y reinicia el bridge:
+
+```dotenv
+RESEND_API_KEY=re_TU_KEY
+RESEND_FROM=MercadoYa <pedidos@TU_DOMINIO_VERIFICADO>
+DEMO_NOTIFY_EMAIL=tu-correo@example.com
+EMAIL_MODE=resend
+```
+
+Crea la key en Resend y verifica el dominio del remitente según la [guía oficial](https://resend.com/docs/send-with-nodejs). Los templates se convierten a HTML y texto con [React Email render](https://react.email/docs/utilities/render). No guardes la key en Git.
+
+`EMAIL_MODE` vacío selecciona `resend` si existe key y `stub` si no existe. `EMAIL_MODE=stub` permite simular aunque haya key. Sin destinatario, el handler registra `stubReason=missing_recipient` y mantiene el 202 tras ingest. Si fuerzas `resend` con destinatario pero sin key o remitente, registra `emailError=true`.
+
+Todos los pedidos usan `DEMO_NOTIFY_EMAIL`, también cuando tienen `buyerId`. Identity solo expone la sesión autenticada y no tiene un endpoint interno de búsqueda de correo por ID. El handler no interpreta un ID como dirección de correo.
+
+Para comprobar los tres correos:
+
+1. Con `PAYMENT_MODE=succeed`, crea un pedido desde la UI con stock suficiente. Espera "Pedido confirmado" después de `payment.succeeded`.
+2. Con `PAYMENT_MODE=fail`, reinicia Orders y crea otro pedido con stock suficiente. Espera "El pago no se completó" con el motivo del fallo. Inventory libera el stock por separado.
+3. Pide más unidades que el stock disponible. Espera "No pudimos completar tu pedido" con el motivo de Inventory. Devuelve `PAYMENT_MODE` a `succeed`.
+
+También puedes ejecutar `pnpm demo:saga` con un producto de clase y stock suficiente. Sus pedidos tienen `buyerId: null`: solo prueba el inbox si configuraste key, remitente y `DEMO_NOTIFY_EMAIL` y el modo permite Resend. Consulta la timeline por cada ID del CLI. El CLI publica fallos duplicados para comprobar la compensación. Cada envío usa una clave de idempotencia por subject y pedido; Resend evita repetir el mismo correo dentro de su ventana de idempotencia, pero pueden aparecer registros duplicados en la timeline. Estos son tres tipos de correo, uno por desenlace, no tres correos en cada pedido.
+
+```sh
+pnpm --filter @mercadoya/contracts build
+pnpm --filter @mercadoya/notifications-lambda test
+pnpm --filter @mercadoya/notifications-lambda typecheck
+pnpm --filter @mercadoya/notifications-lambda lint
+pnpm --filter @mercadoya/notifications-lambda build
+```
+
+Los tests interceptan HTTP y no entregan correo real.
 
 ## Despliegue docente
 
@@ -34,8 +77,14 @@ export EVENTS_INGEST_URL="https://TU_API_PUBLICA/api/events/ingest"
 pnpm bootstrap
 pnpm deploy --parameters EventsIngestUrl="$EVENTS_INGEST_URL" \
   --parameters NotificationsIngestToken="$NOTIFICATIONS_INGEST_TOKEN" \
-  --parameters NotificationsInvokeToken="$NOTIFICATIONS_INVOKE_TOKEN"
+  --parameters NotificationsInvokeToken="$NOTIFICATIONS_INVOKE_TOKEN" \
+  --parameters ResendApiKey="$RESEND_API_KEY" \
+  --parameters ResendFrom="$RESEND_FROM" \
+  --parameters DemoNotifyEmail="$DEMO_NOTIFY_EMAIL" \
+  --parameters EmailMode="${EMAIL_MODE:-}"
 ```
+
+Los parámetros de correo tienen defaults vacíos para modo stub. La key usa `NoEcho` y se entrega a Lambda por variable de entorno. CDK empaqueta el handler, contracts, React Email y los templates TSX con esbuild. La Lambda no lee el `.env` local.
 
 `bootstrap` se ejecuta una vez por cuenta y región. El deploy devuelve `FunctionUrl`, `FunctionName`, `LogGroupName`, `AccountId` y `Region`. Copia `FunctionUrl` a `NOTIFICATIONS_FUNCTION_URL` en `.env` y reinicia el bridge. Crea otro pedido. En CloudWatch Logs, abre el grupo del output `LogGroupName` y busca `notification.created` y `notification.ingested`. La timeline muestra los mismos eventos por el ingest HTTP. Para volver al camino local, vacía `NOTIFICATIONS_FUNCTION_URL` y reinicia el bridge.
 
@@ -50,3 +99,5 @@ pnpm destroy
 Orders corre como proceso Node en `:3002`. Inventory corre como contenedor en `:3003`. Notifications ejecuta la lógica en Lambda cuando el bridge usa Function URL; en local invoca exactamente el mismo handler sin cuenta AWS. Los tres comparten los subjects NATS existentes.
 
 El bridge usa NATS Core, con entrega como máximo una vez y sin persistencia ni reintento duradero. Si el handler o ingest falla, el bridge registra `event.handler_error`; el evento no se reproduce automáticamente. La timeline también es un buffer en memoria del API y se vacía al reiniciarlo. Este comportamiento basta para el recorrido de clase y no constituye entrega fiable de notificaciones.
+
+Resend tiene un timeout de 5 segundos. Si rechaza el envío, falla la red o falta configuración, el handler registra el error e ingesta `emailStatus=error` y `emailError=true`; responde 202 si ingest funciona. `sent` significa que Resend aceptó el envío, no que el inbox lo recibió. No hay reintento de correo ni rollback de la saga. Un fallo de ingest sigue produciendo error del consumidor. El correo y la timeline no forman una transacción: un envío aceptado puede quedar sin registro si ingest falla.

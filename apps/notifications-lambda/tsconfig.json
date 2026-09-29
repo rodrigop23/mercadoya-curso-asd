@@ -1,6 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2022",
+    "jsx": "react-jsx",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "rootDir": ".",
@@ -11,5 +12,5 @@
     "forceConsistentCasingInFileNames": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "cdk/**/*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "cdk/**/*.ts"]
 }

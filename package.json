@@ -13,6 +13,7 @@
     "demo:saga": "turbo run demo:saga --filter @mercadoya/orders-service"
   },
   "devDependencies": {
+    "esbuild": "0.28.2",
     "oxfmt": "^0.70.0",
     "oxlint": "^1.85.0",
     "turbo": "^2.11.3",
