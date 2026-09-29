@@ -1,0 +1,27 @@
+{
+  "name": "@mercadoya/inventory-service",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "oxlint .",
+    "format": "oxfmt ."
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.1",
+    "@nats-io/transport-node": "^3.4.0",
+    "dotenv": "^18.0.2",
+    "drizzle-orm": "^0.45.3",
+    "hono": "^4.13.8",
+    "pg": "^8.23.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.23.1",
+    "tsx": "^4.23.15"
+  }
+}

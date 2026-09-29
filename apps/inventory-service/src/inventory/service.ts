@@ -1,9 +1,9 @@
-import { db } from '../../db/index.js';
-import type { CatalogContract } from '../catalog/contract.js';
+import { db } from '../db/index.js';
+import type { CatalogStockContract } from '../catalog/contract.js';
 import type { InventoryPort, ReservationResult } from './ports.js';
 import { inventoryReservation } from './schema.js';
 
-export function createInventoryContract(catalog: CatalogContract): InventoryPort {
+export function createInventoryContract(catalog: CatalogStockContract): InventoryPort {
   return {
     async reserve({ orderId, productId, quantity }): Promise<ReservationResult> {
       if (!Number.isSafeInteger(quantity) || quantity <= 0) {

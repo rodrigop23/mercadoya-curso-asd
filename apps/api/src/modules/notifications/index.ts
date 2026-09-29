@@ -2,7 +2,10 @@ import { createNotificationsRoutes } from './routes.js';
 import type { NotificationSenderPort } from './ports.js';
 import { logEvent } from '../../events/logger.js';
 import { orderPlacedEventSchema } from '../../events/order-placed.js';
-import { inventoryRejectedEventSchema, inventoryReservedEventSchema } from '../inventory/events.js';
+import {
+  inventoryRejectedEventSchema,
+  inventoryReservedEventSchema,
+} from '../../events/inventory-events.js';
 
 export type { NotificationSenderPort } from './ports.js';
 

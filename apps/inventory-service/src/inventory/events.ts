@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { eventSubjects } from '../../events/subjects.js';
+import { eventSubjects } from '../events/subjects.js';
 
 const inventoryReservationResult = {
   version: z.literal(1),

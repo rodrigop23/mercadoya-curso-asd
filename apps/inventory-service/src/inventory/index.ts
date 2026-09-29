@@ -1,9 +1,9 @@
 import { createInventoryRoutes } from './routes.js';
-import type { CatalogContract } from '../catalog/contract.js';
+import type { CatalogStockContract } from '../catalog/contract.js';
 import { createInventoryContract } from './service.js';
-import type { EventBus } from '../../events/event-bus.js';
-import { logEvent } from '../../events/logger.js';
-import { orderPlacedEventSchema } from '../../events/order-placed.js';
+import type { EventBus } from '../events/event-bus.js';
+import { logEvent } from '../events/logger.js';
+import { orderPlacedEventSchema } from '../events/order-placed.js';
 import {
   inventoryRejectedEventSchema,
   inventoryReservedEventSchema,
@@ -13,7 +13,7 @@ import {
 
 export type { InventoryPort, ReservationResult } from './ports.js';
 
-export function createInventoryModule(catalog: CatalogContract, eventBus: EventBus) {
+export function createInventoryModule(catalog: CatalogStockContract, eventBus: EventBus) {
   const contract = createInventoryContract(catalog);
 
   return {

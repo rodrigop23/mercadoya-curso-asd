@@ -40,23 +40,24 @@ pnpm install
 
 ## Base de datos local
 
-La API usa Drizzle ORM con el driver `node-postgres` (`pg`). Copia la configuración de ejemplo, inicia PostgreSQL y NATS, y aplica el esquema:
+La API usa Drizzle ORM con el driver `node-postgres` (`pg`). Copia la configuración de ejemplo, asigna un valor aleatorio a `CATALOG_INTERNAL_TOKEN`, inicia PostgreSQL y NATS, y aplica el esquema antes de iniciar Inventory:
 
 ```sh
 cp .env.example .env
-docker compose up -d
+docker compose up -d postgres nats
 pnpm --filter @mercadoya/api db:push
+docker compose up -d --build inventory
 ```
 
 `BETTER_AUTH_SECRET` debe ser una clave aleatoria de al menos 32 caracteres. Puedes generarla con `openssl rand -base64 48` y guardarla en `.env`; `BETTER_AUTH_URL` apunta a `http://localhost:3001`. Configura `EVENT_BUS=nats` y `NATS_URL=nats://localhost:4222` para ejecutar el API junto a Orders. Ambos procesos fallan al arrancar si no pueden conectar a NATS.
 
-`docker-compose.yml` conserva PostgreSQL en el volumen `postgres_data`. NATS expone el cliente en `4222` y el endpoint de monitoreo en `8222`. Para detener ambos servicios ejecuta `docker compose down`; `docker compose down -v` también elimina los datos de PostgreSQL.
+`docker-compose.yml` conserva PostgreSQL en el volumen `postgres_data`. NATS expone el cliente en `4222` y el endpoint de monitoreo en `8222`. Inventory corre en un contenedor en `3003`; se conecta al API del host mediante `host.docker.internal:3001`. Para detener los contenedores ejecuta `docker compose down`; `docker compose down -v` también elimina los datos de PostgreSQL.
 
 Los comandos de esquema disponibles son `pnpm --filter @mercadoya/api db:generate`, `db:migrate`, `db:push` y `db:studio`. Usa `db:generate` seguido de `db:migrate` para generar y aplicar migraciones SQL; `db:push` sincroniza el esquema directamente y está pensado para desarrollo local.
 
 ## Desarrollo
 
-Inicia web, API y Orders en paralelo desde la raíz:
+Con Inventory, PostgreSQL y NATS activos en Compose, inicia web, API y Orders en paralelo desde la raíz:
 
 ```sh
 pnpm dev
@@ -65,8 +66,9 @@ pnpm dev
 - Web: <http://localhost:5173>
 - API: <http://localhost:3001>
 - Orders: <http://localhost:3002>
+- Inventory: <http://localhost:3003/api/inventory/health>
 
-El API proxifica `/api/orders` a Orders y conserva el mismo origen para la web. La configuración y el puente de sesión con Identity están en [el README de Orders](apps/orders-service/README.md).
+El API proxifica `/api/orders` a Orders y `/api/inventory` a Inventory. La configuración del contenedor, el healthcheck y el puente HTTP a Catalog están en [el README de Inventory](apps/inventory-service/README.md). La configuración y el puente de sesión con Identity están en [el README de Orders](apps/orders-service/README.md).
 
 También puedes iniciar una aplicación individualmente con `pnpm --filter @mercadoya/web dev`, `pnpm --filter @mercadoya/api dev` o `pnpm --filter @mercadoya/orders-service dev`.
 
@@ -131,6 +133,7 @@ pnpm format     # Aplica oxfmt en los paquetes y la configuración de raíz
 apps/
   api/             Hono + TypeScript + Drizzle ORM
   orders-service/  Proceso Hono para pedidos y consumo NATS
+  inventory-service/ Contenedor Hono para reservas y consumo NATS
   web/             React + Vite + TanStack Router + TypeScript
   cloud-pipeline-demo/ CDK + Lambda, demo aislada de S3
 packages/

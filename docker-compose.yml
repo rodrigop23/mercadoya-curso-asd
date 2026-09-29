@@ -3,7 +3,7 @@ services:
     image: postgres:18
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      - '5432:5432'
     environment:
       POSTGRES_USER: mercadoya
       POSTGRES_PASSWORD: mercadoya_local
@@ -11,7 +11,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U mercadoya -d mercadoya"]
+      test: ['CMD-SHELL', 'pg_isready -U mercadoya -d mercadoya']
       interval: 5s
       timeout: 5s
       retries: 10
@@ -19,10 +19,31 @@ services:
   nats:
     image: nats:2-alpine
     restart: unless-stopped
-    command: ["-m", "8222"]
+    command: ['-m', '8222']
     ports:
-      - "4222:4222"
-      - "8222:8222"
+      - '4222:4222'
+      - '8222:8222'
+
+  inventory:
+    build:
+      context: .
+      dockerfile: apps/inventory-service/Dockerfile
+    restart: unless-stopped
+    ports:
+      - '3003:3003'
+    environment:
+      DATABASE_URL: postgresql://mercadoya:mercadoya_local@postgres:5432/mercadoya
+      NATS_URL: nats://nats:4222
+      EVENT_BUS: nats
+      CATALOG_URL: http://host.docker.internal:3001
+      CATALOG_INTERNAL_TOKEN: ${CATALOG_INTERNAL_TOKEN:?Set CATALOG_INTERNAL_TOKEN in .env}
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_started
 
 volumes:
   postgres_data:
