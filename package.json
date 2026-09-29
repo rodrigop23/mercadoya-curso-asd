@@ -9,7 +9,8 @@
     "lint": "turbo run lint",
     "format": "turbo run format format:root",
     "format:root": "oxfmt package.json turbo.json .oxlintrc.json .oxfmtrc.json",
-    "typecheck": "turbo run typecheck"
+    "typecheck": "turbo run typecheck",
+    "demo:saga": "turbo run demo:saga --filter @mercadoya/orders-service"
   },
   "devDependencies": {
     "oxfmt": "^0.70.0",

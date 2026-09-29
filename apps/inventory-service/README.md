@@ -54,3 +54,11 @@ La respuesta v1 contiene `reservation.id`, `orderId`, `productId`, `quantity` y 
 ## Guion de clase
 
 Ejecuta `docker compose ps inventory-v1 inventory-v2` para mostrar los despliegues y sus puertos. Ejecuta `docker compose logs -f inventory-v1` durante un pedido para mostrar el consumo de `orders.placed` y la publicación del resultado. Compara con `apps/orders-service`, que arranca como proceso Node con `pnpm dev`. Ambos comparten NATS y PostgreSQL, pero Inventory tiene un runtime empaquetado y se comunica con Catalog por HTTP.
+
+## Compensación de la saga
+
+Solo v1 consume `payment.failed`. Busca la reserva por `orderId`, restaura en Catalog su `productId` y `quantity` persistidos, borra la reserva y publica `inventory.released`. Una reserva liberada responde `404` en ambas versiones HTTP. Un fallo sin reserva no ajusta stock ni publica liberación. Un lock transaccional PostgreSQL por pedido serializa reservas y liberaciones concurrentes; repetir el fallo no incrementa stock dos veces. Repetir `orders.placed` mientras existe la reserva tampoco vuelve a descontar stock.
+
+Este laboratorio usa Core NATS, sin outbox ni reintentos durables. El ajuste HTTP de Catalog y la transacción de Inventory no son una transacción distribuida: una caída entre el ajuste, el commit y el publish puede requerir reconciliación manual. Al borrar la reserva no queda un historial durable que impida reservar de nuevo si se reenvía `orders.placed` después de compensar. La demo verifica duplicados de `payment.failed` durante una ejecución normal.
+
+Tras cambiar el runtime, ejecuta `docker compose up -d --build inventory-v1`. V2 conserva su función de lectura y no consume los nuevos eventos.

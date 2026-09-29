@@ -2,6 +2,8 @@ import { createInventoryRoutes } from './routes.js';
 import {
   eventSubjects,
   inventoryRejectedEventSchema,
+  inventoryReleasedEventSchema,
+  paymentFailedEventSchema,
   inventoryReservedEventSchema,
   orderPlacedEventSchema,
   type CatalogStockContract,
@@ -23,6 +25,19 @@ export function createInventoryModule(
   return {
     contract,
     routes: createInventoryRoutes(identity, serviceVersion),
+    async onPaymentFailed(payload: unknown) {
+      const event = paymentFailedEventSchema.parse(payload);
+      const released = await contract.release(event.orderId);
+      if (!released) return;
+      await eventBus.publish(
+        eventSubjects.inventoryReleased,
+        inventoryReleasedEventSchema.parse({
+          ...event,
+          ...released,
+          occurredAt: new Date().toISOString(),
+        }),
+      );
+    },
     async onOrderPlaced(payload: unknown) {
       const event = orderPlacedEventSchema.parse(payload);
       const result = await contract.reserve({
@@ -34,6 +49,7 @@ export function createInventoryModule(
 
       if (result.reserved) {
         const reservationEvent = inventoryReservedEventSchema.parse({
+          paymentMode: event.paymentMode,
           version: 1,
           orderId: event.orderId,
           productId: event.productId,

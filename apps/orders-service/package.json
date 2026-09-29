@@ -9,11 +9,12 @@
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "oxlint .",
-    "format": "oxfmt ."
+    "format": "oxfmt .",
+    "demo:saga": "tsx src/demo-saga.ts"
   },
   "dependencies": {
-    "@mercadoya/contracts": "workspace:*",
     "@hono/node-server": "^2.1.1",
+    "@mercadoya/contracts": "workspace:*",
     "@nats-io/transport-node": "^3.4.0",
     "dotenv": "^18.0.2",
     "drizzle-orm": "^0.45.3",

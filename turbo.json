@@ -22,6 +22,19 @@
     },
     "typecheck": {
       "outputs": []
+    },
+    "demo:saga": {
+      "cache": false,
+      "dependsOn": ["^build"],
+      "passThroughEnv": [
+        "DATABASE_URL",
+        "EVENT_BUS",
+        "NATS_URL",
+        "CATALOG_URL",
+        "CATALOG_INTERNAL_TOKEN",
+        "ORDERS_SERVICE_URL",
+        "DEMO_PRODUCT_ID"
+      ]
     }
   }
 }

@@ -4,11 +4,18 @@ export const eventSubjects = {
   ordersPlaced: 'orders.placed',
   inventoryReserved: 'inventory.reserved',
   inventoryRejected: 'inventory.rejected',
+  inventoryReleased: 'inventory.released',
+  paymentSucceeded: 'payment.succeeded',
+  paymentFailed: 'payment.failed',
 } as const;
 
 export type EventSubject = (typeof eventSubjects)[keyof typeof eventSubjects];
 
+export const paymentModeSchema = z.enum(['succeed', 'fail']);
+
 export const orderPlacedEventSchema = z.object({
+  // Solo el CLI interno usa este override didáctico; el POST público no lo acepta.
+  paymentMode: paymentModeSchema.optional(),
   version: z.literal(1),
   orderId: z.string().uuid(),
   productId: z.string().uuid(),
@@ -28,7 +35,19 @@ const inventoryReservationResult = {
   occurredAt: z.string().datetime(),
 };
 
-export const inventoryReservedEventSchema = z.object(inventoryReservationResult);
+export const inventoryReservedEventSchema = z.object({
+  ...inventoryReservationResult,
+  paymentMode: paymentModeSchema.optional(),
+});
+export const inventoryReleasedEventSchema = z.object(inventoryReservationResult);
+export const paymentSucceededEventSchema = z.object(inventoryReservationResult);
+export const paymentFailedEventSchema = z.object({
+  ...inventoryReservationResult,
+  reason: z.string().min(1).max(160),
+});
+export type InventoryReleasedEvent = z.infer<typeof inventoryReleasedEventSchema>;
+export type PaymentSucceededEvent = z.infer<typeof paymentSucceededEventSchema>;
+export type PaymentFailedEvent = z.infer<typeof paymentFailedEventSchema>;
 export const inventoryRejectedEventSchema = z.object({
   ...inventoryReservationResult,
   reason: z.enum(['invalid_quantity', 'product_not_found', 'insufficient_stock', 'stock_limit']),

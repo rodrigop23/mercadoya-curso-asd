@@ -9,6 +9,7 @@ export type CreateOrderInput = {
   productId: string;
   quantity: number;
   buyerId: string | null;
+  paymentMode?: 'succeed' | 'fail';
 };
 
 export function createOrdersService(eventBus: EventBus) {
@@ -28,9 +29,10 @@ export function createOrdersService(eventBus: EventBus) {
         throw new Error('No se pudo guardar el pedido.');
       }
 
-      // El pedido queda pending mientras Inventory reserva stock y publica su resultado.
+      // La saga mantiene pending hasta el resultado de Payment o el rechazo de Inventory.
       const event = orderPlacedEventSchema.parse({
         version: 1,
+        paymentMode: input.paymentMode,
         orderId: createdOrder.id,
         productId: input.productId,
         quantity: input.quantity,
@@ -52,7 +54,7 @@ export function createOrdersService(eventBus: EventBus) {
       return order ?? null;
     },
 
-    async recordInventoryResult(input: {
+    async recordSagaResult(input: {
       orderId: string;
       status: Extract<OrderStatus, 'confirmed' | 'rejected'>;
       rejectionReason: string | null;

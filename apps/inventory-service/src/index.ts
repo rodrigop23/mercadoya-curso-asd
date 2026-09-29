@@ -18,9 +18,23 @@ if (serviceVersion !== 'v1' && serviceVersion !== 'v2') {
 
 const catalog = createCatalogHttpClient();
 const eventBus = await createEventBus();
-const inventory = createInventoryModule(catalog, eventBus, createIdentityContract(), serviceVersion);
+const inventory = createInventoryModule(
+  catalog,
+  eventBus,
+  createIdentityContract(),
+  serviceVersion,
+);
 if (serviceVersion === 'v1') {
-  await eventBus.subscribe(eventSubjects.ordersPlaced, 'inventory.reserve', inventory.onOrderPlaced);
+  await eventBus.subscribe(
+    eventSubjects.ordersPlaced,
+    'inventory.reserve',
+    inventory.onOrderPlaced,
+  );
+  await eventBus.subscribe(
+    eventSubjects.paymentFailed,
+    'inventory.release',
+    inventory.onPaymentFailed,
+  );
 }
 
 const app = new Hono();

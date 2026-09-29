@@ -5,8 +5,11 @@ import { fileURLToPath } from 'node:url';
 import {
   eventSubjects,
   inventoryRejectedEventSchema,
-  inventoryReservedEventSchema,
+  paymentSucceededEventSchema,
+  paymentFailedEventSchema,
+  inventoryReleasedEventSchema,
 } from '@mercadoya/contracts';
+import { subscribePaymentSimulator } from './payment/simulator.js';
 import { closeDb } from './db/index.js';
 import { createEventBus } from './events/event-bus.js';
 import { createIdentityContract } from './identity/contract.js';
@@ -16,12 +19,23 @@ config({ path: fileURLToPath(new URL('../../../.env', import.meta.url)) });
 
 const eventBus = await createEventBus();
 const orders = createOrdersModule(eventBus, createIdentityContract());
-await eventBus.subscribe(eventSubjects.inventoryReserved, 'orders.confirm', async (payload) => {
-  await orders.onInventoryReserved(inventoryReservedEventSchema.parse(payload));
+await eventBus.subscribe(eventSubjects.paymentSucceeded, 'orders.confirm', async (payload) => {
+  await orders.onPaymentSucceeded(paymentSucceededEventSchema.parse(payload));
 });
-await eventBus.subscribe(eventSubjects.inventoryRejected, 'orders.reject', async (payload) => {
-  await orders.onInventoryRejected(inventoryRejectedEventSchema.parse(payload));
+await eventBus.subscribe(eventSubjects.paymentFailed, 'orders.reject_payment', async (payload) => {
+  await orders.onPaymentFailed(paymentFailedEventSchema.parse(payload));
 });
+await eventBus.subscribe(eventSubjects.inventoryReleased, 'orders.compensated', async (payload) => {
+  await orders.onInventoryReleased(inventoryReleasedEventSchema.parse(payload));
+});
+await eventBus.subscribe(
+  eventSubjects.inventoryRejected,
+  'orders.reject_stock',
+  async (payload) => {
+    await orders.onInventoryRejected(inventoryRejectedEventSchema.parse(payload));
+  },
+);
+await subscribePaymentSimulator(eventBus);
 
 const app = new Hono();
 app.route('/api/orders', orders.routes);

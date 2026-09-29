@@ -221,3 +221,9 @@ Turbo coordina `dev`, `build`, `lint`, `format` y `typecheck` a partir de los sc
 ## Toolchain del sistema
 
 Se conservan las versiones instaladas en la máquina: Node `v24.14.1` y pnpm `11.8.0`. El campo `packageManager` está fijado a `pnpm@11.8.0`; no se requiere nvm, fnm, Volta ni Corepack para instalar otra versión.
+
+## Saga de compra por coreografía
+
+En `v3-services`, Inventory reserva stock al recibir `orders.placed`. El pedido sigue `pending` tras `inventory.reserved`; un simulador didáctico dentro de Orders publica `payment.succeeded` para confirmarlo o `payment.failed` para rechazarlo. El fallo activa la compensación en Inventory v1, que restaura stock y publica `inventory.released`. El rechazo por stock no inicia Payment ni libera reservas. No hay orquestador ni PSP real.
+
+Ejecuta `pnpm demo:saga` para comprobar los tres caminos y fallos duplicados. Los requisitos y efectos sobre los datos están en el [README del CLI](scripts/README.md). Notifications conserva sus subjects actuales y su stub; Resend y la actualización formal de diagramas quedan para los siguientes prompts.

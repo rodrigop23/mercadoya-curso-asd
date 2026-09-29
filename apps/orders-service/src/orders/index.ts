@@ -9,8 +9,8 @@ export function createOrdersModule(eventBus: EventBus, identity: IdentityContrac
 
   return {
     routes: createOrdersRoutes(service, identity),
-    onInventoryReserved: async (event: { orderId: string }) => {
-      const order = await service.recordInventoryResult({
+    onPaymentSucceeded: async (event: { orderId: string }) => {
+      const order = await service.recordSagaResult({
         orderId: event.orderId,
         status: 'confirmed',
         rejectionReason: null,
@@ -23,8 +23,22 @@ export function createOrdersModule(eventBus: EventBus, identity: IdentityContrac
         status: 'confirmed',
       });
     },
+    onPaymentFailed: async (event: { orderId: string; reason: string }) => {
+      await service.recordSagaResult({
+        orderId: event.orderId,
+        status: 'rejected',
+        rejectionReason: event.reason,
+      });
+    },
+    onInventoryReleased: async (event: { orderId: string }) => {
+      await service.recordSagaResult({
+        orderId: event.orderId,
+        status: 'rejected',
+        rejectionReason: 'payment_failed',
+      });
+    },
     onInventoryRejected: async (event: { orderId: string; reason: string }) => {
-      const order = await service.recordInventoryResult({
+      const order = await service.recordSagaResult({
         orderId: event.orderId,
         status: 'rejected',
         rejectionReason: event.reason,
