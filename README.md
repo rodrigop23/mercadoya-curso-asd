@@ -48,7 +48,7 @@ docker compose up -d
 pnpm --filter @mercadoya/api db:push
 ```
 
-`BETTER_AUTH_SECRET` debe ser una clave aleatoria de al menos 32 caracteres. Puedes generarla con `openssl rand -base64 48` y guardarla en `.env`; `BETTER_AUTH_URL` apunta a `http://localhost:3001`. La API usa `EVENT_BUS=nats` y `NATS_URL=nats://localhost:4222`; si NATS no está disponible al arrancar, cambia a `EVENT_BUS=inprocess` o la API usará ese transporte como fallback.
+`BETTER_AUTH_SECRET` debe ser una clave aleatoria de al menos 32 caracteres. Puedes generarla con `openssl rand -base64 48` y guardarla en `.env`; `BETTER_AUTH_URL` apunta a `http://localhost:3001`. Configura `EVENT_BUS=nats` y `NATS_URL=nats://localhost:4222` para ejecutar el API junto a Orders. Ambos procesos fallan al arrancar si no pueden conectar a NATS.
 
 `docker-compose.yml` conserva PostgreSQL en el volumen `postgres_data`. NATS expone el cliente en `4222` y el endpoint de monitoreo en `8222`. Para detener ambos servicios ejecuta `docker compose down`; `docker compose down -v` también elimina los datos de PostgreSQL.
 
@@ -56,7 +56,7 @@ Los comandos de esquema disponibles son `pnpm --filter @mercadoya/api db:generat
 
 ## Desarrollo
 
-Inicia las dos aplicaciones en paralelo desde la raíz:
+Inicia web, API y Orders en paralelo desde la raíz:
 
 ```sh
 pnpm dev
@@ -64,8 +64,11 @@ pnpm dev
 
 - Web: <http://localhost:5173>
 - API: <http://localhost:3001>
+- Orders: <http://localhost:3002>
 
-También puedes iniciar una aplicación individualmente con `pnpm --filter @mercadoya/web dev` o `pnpm --filter @mercadoya/api dev`.
+El API proxifica `/api/orders` a Orders y conserva el mismo origen para la web. La configuración y el puente de sesión con Identity están en [el README de Orders](apps/orders-service/README.md).
+
+También puedes iniciar una aplicación individualmente con `pnpm --filter @mercadoya/web dev`, `pnpm --filter @mercadoya/api dev` o `pnpm --filter @mercadoya/orders-service dev`.
 
 ## Autenticación local
 
@@ -127,6 +130,7 @@ pnpm format     # Aplica oxfmt en los paquetes y la configuración de raíz
 ```text
 apps/
   api/             Hono + TypeScript + Drizzle ORM
+  orders-service/  Proceso Hono para pedidos y consumo NATS
   web/             React + Vite + TanStack Router + TypeScript
   cloud-pipeline-demo/ CDK + Lambda, demo aislada de S3
 packages/

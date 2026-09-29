@@ -1,7 +1,7 @@
 import { createOrdersRoutes } from './routes.js';
 import type { IdentityContract } from '../identity/contract.js';
-import type { EventBus } from '../../events/event-bus.js';
-import { logEvent } from '../../events/logger.js';
+import type { EventBus } from '../events/event-bus.js';
+import { logEvent } from '../events/logger.js';
 import { createOrdersService } from './service.js';
 
 export function createOrdersModule(eventBus: EventBus, identity: IdentityContract) {

@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 
-import { db } from '../../db/index.js';
-import type { EventBus } from '../../events/event-bus.js';
+import { db } from '../db/index.js';
+import type { EventBus } from '../events/event-bus.js';
 import { orderPlacedEventSchema, orderPlacedSubject } from './events.js';
 import { orderRecord, type OrderStatus } from './schema.js';
 

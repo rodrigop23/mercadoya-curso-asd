@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { eventSubjects } from '../../events/subjects.js';
+import { eventSubjects } from '../events/subjects.js';
 
 export const orderPlacedSubject = eventSubjects.ordersPlaced;
 

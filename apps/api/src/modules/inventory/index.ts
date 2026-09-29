@@ -3,7 +3,7 @@ import type { CatalogContract } from '../catalog/contract.js';
 import { createInventoryContract } from './service.js';
 import type { EventBus } from '../../events/event-bus.js';
 import { logEvent } from '../../events/logger.js';
-import { orderPlacedEventSchema } from '../orders/events.js';
+import { orderPlacedEventSchema } from '../../events/order-placed.js';
 import {
   inventoryRejectedEventSchema,
   inventoryReservedEventSchema,
