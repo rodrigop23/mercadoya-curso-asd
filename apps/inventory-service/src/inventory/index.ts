@@ -1,18 +1,16 @@
 import { createInventoryRoutes } from './routes.js';
-import type { CatalogStockContract } from '../catalog/contract.js';
+import {
+  eventSubjects,
+  inventoryRejectedEventSchema,
+  inventoryReservedEventSchema,
+  orderPlacedEventSchema,
+  type CatalogStockContract,
+} from '@mercadoya/contracts';
 import { createInventoryContract } from './service.js';
 import type { IdentityContract } from '../identity/contract.js';
 import type { EventBus } from '../events/event-bus.js';
 import { logEvent } from '../events/logger.js';
-import { orderPlacedEventSchema } from '../events/order-placed.js';
-import {
-  inventoryRejectedEventSchema,
-  inventoryReservedEventSchema,
-  inventoryRejectedSubject,
-  inventoryReservedSubject,
-} from './events.js';
-
-export type { InventoryPort, ReservationResult } from './ports.js';
+export type { InventoryPort, ReservationResult } from '@mercadoya/contracts';
 
 export function createInventoryModule(
   catalog: CatalogStockContract,
@@ -42,7 +40,7 @@ export function createInventoryModule(
           buyerId: event.buyerId,
           occurredAt,
         });
-        await eventBus.publish(inventoryReservedSubject, reservationEvent);
+        await eventBus.publish(eventSubjects.inventoryReserved, reservationEvent);
         logEvent({
           type: 'inventory.reservation',
           transport: eventBus.transport,
@@ -63,7 +61,7 @@ export function createInventoryModule(
         reason: result.reason,
         occurredAt,
       });
-      await eventBus.publish(inventoryRejectedSubject, rejectionEvent);
+      await eventBus.publish(eventSubjects.inventoryRejected, rejectionEvent);
       logEvent({
         type: 'inventory.reservation',
         transport: eventBus.transport,

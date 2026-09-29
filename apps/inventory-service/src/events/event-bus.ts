@@ -1,6 +1,6 @@
 import { connect } from '@nats-io/transport-node';
 import type { NatsConnection } from '@nats-io/transport-node';
-import type { EventSubject } from './subjects.js';
+import type { EventSubject } from '@mercadoya/contracts';
 import { logEvent } from './logger.js';
 
 export interface EventBus {

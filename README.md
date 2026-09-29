@@ -18,6 +18,8 @@ La rama [`v2-integration`](https://github.com/rodrigop23/mercadoya-curso-asd/tre
 
 En `v3-services`, Orders corre como proceso Node, Inventory como contenedor y Notifications usa un handler AWS Lambda. Un bridge NATS invoca ese handler directamente durante la clase local o mediante Function URL en AWS. Consulta [la guía de Notifications](apps/notifications-lambda/README.md).
 
+El [paquete de contratos `@mercadoya/contracts`](packages/contracts/README.md) contiene los eventos NATS v1 y los puertos de Inventory. El [OpenAPI de Inventory](apps/inventory-service/openapi.yaml) es el ejemplo de API HTTP de la clase.
+
 ## Arquitectura y decisiones
 
 Material para el walkthrough:
@@ -183,6 +185,7 @@ apps/
   web/             React + Vite + TanStack Router + TypeScript
   cloud-pipeline-demo/ CDK + Lambda, demo aislada de S3
 packages/
+  contracts/       Eventos NATS v1 y puertos compartidos
   tsconfig/        Configuración compartida de TypeScript
 ```
 

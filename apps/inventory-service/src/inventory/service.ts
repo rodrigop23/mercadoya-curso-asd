@@ -1,6 +1,5 @@
 import { db } from '../db/index.js';
-import type { CatalogStockContract } from '../catalog/contract.js';
-import type { InventoryPort, ReservationResult } from './ports.js';
+import type { CatalogStockContract, InventoryPort, ReservationResult } from '@mercadoya/contracts';
 import { inventoryReservation } from './schema.js';
 
 export function createInventoryContract(catalog: CatalogStockContract): InventoryPort {

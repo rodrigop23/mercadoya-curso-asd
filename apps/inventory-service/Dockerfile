@@ -3,10 +3,13 @@ WORKDIR /workspace
 RUN npm install -g pnpm@11.8.0
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/inventory-service/package.json apps/inventory-service/package.json
+COPY packages/contracts/package.json packages/contracts/package.json
 COPY packages/tsconfig/package.json packages/tsconfig/package.json
 RUN pnpm install --frozen-lockfile
 COPY packages/tsconfig packages/tsconfig
+COPY packages/contracts packages/contracts
 COPY apps/inventory-service apps/inventory-service
+RUN pnpm --filter @mercadoya/contracts build
 RUN pnpm --filter @mercadoya/inventory-service build
 RUN pnpm --filter @mercadoya/inventory-service deploy --legacy --prod /runtime
 

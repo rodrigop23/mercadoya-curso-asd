@@ -1,8 +1,8 @@
 import { and, eq } from 'drizzle-orm';
+import { eventSubjects, orderPlacedEventSchema } from '@mercadoya/contracts';
 
 import { db } from '../db/index.js';
 import type { EventBus } from '../events/event-bus.js';
-import { orderPlacedEventSchema, orderPlacedSubject } from './events.js';
 import { orderRecord, type OrderStatus } from './schema.js';
 
 export type CreateOrderInput = {
@@ -37,7 +37,7 @@ export function createOrdersService(eventBus: EventBus) {
         buyerId: input.buyerId,
         occurredAt: new Date().toISOString(),
       });
-      await eventBus.publish(orderPlacedSubject, event);
+      await eventBus.publish(eventSubjects.ordersPlaced, event);
 
       return { order: createdOrder };
     },

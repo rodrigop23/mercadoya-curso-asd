@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "dev": "turbo run dev",
+    "dev": "turbo run build --filter @mercadoya/contracts && turbo run dev",
     "demo:infra": "docker compose up -d postgres nats && pnpm --filter @mercadoya/api db:push && docker compose up -d --build inventory",
     "build": "turbo run build",
     "lint": "turbo run lint",

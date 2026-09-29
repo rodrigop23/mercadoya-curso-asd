@@ -1,0 +1,122 @@
+openapi: 3.1.0
+info:
+  title: MercadoYa Inventory HTTP API
+  version: 1.0.0
+  description: >-
+    Borde HTTP de lectura de Inventory. La reserva de stock se solicita mediante
+    el evento NATS orders.placed y se resuelve con inventory.reserved o
+    inventory.rejected; no existe una ruta HTTP para reservar.
+servers:
+  - url: http://localhost:3001
+    description: Gateway/BFF usado por la web y la clase
+  - url: http://localhost:3003
+    description: Inventory directo para diagnóstico local
+paths:
+  /api/inventory/health:
+    get:
+      summary: Estado del proceso Inventory
+      security: []
+      responses:
+        '200':
+          description: El proceso responde.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [module, ok]
+                properties:
+                  module:
+                    type: string
+                    const: inventory
+                  ok:
+                    type: boolean
+                    const: true
+  /api/inventory/reservations/{orderId}:
+    get:
+      summary: Consultar la reserva de un pedido
+      description: >-
+        Requiere una sesión Better Auth. La cookie llega mediante el gateway
+        y Inventory valida la sesión con Identity. La ruta no comprueba que
+        el usuario sea el comprador del pedido.
+      security:
+        - betterAuthSession: []
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Reserva encontrada.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [reservation]
+                properties:
+                  reservation:
+                    $ref: '#/components/schemas/Reservation'
+        '400':
+          description: El orderId no es un UUID válido.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Falta una sesión válida.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: La reserva aún no existe.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Falló la consulta de la reserva.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '502':
+          description: Falló la validación de la sesión con Identity.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+components:
+  securitySchemes:
+    betterAuthSession:
+      type: apiKey
+      in: cookie
+      name: better-auth.session_token
+      description: Cookie de sesión Better Auth enviada al gateway en localhost:3001.
+  schemas:
+    Reservation:
+      type: object
+      required: [id, orderId, productId, quantity, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        orderId:
+          type: string
+          format: uuid
+        productId:
+          type: string
+          format: uuid
+        quantity:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string

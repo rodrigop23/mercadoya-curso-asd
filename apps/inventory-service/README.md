@@ -2,6 +2,8 @@
 
 Inventory corre como contenedor Node/Hono en `:3003`. Consume `orders.placed` de NATS, consulta y ajusta stock mediante el API de Catalog, registra la reserva en `inventory_reservations` y publica `inventory.reserved` o `inventory.rejected`. Orders recibe el resultado y cambia el estado del pedido; el bridge de Notifications invoca el handler Lambda.
 
+El [OpenAPI de Inventory](openapi.yaml) documenta `health` y la lectura de reservas por HTTP. Los eventos NATS v1 y los puertos `InventoryPort` y `CatalogStockContract` viven en [@mercadoya/contracts](../../packages/contracts/README.md). La reserva entra por `orders.placed`, no por una ruta HTTP.
+
 ## Imagen y arranque
 
 Desde la raíz, configura `CATALOG_INTERNAL_TOKEN` en `.env`, aplica el esquema y construye la imagen:

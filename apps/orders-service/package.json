@@ -12,6 +12,7 @@
     "format": "oxfmt ."
   },
   "dependencies": {
+    "@mercadoya/contracts": "workspace:*",
     "@hono/node-server": "^2.1.1",
     "@nats-io/transport-node": "^3.4.0",
     "dotenv": "^18.0.2",

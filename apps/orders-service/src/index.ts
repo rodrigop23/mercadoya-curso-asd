@@ -2,12 +2,13 @@ import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { config } from 'dotenv';
 import { fileURLToPath } from 'node:url';
-import { closeDb } from './db/index.js';
-import { createEventBus } from './events/event-bus.js';
 import {
+  eventSubjects,
   inventoryRejectedEventSchema,
   inventoryReservedEventSchema,
-} from './events/inventory-events.js';
+} from '@mercadoya/contracts';
+import { closeDb } from './db/index.js';
+import { createEventBus } from './events/event-bus.js';
 import { createIdentityContract } from './identity/contract.js';
 import { createOrdersModule } from './orders/index.js';
 
@@ -15,10 +16,10 @@ config({ path: fileURLToPath(new URL('../../../.env', import.meta.url)) });
 
 const eventBus = await createEventBus();
 const orders = createOrdersModule(eventBus, createIdentityContract());
-await eventBus.subscribe('inventory.reserved', 'orders.confirm', async (payload) => {
+await eventBus.subscribe(eventSubjects.inventoryReserved, 'orders.confirm', async (payload) => {
   await orders.onInventoryReserved(inventoryReservedEventSchema.parse(payload));
 });
-await eventBus.subscribe('inventory.rejected', 'orders.reject', async (payload) => {
+await eventBus.subscribe(eventSubjects.inventoryRejected, 'orders.reject', async (payload) => {
   await orders.onInventoryRejected(inventoryRejectedEventSchema.parse(payload));
 });
 

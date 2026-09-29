@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { CatalogStockContract } from './contract.js';
+import type { CatalogStockContract } from '@mercadoya/contracts';
 
 const stockResponse = z.object({ availableStock: z.number().int().nonnegative().nullable() });
 const adjustmentResponse = z.discriminatedUnion('adjusted', [

@@ -2,6 +2,7 @@ import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { config } from 'dotenv';
 import { fileURLToPath } from 'node:url';
+import { eventSubjects } from '@mercadoya/contracts';
 import { createCatalogHttpClient } from './catalog/http.js';
 import { closeDb } from './db/index.js';
 import { createEventBus } from './events/event-bus.js';
@@ -13,7 +14,7 @@ config({ path: fileURLToPath(new URL('../../../.env', import.meta.url)) });
 const catalog = createCatalogHttpClient();
 const eventBus = await createEventBus();
 const inventory = createInventoryModule(catalog, eventBus, createIdentityContract());
-await eventBus.subscribe('orders.placed', 'inventory.reserve', inventory.onOrderPlaced);
+await eventBus.subscribe(eventSubjects.ordersPlaced, 'inventory.reserve', inventory.onOrderPlaced);
 
 const app = new Hono();
 app.route('/api/inventory', inventory.routes);
