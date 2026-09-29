@@ -11,16 +11,23 @@ import { createInventoryModule } from './inventory/index.js';
 
 config({ path: fileURLToPath(new URL('../../../.env', import.meta.url)) });
 
+const serviceVersion = process.env.SERVICE_VERSION ?? 'v1';
+if (serviceVersion !== 'v1' && serviceVersion !== 'v2') {
+  throw new Error('SERVICE_VERSION debe ser v1 o v2.');
+}
+
 const catalog = createCatalogHttpClient();
 const eventBus = await createEventBus();
-const inventory = createInventoryModule(catalog, eventBus, createIdentityContract());
-await eventBus.subscribe(eventSubjects.ordersPlaced, 'inventory.reserve', inventory.onOrderPlaced);
+const inventory = createInventoryModule(catalog, eventBus, createIdentityContract(), serviceVersion);
+if (serviceVersion === 'v1') {
+  await eventBus.subscribe(eventSubjects.ordersPlaced, 'inventory.reserve', inventory.onOrderPlaced);
+}
 
 const app = new Hono();
 app.route('/api/inventory', inventory.routes);
 const port = Number(process.env.PORT ?? 3003);
 const server = serve({ fetch: app.fetch, port }, (info) => {
-  console.log(`Inventory service listening on http://localhost:${info.port}`);
+  console.log(`Inventory ${serviceVersion} listening on http://localhost:${info.port}`);
 });
 
 const shutdown = async () => {

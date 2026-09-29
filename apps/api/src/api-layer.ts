@@ -50,9 +50,13 @@ export function createApiLayer() {
     process.env.ORDERS_SERVICE_URL || 'http://localhost:3002',
     'Orders',
   );
-  const proxyInventory = proxyService(
-    process.env.INVENTORY_SERVICE_URL || 'http://localhost:3003',
-    'Inventory',
+  const proxyInventoryV1 = proxyService(
+    process.env.INVENTORY_V1_URL || 'http://localhost:3003',
+    'Inventory v1',
+  );
+  const proxyInventoryV2 = proxyService(
+    process.env.INVENTORY_V2_URL || 'http://localhost:3005',
+    'Inventory v2',
   );
   const proxyNotifications = proxyService(
     process.env.NOTIFICATIONS_BRIDGE_URL || 'http://localhost:3004',
@@ -61,8 +65,12 @@ export function createApiLayer() {
   app.all('/api/orders', proxyOrders);
   app.all('/api/orders/*', proxyOrders);
   app.route('/api/events', createEventsRoutes());
-  app.all('/api/inventory', proxyInventory);
-  app.all('/api/inventory/*', proxyInventory);
+  app.all('/api/inventory/v1', proxyInventoryV1);
+  app.all('/api/inventory/v1/*', proxyInventoryV1);
+  app.all('/api/inventory/v2', proxyInventoryV2);
+  app.all('/api/inventory/v2/*', proxyInventoryV2);
+  app.all('/api/inventory', proxyInventoryV1);
+  app.all('/api/inventory/*', proxyInventoryV1);
   app.all('/api/notifications', proxyNotifications);
   app.all('/api/notifications/*', proxyNotifications);
 

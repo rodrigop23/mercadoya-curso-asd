@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "turbo run build --filter @mercadoya/contracts && turbo run dev",
-    "demo:infra": "docker compose up -d postgres nats && pnpm --filter @mercadoya/api db:push && docker compose up -d --build inventory",
+    "demo:infra": "docker compose up -d postgres nats && pnpm --filter @mercadoya/api db:push && docker compose up -d --build --remove-orphans inventory-v1 inventory-v2",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "format": "turbo run format format:root",

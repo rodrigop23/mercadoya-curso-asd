@@ -16,12 +16,13 @@ export function createInventoryModule(
   catalog: CatalogStockContract,
   eventBus: EventBus,
   identity: IdentityContract,
+  serviceVersion: 'v1' | 'v2',
 ) {
   const contract = createInventoryContract(catalog);
 
   return {
     contract,
-    routes: createInventoryRoutes(identity),
+    routes: createInventoryRoutes(identity, serviceVersion),
     async onOrderPlaced(payload: unknown) {
       const event = orderPlacedEventSchema.parse(payload);
       const result = await contract.reserve({

@@ -6,4 +6,6 @@ Orders publica `orders.placed` con `version: 1`. Inventory valida ese evento, ll
 
 Los tres schemas de eventos conservan `buyerId: string | null` por compatibilidad v1. El publisher actual de Orders obtiene el ID de la sesión y emite un string. Una versión v2 puede añadirse aquí sin cambiar los subjects v1.
 
+`reservationResponseV1Schema` conserva el JSON de lectura de reservas. `reservationResponseV2Schema` exige además `reservation.status: "reserved"`. Estos DTO son del API HTTP y no alteran los eventos NATS v1 ni sus subjects.
+
 El [OpenAPI de Inventory](../../apps/inventory-service/openapi.yaml) describe el borde HTTP para health y lectura de reservas. La reserva se solicita por NATS, no por HTTP. El OpenAPI de Catalog queda pendiente para el prompt 07.

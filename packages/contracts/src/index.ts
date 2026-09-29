@@ -37,6 +37,25 @@ export const inventoryRejectedEventSchema = z.object({
 export type InventoryReservedEvent = z.infer<typeof inventoryReservedEventSchema>;
 export type InventoryRejectedEvent = z.infer<typeof inventoryRejectedEventSchema>;
 
+const reservationHttpSchema = z.object({
+  id: z.string().uuid(),
+  orderId: z.string().uuid(),
+  productId: z.string().uuid(),
+  quantity: z.number().int(),
+  createdAt: z.string().datetime(),
+});
+
+export const reservationResponseV1Schema = z.object({
+  reservation: reservationHttpSchema,
+});
+
+export const reservationResponseV2Schema = z.object({
+  reservation: reservationHttpSchema.extend({ status: z.literal('reserved') }),
+});
+
+export type ReservationResponseV1 = z.infer<typeof reservationResponseV1Schema>;
+export type ReservationResponseV2 = z.infer<typeof reservationResponseV2Schema>;
+
 export type ReservationReason =
   | 'invalid_quantity'
   | 'product_not_found'
