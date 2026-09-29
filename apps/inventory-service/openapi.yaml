@@ -9,13 +9,12 @@ info:
 servers:
   - url: http://localhost:3001
     description: Gateway/BFF usado por la web y la clase
+  - url: http://localhost:3003
+    description: Inventory v1 directo, rutas legacy y v1
+  - url: http://localhost:3005
+    description: Inventory v2 directo, rutas v2
 paths:
   /api/inventory/health:
-    servers: &v1Servers
-      - url: http://localhost:3001
-        description: Gateway/BFF
-      - url: http://localhost:3003
-        description: Inventory v1 directo
     get:
       summary: Estado de Inventory v1 (alias heredado)
       deprecated: true
@@ -39,7 +38,6 @@ paths:
                     type: string
                     const: v1
   /api/inventory/reservations/{orderId}:
-    servers: *v1Servers
     get: &reservationV1
       summary: Consultar la reserva de un pedido con el contrato v1
       deprecated: true
@@ -94,7 +92,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
   /api/inventory/v1/health:
-    servers: *v1Servers
     get:
       summary: Estado de Inventory v1
       deprecated: true
@@ -118,14 +115,8 @@ paths:
                     type: string
                     const: v1
   /api/inventory/v1/reservations/{orderId}:
-    servers: *v1Servers
     get: *reservationV1
   /api/inventory/v2/health:
-    servers: &v2Servers
-      - url: http://localhost:3001
-        description: Gateway/BFF
-      - url: http://localhost:3005
-        description: Inventory v2 directo
     get:
       summary: Estado de Inventory v2
       security: []
@@ -148,7 +139,6 @@ paths:
                     type: string
                     const: v2
   /api/inventory/v2/reservations/{orderId}:
-    servers: *v2Servers
     get:
       summary: Consultar la reserva de un pedido con el contrato v2
       description: >-

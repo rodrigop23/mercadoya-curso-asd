@@ -139,8 +139,8 @@ Estos healthchecks comprueban que los procesos responden; el recorrido de compra
 
 - [ ] Abre [Swagger UI de Inventory](http://localhost:3003/docs). Requiere internet para cargar los recursos de Swagger desde el CDN. Comprueba también el [YAML servido](http://localhost:3003/openapi.yaml), que corresponde a `apps/inventory-service/openapi.yaml`.
 - [ ] Localiza `health` y `reservations` v1/v2 en el mismo documento. V1 y los alias sin versión están marcados como deprecated. Expande ambas lecturas de reservas y compara los schemas de respuesta: solo v2 exige `reservation.status: "reserved"`.
-- [ ] Expande `GET /api/inventory/v1/health` y pulsa **Try it out**. En el selector de esa operación, elige el server directo `http://localhost:3003` y pulsa **Execute**. Debe responder `200` con `serviceVersion: "v1"` y `X-Service-Version: v1`.
-- [ ] Opcional: abre [Swagger UI del segundo despliegue](http://localhost:3005/docs), expande `/api/inventory/v2/health`, pulsa **Try it out**, selecciona en esa operación el server directo `http://localhost:3005` y ejecuta la solicitud. Responde `200` con la versión v2. El contrato es el mismo en ambos procesos; el deploy decide qué paths atiende cada uno.
+- [ ] Expande `GET /api/inventory/v1/health` y pulsa **Try it out**. En el selector general **Servers**, elige el server directo `http://localhost:3003` y pulsa **Execute**. Debe responder `200` con `serviceVersion: "v1"` y `X-Service-Version: v1`.
+- [ ] Opcional: abre [Swagger UI del segundo despliegue](http://localhost:3005/docs), expande `/api/inventory/v2/health`, pulsa **Try it out**, selecciona en **Servers** el server directo `http://localhost:3005` y ejecuta la solicitud. Responde `200` con la versión v2. El contrato es el mismo en ambos procesos; el deploy decide qué paths atiende cada uno.
 - [ ] Para probar reservations con sesión, usa los comandos vía gateway y cookie del paso 8. Swagger permite explorar schemas sin iniciar sesión; Execute puede responder `401` sin cookie. Seleccionar otro origen puede causar un bloqueo CORS. Para health, conserva el server del mismo origen que la UI.
 
 ## 9. Apagado y notas
