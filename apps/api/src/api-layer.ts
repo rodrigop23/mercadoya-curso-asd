@@ -12,7 +12,10 @@ export function createApiLayer() {
   const catalog = createCatalogModule(identity.contract, media.contract);
   const app = new Hono();
 
-  app.use('/api/*', cors({ origin: 'http://localhost:5173', credentials: true }));
+  app.use(
+    '/api/*',
+    cors({ origin: ['http://localhost:5173', 'http://localhost:5174'], credentials: true }),
+  );
   app.get('/', (c) => c.text('MercadoYa API está lista.'));
 
   // Identity and Catalog keep their V1 URLs. New modules mount below their API prefixes.

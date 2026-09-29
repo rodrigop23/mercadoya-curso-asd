@@ -44,7 +44,17 @@ pnpm install
 
 ## Demo V3: API Gateway y servicios
 
-El API en `http://localhost:3001` es el gateway/BFF de la sesión 5 y el único origen de API que usa el navegador. Identity, Catalog y Media viven en ese proceso. El gateway proxifica `/api/orders` a Orders (`:3002`), `/api/inventory/v1` a Inventory v1 (`:3003`), `/api/inventory/v2` a Inventory v2 (`:3005`) y `/api/notifications` al bridge (`:3004`). Las rutas de Inventory sin versión siguen como alias v1. La web en `:5173` llama directamente a `:3001` con `credentials: 'include'`; el API permite ese origen mediante CORS con credenciales. No hay otro proceso gateway.
+### Microfrontend de administración
+
+El host React en `:5173` conserva autenticación, menú y guard de `/admin/products`. Esa ruta monta el CRUD de `apps/mf-catalog`, una app Vite independiente en `:5174`, mediante iframe. El remoto consume Catalog en el API existente `:3001` con cookie de sesión. [La guía del remoto](apps/mf-catalog/README.md) explica el arranque individual, los orígenes y el límite de aislamiento del iframe. Buyer + admin no son dos MF; la composición es host + pieza remota.
+
+```text
+Host web :5173 ── /admin/products ──► MF catálogo admin :5174
+      │                                     │
+      └──────── catálogo buyer /catalog     └──► API Catalog :3001
+```
+
+El API en `http://localhost:3001` es el gateway/BFF de la sesión 5 y el único origen de API que usa el navegador. Identity, Catalog y Media viven en ese proceso. El gateway proxifica `/api/orders` a Orders (`:3002`), `/api/inventory/v1` a Inventory v1 (`:3003`), `/api/inventory/v2` a Inventory v2 (`:3005`) y `/api/notifications` al bridge (`:3004`). Las rutas de Inventory sin versión siguen como alias v1. La web en `:5173` y el MF en `:5174` llaman directamente a `:3001` con `credentials: 'include'`; el API permite ambos orígenes mediante CORS con credenciales. No hay otro proceso gateway.
 
 Para levantar la demo desde una copia nueva, configura `.env` a partir de `.env.example`, asigna claves aleatorias a `BETTER_AUTH_SECRET`, `CATALOG_INTERNAL_TOKEN`, `NOTIFICATIONS_INGEST_TOKEN` y `NOTIFICATIONS_INVOKE_TOKEN`, y ejecuta:
 
@@ -54,30 +64,31 @@ pnpm demo:infra
 pnpm dev
 ```
 
-`demo:infra` inicia Postgres y NATS, aplica el esquema con `db:push` y construye e inicia `inventory-v1` e `inventory-v2` en Compose. `pnpm dev` inicia web, API, Orders y el bridge de Notifications como procesos Node. El API debe estar listo antes de crear pedidos. Inventory puede arrancar antes del API porque consulta Catalog e Identity al recibir solicitudes o eventos.
+`demo:infra` inicia Postgres y NATS, aplica el esquema con `db:push` y construye e inicia `inventory-v1` e `inventory-v2` en Compose. `pnpm dev` inicia web, MF catálogo admin, API, Orders y el bridge de Notifications. El API debe estar listo antes de crear pedidos. Inventory puede arrancar antes del API porque consulta Catalog e Identity al recibir solicitudes o eventos.
 
-| Componente | Puerto | Comprobación |
-| --- | --- | --- |
-| Web | 5173 | `http://localhost:5173` |
-| API Gateway | 3001 | `http://localhost:3001/api/identity/health` |
-| Orders | 3002 | `http://localhost:3001/api/orders/health` |
-| Inventory v1 | 3003 | `http://localhost:3001/api/inventory/v1/health` |
-| Inventory v2 | 3005 | `http://localhost:3001/api/inventory/v2/health` |
-| Notifications bridge | 3004 | `http://localhost:3001/api/notifications/health` |
-| Postgres | 5432 | `docker compose ps postgres` |
-| NATS | 4222 | `http://localhost:8222` para monitoreo |
+| Componente           | Puerto | Comprobación                                     |
+| -------------------- | ------ | ------------------------------------------------ |
+| Web                  | 5173   | `http://localhost:5173`                          |
+| MF catálogo admin    | 5174   | `http://localhost:5174`                          |
+| API Gateway          | 3001   | `http://localhost:3001/api/identity/health`      |
+| Orders               | 3002   | `http://localhost:3001/api/orders/health`        |
+| Inventory v1         | 3003   | `http://localhost:3001/api/inventory/v1/health`  |
+| Inventory v2         | 3005   | `http://localhost:3001/api/inventory/v2/health`  |
+| Notifications bridge | 3004   | `http://localhost:3001/api/notifications/health` |
+| Postgres             | 5432   | `docker compose ps postgres`                     |
+| NATS                 | 4222   | `http://localhost:8222` para monitoreo           |
 
-| Tipo | Mecanismo | Quién lo usa |
-| --- | --- | --- |
-| Usuario | Cookie de sesión Better Auth; Orders e Inventory la validan con `GET /api/me` | Browser vía gateway, Orders, ruta de reservas de Inventory y Catalog admin |
-| Servicio a Catalog | `x-catalog-internal-token` y `CATALOG_INTERNAL_TOKEN` | Inventory hacia rutas internas del API |
-| Lambda y bridge a API | `x-invoke-token` y `x-ingest-token`, con secretos distintos | Notifications |
+| Tipo                  | Mecanismo                                                                     | Quién lo usa                                                               |
+| --------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Usuario               | Cookie de sesión Better Auth; Orders e Inventory la validan con `GET /api/me` | Browser vía gateway, Orders, ruta de reservas de Inventory y Catalog admin |
+| Servicio a Catalog    | `x-catalog-internal-token` y `CATALOG_INTERNAL_TOKEN`                         | Inventory hacia rutas internas del API                                     |
+| Lambda y bridge a API | `x-invoke-token` y `x-ingest-token`, con secretos distintos                   | Notifications                                                              |
 
 La autenticación de usuario y los secretos entre servicios cumplen fines distintos. Esta demo no incluye service mesh ni JWT/JWKS entre microservicios. `GET /api/orders/:orderId` queda público para seguir el estado del pedido; la lectura de reservas de Inventory exige sesión, pero no verifica la propiedad del pedido.
 
-| Versión | Cambio observable |
-| --- | --- |
-| API HTTP | `/api/inventory/v1/reservations/:orderId` conserva el JSON anterior; `/v2/` exige además `reservation.status: "reserved"`. |
+| Versión  | Cambio observable                                                                                                                                                                             |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| API HTTP | `/api/inventory/v1/reservations/:orderId` conserva el JSON anterior; `/v2/` exige además `reservation.status: "reserved"`.                                                                    |
 | Servicio | Compose ejecuta `inventory-v1` e `inventory-v2` con `SERVICE_VERSION` distinto. Cada respuesta lleva `X-Service-Version`. Solo v1 consume `orders.placed`, para procesar cada pedido una vez. |
 
 Consulta el [guion de Inventory](apps/inventory-service/README.md) para comparar ambas respuestas con el mismo pedido y la misma cookie. La decisión está resumida en el [ADR 0008](docs/adr/0008-versionado-inventory.md).
@@ -113,13 +124,14 @@ Los comandos de esquema disponibles son `pnpm --filter @mercadoya/api db:generat
 
 ## Desarrollo
 
-Con Inventory, PostgreSQL y NATS activos en Compose, inicia web, API, Orders y el bridge de Notifications en paralelo desde la raíz:
+Con Inventory, PostgreSQL y NATS activos en Compose, inicia web, MF catálogo admin, API, Orders y el bridge de Notifications en paralelo desde la raíz:
 
 ```sh
 pnpm dev
 ```
 
 - Web: <http://localhost:5173>
+- MF catálogo admin: <http://localhost:5174>
 - API: <http://localhost:3001>
 - Orders: <http://localhost:3002>
 - Inventory v1: <http://localhost:3001/api/inventory/v1/health>
@@ -128,11 +140,11 @@ pnpm dev
 
 El API proxifica `/api/orders` a Orders, `/api/inventory/v1` y `/api/inventory/v2` a sus despliegues y `/api/notifications` al bridge. `POST /api/events/ingest` recibe las notificaciones del handler con `x-ingest-token` y mantiene la timeline de la web. La configuración de los contenedores está en [el README de Inventory](apps/inventory-service/README.md), la de pedidos en [el README de Orders](apps/orders-service/README.md) y la de Lambda en [el README de Notifications](apps/notifications-lambda/README.md).
 
-También puedes iniciar una aplicación individualmente con `pnpm --filter @mercadoya/web dev`, `pnpm --filter @mercadoya/api dev` o `pnpm --filter @mercadoya/orders-service dev`.
+También puedes iniciar una aplicación individualmente con `pnpm --filter @mercadoya/web dev`, `pnpm --filter @mercadoya/mf-catalog dev`, `pnpm --filter @mercadoya/api dev` o `pnpm --filter @mercadoya/orders-service dev`.
 
 ## Autenticación local
 
-La API ofrece registro e inicio de sesión por email y contraseña en `/api/auth/*`, y `GET /api/me` devuelve la sesión actual o `401` si no hay una. El frontend debe enviar solicitudes con `credentials: 'include'` para conservar la cookie. CORS permite `http://localhost:5173` con credenciales.
+La API ofrece registro e inicio de sesión por email y contraseña en `/api/auth/*`, y `GET /api/me` devuelve la sesión actual o `401` si no hay una. El frontend debe enviar solicitudes con `credentials: 'include'` para conservar la cookie. CORS permite `http://localhost:5173` y `http://localhost:5174` con credenciales.
 
 Después de iniciar PostgreSQL y aplicar el esquema, crea el administrador demo una vez:
 

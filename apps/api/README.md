@@ -6,7 +6,7 @@ Desde la raíz del monorepo, ejecuta `pnpm --filter @mercadoya/api dev`. La API 
 
 ## API Gateway de la demo
 
-`createApiLayer` es el gateway/BFF de la sesión 5. El navegador envía todas las solicitudes de API a `http://localhost:3001`. Identity, Catalog y Media viven en este proceso; `/api/orders`, `/api/inventory` y `/api/notifications` se proxifican a sus servicios. El proxy reenvía cookies y cabeceras para que Orders e Inventory consulten la misma sesión Better Auth mediante `GET /api/me`. La web usa `credentials: 'include'` y el API permite CORS con credenciales desde `http://localhost:5173`.
+`createApiLayer` es el gateway/BFF de la sesión 5. El navegador envía todas las solicitudes de API a `http://localhost:3001`. Identity, Catalog y Media viven en este proceso; `/api/orders`, `/api/inventory` y `/api/notifications` se proxifican a sus servicios. El proxy reenvía cookies y cabeceras para que Orders e Inventory consulten la misma sesión Better Auth mediante `GET /api/me`. La web y el MF catálogo admin usan `credentials: 'include'`; el API permite CORS con credenciales desde `http://localhost:5173` y `http://localhost:5174`.
 
 ## Base de datos local
 
