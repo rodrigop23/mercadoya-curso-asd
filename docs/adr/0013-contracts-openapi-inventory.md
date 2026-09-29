@@ -10,11 +10,11 @@ Orders e Inventory intercambian eventos NATS. Inventory también expone lectura 
 
 ## Decisión
 
-`@mercadoya/contracts` contiene los subjects, esquemas Zod de eventos con `version: 1`, puertos TypeScript de Inventory y Catalog, y DTO de lectura HTTP v1/v2. Orders publica el evento v1 e Inventory valida el payload antes de reservar. `apps/inventory-service/openapi.yaml` documenta health y lectura de reservas, incluidos los alias sin versión marcados como obsoletos. La solicitud de reserva entra por NATS, no por HTTP.
+`@mercadoya/contracts` contiene los subjects, esquemas Zod de eventos con `version: 1`, puertos TypeScript de Inventory y Catalog, y DTO de lectura HTTP v1/v2. Los subjects son `orders.placed`, `inventory.reserved`, `inventory.rejected`, `inventory.released`, `payment.succeeded` y `payment.failed`. Orders, Inventory y Notifications validan sus eventos con estos esquemas. `orders.placed` e `inventory.reserved` admiten `paymentMode` opcional para el CLI interno; el POST público no acepta ese override. Los eventos de fallo incluyen `reason`. El simulador de Orders produce el desenlace del pago y solo Inventory v1 procesa la reserva y la compensación. `apps/inventory-service/openapi.yaml` documenta health y lectura de reservas, incluidos los alias sin versión marcados como obsoletos. La solicitud de reserva entra por NATS, no por HTTP.
 
 ## Consecuencias
 
-Un cambio de esquema de evento exige coordinar productores y consumidores. Versionar el JSON HTTP no cambia los subjects NATS. El paquete no comparte tablas Drizzle. OpenAPI Catalog queda fuera de este laboratorio.
+Un cambio de esquema de evento exige coordinar productores y consumidores. Versionar el JSON HTTP no cambia los subjects NATS. El paquete no comparte tablas Drizzle. La saga y sus transiciones constan en [ADR 0015](0015-saga-coreografia-compensacion.md). OpenAPI Catalog queda fuera de este laboratorio.
 
 ## Referencias
 

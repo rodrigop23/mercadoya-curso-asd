@@ -26,9 +26,9 @@ Material para el walkthrough:
 
 - Demos: [V0 naive](docs/demo-v0.md) en la rama [`v0-naive`](https://github.com/rodrigop23/mercadoya-curso-asd/tree/v0-naive), [V1 modular](docs/demo-v1.md) en la rama [`v1-modular`](https://github.com/rodrigop23/mercadoya-curso-asd/tree/v1-modular) y [V2 integración](docs/demo-v2.md) en la rama [`v2-integration`](https://github.com/rodrigop23/mercadoya-curso-asd/tree/v2-integration).
 - ADRs V0–V2: [0001 — monolito primero](docs/adr/0001-usar-monolito-primero.md), [0002 — stack React, Hono y Postgres](docs/adr/0002-elegir-stack-react-hono-postgres.md), [0003 — Identity y Catalog por contrato](docs/adr/0003-modular-identity-catalog-por-contrato.md), [0004 — pipeline local de imágenes](docs/adr/0004-media-pipeline-pipes-filters.md), [0005 — módulos service-based](docs/adr/0005-service-based-api-layer-schemas.md), [0006 — pedidos por eventos con NATS](docs/adr/0006-nats-order-placed-event-driven.md) y [0007 — demo cloud S3 aislada](docs/adr/0007-cloud-pipeline-demo-s3-aislado.md).
-- ADRs S5: [0008 — versión HTTP y despliegue de Inventory](docs/adr/0008-versionado-inventory.md), [0009 — Orders como proceso](docs/adr/0009-orders-proceso-tradicional.md), [0010 — Inventory en contenedores](docs/adr/0010-inventory-contenedor.md), [0011 — Notifications Lambda y bridge](docs/adr/0011-notifications-lambda-bridge.md), [0012 — API gateway y auth](docs/adr/0012-api-gateway-auth.md), [0013 — contratos y OpenAPI Inventory](docs/adr/0013-contracts-openapi-inventory.md) y [0014 — MF admin en iframe](docs/adr/0014-mf-catalog-iframe.md).
-- C4 S5 en Mermaid: [contexto](docs/diagrams/c4-1-context.md), [contenedores](docs/diagrams/c4-2-containers-v3.md) y [componentes del API](docs/diagrams/c4-3-components-v3.md).
-- Secuencias S5: [compra con NATS, Inventory y Notifications](docs/diagrams/seq-order-placed-fanout-v3.md) y [admin en MF catálogo](docs/diagrams/seq-admin-mf-catalog.md). Las [vistas V2](docs/diagrams/c4-2-containers.md) y [Archify](docs/diagrams/archify/README.md) se conservan como material histórico.
+- ADRs S5: [0008 — versión HTTP y despliegue de Inventory](docs/adr/0008-versionado-inventory.md), [0009 — Orders como proceso](docs/adr/0009-orders-proceso-tradicional.md), [0010 — Inventory en contenedores](docs/adr/0010-inventory-contenedor.md), [0011 — Notifications Lambda y bridge](docs/adr/0011-notifications-lambda-bridge.md), [0012 — API gateway y auth](docs/adr/0012-api-gateway-auth.md), [0013 — contratos y OpenAPI Inventory](docs/adr/0013-contracts-openapi-inventory.md), [0014 — MF admin en iframe](docs/adr/0014-mf-catalog-iframe.md) y [0015 — saga por coreografía y compensación](docs/adr/0015-saga-coreografia-compensacion.md).
+- C4 S5 en Mermaid: [contexto](docs/diagrams/c4-1-context.md), [contenedores](docs/diagrams/c4-2-containers-v3.md) y [componentes del API, Orders y Notifications](docs/diagrams/c4-3-components-v3.md).
+- Secuencias S5: [saga de compra, compensación y email](docs/diagrams/seq-order-placed-fanout-v3.md) y [admin en MF catálogo](docs/diagrams/seq-admin-mf-catalog.md). Las [vistas V2](docs/diagrams/c4-2-containers.md) y [Archify](docs/diagrams/archify/README.md) se conservan como material histórico.
 
 ## Requisitos
 
@@ -55,7 +55,7 @@ Host web :5173 ── /admin/products ──► MF catálogo admin :5174
       └──────── catálogo buyer /catalog     └──► API Catalog :3001
 ```
 
-El API en `http://localhost:3001` es el gateway/BFF de la sesión 5 y el único origen de API que usa el navegador. Identity, Catalog y Media viven en ese proceso. El gateway proxifica `/api/orders` a Orders (`:3002`), `/api/inventory/v1` a Inventory v1 (`:3003`), `/api/inventory/v2` a Inventory v2 (`:3005`) y `/api/notifications` al bridge (`:3004`). Las rutas de Inventory sin versión siguen como alias v1. La web en `:5173` y el MF en `:5174` llaman directamente a `:3001` con `credentials: 'include'`; el API permite ambos orígenes mediante CORS con credenciales. No hay otro proceso gateway.
+El API en `http://localhost:3001` es el gateway/BFF de la sesión 5 y el único origen de API que usa el navegador. Identity, Catalog y Media viven en ese proceso. El gateway proxifica `/api/orders` a Orders (`:3002`), `/api/inventory/v1` a Inventory v1 (`:3003`), `/api/inventory/v2` a Inventory v2 (`:3005`) y `/api/notifications` al bridge (`:3004`). Las rutas de Inventory sin versión siguen como alias v1. La web en `:5173` y el MF en `:5174` llaman directamente a `:3001` con `credentials: 'include'`; el API permite ambos orígenes mediante CORS con credenciales. Kong queda fuera del laboratorio y de Compose.
 
 Para levantar la demo desde una copia nueva, configura `.env` a partir de `.env.example`, asigna claves aleatorias a `BETTER_AUTH_SECRET`, `CATALOG_INTERNAL_TOKEN`, `NOTIFICATIONS_INGEST_TOKEN` y `NOTIFICATIONS_INVOKE_TOKEN`, y ejecuta:
 
@@ -87,10 +87,10 @@ pnpm dev
 
 La autenticación de usuario y los secretos entre servicios cumplen fines distintos. Esta demo no incluye service mesh ni JWT/JWKS entre microservicios. `GET /api/orders/:orderId` queda público para seguir el estado del pedido; la lectura de reservas de Inventory exige sesión, pero no verifica la propiedad del pedido.
 
-| Versión  | Cambio observable                                                                                                                                                                             |
-| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| API HTTP | `/api/inventory/v1/reservations/:orderId` conserva el JSON anterior; `/v2/` exige además `reservation.status: "reserved"`.                                                                    |
-| Servicio | Compose ejecuta `inventory-v1` e `inventory-v2` con `SERVICE_VERSION` distinto. Cada respuesta lleva `X-Service-Version`. Solo v1 consume `orders.placed`, para procesar cada pedido una vez. |
+| Versión  | Cambio observable                                                                                                                                                                                                                        |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| API HTTP | `/api/inventory/v1/reservations/:orderId` conserva el JSON anterior; `/v2/` exige además `reservation.status: "reserved"`.                                                                                                               |
+| Servicio | Compose ejecuta `inventory-v1` e `inventory-v2` con `SERVICE_VERSION` distinto. Cada respuesta lleva `X-Service-Version`. Solo v1 consume `orders.placed` y `payment.failed`, para reservar y compensar sin duplicar consumidores en v2. |
 
 Consulta el [guion de Inventory](apps/inventory-service/README.md) para comparar ambas respuestas con el mismo pedido y la misma cookie. La decisión está resumida en el [ADR 0008](docs/adr/0008-versionado-inventory.md).
 
@@ -106,7 +106,31 @@ curl -i http://localhost:3001/api/inventory/v2/health
 curl -i http://localhost:3001/api/notifications/health
 ```
 
-Las dos primeras solicitudes responden `401` y las rutas de health responden `200`. Para comprobar el camino con sesión, inicia sesión con el cookie jar de [autenticación local](#autenticación-local), crea un producto con stock y envía el pedido con `-b /tmp/mercadoya-cookies.txt`. El `POST` responde `202` con `buyerId`; Inventory v1 consume `orders.placed`, reserva stock mediante el token interno de Catalog y publica el resultado. Consulta las rutas `/api/inventory/v1/reservations/:orderId` y `/api/inventory/v2/reservations/:orderId` con el mismo cookie jar y revisa `GET /api/events` para la entrada `notification.stub` del bridge.
+Las dos primeras solicitudes responden `401` y las rutas de health responden `200`. Para comprobar el camino con sesión, inicia sesión con el cookie jar de [autenticación local](#autenticación-local), crea un producto con stock y envía el pedido con `-b /tmp/mercadoya-cookies.txt`. El `POST` responde `202` con `buyerId`; Inventory v1 consume `orders.placed`, reserva stock mediante el token interno de Catalog y publica el resultado. Consulta las rutas `/api/inventory/v1/reservations/:orderId` y `/api/inventory/v2/reservations/:orderId` con el mismo cookie jar y revisa `GET /api/events` para la entrada `notification.stub` o `notification.email` del handler y su `emailStatus`. La reserva dispara el simulador; el pedido se confirma solo con `payment.succeeded`.
+
+### Saga, compensación y correos
+
+Orders `:3002` aloja el simulador de pago. `inventory.reserved` inicia el pago simulado y `payment.succeeded` confirma el pedido. `inventory.rejected` rechaza sin pago. `payment.failed` rechaza el pedido y dispara la liberación en Inventory v1, que restaura stock y publica `inventory.released`. El rechazo y el correo de pago fallido pueden aparecer antes de completar la liberación. Consulta [ADR 0015](docs/adr/0015-saga-coreografia-compensacion.md) y [la secuencia canónica](docs/diagrams/seq-order-placed-fanout-v3.md).
+
+Con la demo activa y un producto dedicado con al menos dos unidades, ejecuta:
+
+```sh
+pnpm demo:saga
+```
+
+[La guía del CLI](scripts/README.md) explica los tres casos y la prueba de fallos duplicados. El CLI crea pedidos persistentes y consume una unidad en el caso exitoso. `PAYMENT_MODE=succeed` es el valor por defecto; `fail` fuerza fallos tras reiniciar Orders. El override `paymentMode` del CLI tiene prioridad y no forma parte del POST público.
+
+Notifications escucha solo estos desenlaces y renderiza los templates con React Email:
+
+| Subject              | Template                     | Correo                         |
+| -------------------- | ---------------------------- | ------------------------------ |
+| `payment.succeeded`  | `order-confirmed.tsx`        | Pedido confirmado              |
+| `inventory.rejected` | `order-rejected-stock.tsx`   | No pudimos completar tu pedido |
+| `payment.failed`     | `order-rejected-payment.tsx` | El pago no se completó         |
+
+Para enviar correo configura `RESEND_API_KEY`, `RESEND_FROM`, `DEMO_NOTIFY_EMAIL` y `EMAIL_MODE=resend`, y reinicia el bridge local. Si usas Lambda, configura sus variables mediante el despliegue. Todos los pedidos usan `DEMO_NOTIFY_EMAIL`, sin lookup en Identity por `buyerId`. `EMAIL_MODE` vacío elige Resend si hay key y stub si no la hay; `EMAIL_MODE=stub` fuerza simulación. Consulta [la guía de Resend y Notifications](apps/notifications-lambda/README.md) para los requisitos del remitente y los casos de configuración incompleta.
+
+La timeline registra `notification.stub` o `notification.email`, con `emailStatus` igual a `stub`, `sent` o `error`. `sent` significa aceptación por Resend. El envío no revierte la saga si falla; NATS Core no reproduce eventos y la timeline se pierde al reiniciar el API.
 
 ## Base de datos local
 

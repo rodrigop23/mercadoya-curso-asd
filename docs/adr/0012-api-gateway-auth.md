@@ -14,7 +14,7 @@ El proceso Hono en `:3001` conserva Identity, Catalog, Media y las rutas de even
 
 ## Consecuencias
 
-El gateway concentra la dirección pública de API y devuelve `502` cuando un upstream no responde. La cookie representa al usuario; los tokens internos autorizan llamadas entre procesos y no sustituyen la comprobación de rol. La demo no incluye service mesh ni JWT/JWKS entre servicios.
+El gateway concentra la dirección pública de API y devuelve `502` cuando un upstream no responde. La cookie representa al usuario; los tokens internos autorizan llamadas entre procesos y no sustituyen la comprobación de rol. Kong queda fuera del laboratorio y de Compose; el entrypoint es este BFF Hono en `:3001`. La demo no incluye service mesh ni JWT/JWKS entre servicios.
 
 ## Referencias
 
