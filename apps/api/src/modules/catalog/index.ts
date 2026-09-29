@@ -7,6 +7,7 @@ export {
   type CatalogContract,
   type CatalogProduct,
   type CreateProductInput,
+  type UpdateProductInput,
   type StockAdjustmentResult,
 } from './contract.js';
 

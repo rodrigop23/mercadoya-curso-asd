@@ -3,7 +3,7 @@ import { and, desc, eq, gte, lte, sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import type { MediaContract } from '../media/contract.js';
 import { product } from './schema.js';
-import type { CatalogContract, CreateProductInput } from './contract.js';
+import type { CatalogContract, CreateProductInput, UpdateProductInput } from './contract.js';
 
 export function createCatalogContract(media: MediaContract): CatalogContract {
   return {
@@ -31,6 +31,56 @@ export function createCatalogContract(media: MediaContract): CatalogContract {
         await media.deleteProductImage(image).catch(() => undefined);
         throw error;
       }
+    },
+
+    async updateProduct(id: string, input: UpdateProductInput) {
+      const [current] = await db.select().from(product).where(eq(product.id, id)).limit(1);
+      if (!current) return null;
+
+      const image = input.image ? await media.processProductImage(input.image) : null;
+      try {
+        const [updated] = await db
+          .update(product)
+          .set({
+            title: input.title,
+            description: input.description,
+            price: input.price,
+            stock: input.stock,
+            ...(image ? { imagePath: image.imagePath } : {}),
+            updatedAt: new Date(),
+          })
+          .where(eq(product.id, id))
+          .returning();
+
+        if (!updated) {
+          if (image) await media.deleteProductImage(image).catch(() => undefined);
+          return null;
+        }
+        if (image) {
+          await media
+            .deleteProductImage({
+              imagePath: current.imagePath,
+              thumbPath: current.imagePath.replace(/-full\.([^.]+)$/, '-thumb.$1'),
+            })
+            .catch(() => undefined);
+        }
+        return updated;
+      } catch (error) {
+        if (image) await media.deleteProductImage(image).catch(() => undefined);
+        throw error;
+      }
+    },
+
+    async deleteProduct(id: string) {
+      const [deleted] = await db.delete(product).where(eq(product.id, id)).returning();
+      if (!deleted) return false;
+      await media
+        .deleteProductImage({
+          imagePath: deleted.imagePath,
+          thumbPath: deleted.imagePath.replace(/-full\.([^.]+)$/, '-thumb.$1'),
+        })
+        .catch(() => undefined);
+      return true;
     },
 
     async getAvailableStock(productId) {

@@ -91,5 +91,81 @@ export function createCatalogRoutes(identity: IdentityContract, catalogContract:
     }
   });
 
+  routes.put('/api/products/:id', async (c) => {
+    const authorization = await identity.requireAdmin(c.req.raw.headers);
+    if (!authorization.allowed) {
+      return c.json(
+        { error: authorization.status === 401 ? 'Unauthorized' : 'Forbidden' },
+        authorization.status,
+      );
+    }
+
+    const id = z.uuid().safeParse(c.req.param('id'));
+    if (!id.success) return c.json({ error: 'Identificador de producto inválido.' }, 400);
+
+    let formData: FormData;
+    try {
+      formData = await c.req.formData();
+    } catch {
+      return c.json({ error: 'El formulario debe usar multipart/form-data.' }, 400);
+    }
+
+    const parsedProduct = productFormSchema.safeParse({
+      title: formData.get('title'),
+      description: formData.get('description'),
+      price: formData.get('price'),
+      stock: formData.get('stock'),
+    });
+    if (!parsedProduct.success) {
+      return c.json(
+        {
+          error: 'Revisa los datos del producto.',
+          details: parsedProduct.error.flatten().fieldErrors,
+        },
+        400,
+      );
+    }
+
+    const image = formData.get('image');
+    if (image !== null && !(image instanceof File)) {
+      return c.json({ error: 'La imagen no es válida.' }, 400);
+    }
+
+    try {
+      const product = await catalogContract.updateProduct(id.data, {
+        ...parsedProduct.data,
+        ...(image ? { image } : {}),
+      });
+      if (!product) return c.json({ error: 'Producto no encontrado.' }, 404);
+      return c.json({ product });
+    } catch (error) {
+      if (error instanceof InvalidMediaError) return c.json({ error: error.message }, 400);
+      console.error('No se pudo actualizar el producto:', error);
+      return c.json({ error: 'No se pudo actualizar el producto.' }, 500);
+    }
+  });
+
+  routes.delete('/api/products/:id', async (c) => {
+    const authorization = await identity.requireAdmin(c.req.raw.headers);
+    if (!authorization.allowed) {
+      return c.json(
+        { error: authorization.status === 401 ? 'Unauthorized' : 'Forbidden' },
+        authorization.status,
+      );
+    }
+
+    const id = z.uuid().safeParse(c.req.param('id'));
+    if (!id.success) return c.json({ error: 'Identificador de producto inválido.' }, 400);
+
+    try {
+      const deleted = await catalogContract.deleteProduct(id.data);
+      if (!deleted) return c.json({ error: 'Producto no encontrado.' }, 404);
+      return c.body(null, 204);
+    } catch (error) {
+      console.error('No se pudo eliminar el producto:', error);
+      return c.json({ error: 'No se pudo eliminar el producto.' }, 500);
+    }
+  });
+
   return routes;
 }

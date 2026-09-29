@@ -47,3 +47,34 @@ export async function createProduct(formData: FormData): Promise<Product> {
   const data = (await response.json()) as { product: Product };
   return data.product;
 }
+
+export async function updateProduct({
+  id,
+  formData,
+}: {
+  id: string;
+  formData: FormData;
+}): Promise<Product> {
+  const response = await fetch(`${API_BASE_URL}/api/products/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: formData,
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    const data = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(data?.error ?? 'No se pudo actualizar el producto. Inténtalo de nuevo.');
+  }
+  const data = (await response.json()) as { product: Product };
+  return data.product;
+}
+
+export async function deleteProduct(id: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/products/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    const data = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(data?.error ?? 'No se pudo eliminar el producto. Inténtalo de nuevo.');
+  }
+}

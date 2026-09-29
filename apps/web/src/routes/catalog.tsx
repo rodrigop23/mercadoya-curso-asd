@@ -91,7 +91,7 @@ function ProductCard({ product }: { product: Product }) {
             {priceFormatter.format(product.price)}
           </p>
         </div>
-        <p className="line-clamp-3 flex-1 text-sm leading-6 text-muted-foreground">
+        <p className="line-clamp-2 flex-1 [overflow-wrap:anywhere] text-sm leading-6 text-muted-foreground">
           {product.description}
         </p>
         <p className="text-xs font-medium text-muted-foreground">

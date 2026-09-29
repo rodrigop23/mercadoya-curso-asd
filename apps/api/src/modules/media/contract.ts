@@ -14,5 +14,5 @@ export class InvalidMediaError extends Error {
 
 export interface MediaContract {
   processProductImage(file: File): Promise<ProductImage>;
-  deleteProductImage(image: ProductImage): Promise<void>;
+  deleteProductImage(image: Pick<ProductImage, 'imagePath' | 'thumbPath'>): Promise<void>;
 }
