@@ -40,15 +40,57 @@ El campo `engines` documenta el mínimo de Node, `.node-version` fija la versió
 pnpm install
 ```
 
+## Demo V3: API Gateway y servicios
+
+El API en `http://localhost:3001` es el gateway/BFF de la sesión 5 y el único origen de API que usa el navegador. Identity, Catalog y Media viven en ese proceso. El gateway proxifica `/api/orders` a Orders (`:3002`), `/api/inventory` a Inventory (`:3003`) y `/api/notifications` al bridge (`:3004`). La web en `:5173` llama directamente a `:3001` con `credentials: 'include'`; el API permite ese origen mediante CORS con credenciales. No hay otro proceso gateway.
+
+Para levantar la demo desde una copia nueva, configura `.env` a partir de `.env.example`, asigna claves aleatorias a `BETTER_AUTH_SECRET`, `CATALOG_INTERNAL_TOKEN`, `NOTIFICATIONS_INGEST_TOKEN` y `NOTIFICATIONS_INVOKE_TOKEN`, y ejecuta:
+
+```sh
+pnpm install
+pnpm demo:infra
+pnpm dev
+```
+
+`demo:infra` inicia Postgres y NATS, aplica el esquema con `db:push` y construye e inicia Inventory en Compose. `pnpm dev` inicia web, API, Orders y el bridge de Notifications como procesos Node. El API debe estar listo antes de crear pedidos. Inventory puede arrancar antes del API porque consulta Catalog e Identity al recibir solicitudes o eventos.
+
+| Componente | Puerto | Comprobación |
+| --- | --- | --- |
+| Web | 5173 | `http://localhost:5173` |
+| API Gateway | 3001 | `http://localhost:3001/api/identity/health` |
+| Orders | 3002 | `http://localhost:3001/api/orders/health` |
+| Inventory | 3003 | `http://localhost:3001/api/inventory/health` |
+| Notifications bridge | 3004 | `http://localhost:3001/api/notifications/health` |
+| Postgres | 5432 | `docker compose ps postgres` |
+| NATS | 4222 | `http://localhost:8222` para monitoreo |
+
+| Tipo | Mecanismo | Quién lo usa |
+| --- | --- | --- |
+| Usuario | Cookie de sesión Better Auth; Orders e Inventory la validan con `GET /api/me` | Browser vía gateway, Orders, ruta de reservas de Inventory y Catalog admin |
+| Servicio a Catalog | `x-catalog-internal-token` y `CATALOG_INTERNAL_TOKEN` | Inventory hacia rutas internas del API |
+| Lambda y bridge a API | `x-invoke-token` y `x-ingest-token`, con secretos distintos | Notifications |
+
+La autenticación de usuario y los secretos entre servicios cumplen fines distintos. Esta demo no incluye service mesh ni JWT/JWKS entre microservicios. `GET /api/orders/:orderId` queda público para seguir el estado del pedido; la lectura de reservas de Inventory exige sesión, pero no verifica la propiedad del pedido.
+
+Comprobación rápida sin sesión. Sustituye el UUID de ejemplo por uno real si quieres consultar una reserva existente:
+
+```sh
+curl -i -X POST http://localhost:3001/api/orders -H 'Content-Type: application/json' -d '{"productId":"00000000-0000-4000-8000-000000000000","quantity":1}'
+curl -i http://localhost:3001/api/inventory/reservations/00000000-0000-4000-8000-000000000000
+curl -i http://localhost:3001/api/orders/health
+curl -i http://localhost:3001/api/inventory/health
+curl -i http://localhost:3001/api/notifications/health
+```
+
+Las dos primeras solicitudes responden `401` y las tres rutas de health responden `200`. Para comprobar el camino con sesión, inicia sesión con el cookie jar de [autenticación local](#autenticación-local), crea un producto con stock y envía el pedido con `-b /tmp/mercadoya-cookies.txt`. El `POST` responde `202` con `buyerId`; Inventory consume `orders.placed`, reserva stock mediante el token interno de Catalog y publica el resultado. Consulta `GET /api/inventory/reservations/:orderId` con el mismo cookie jar y revisa `GET /api/events` para la entrada `notification.stub` del bridge.
+
 ## Base de datos local
 
 La API usa Drizzle ORM con el driver `node-postgres` (`pg`). Copia la configuración de ejemplo, asigna valores aleatorios a `CATALOG_INTERNAL_TOKEN`, `NOTIFICATIONS_INGEST_TOKEN` y `NOTIFICATIONS_INVOKE_TOKEN`, inicia PostgreSQL y NATS, y aplica el esquema antes de iniciar Inventory:
 
 ```sh
 cp .env.example .env
-docker compose up -d postgres nats
-pnpm --filter @mercadoya/api db:push
-docker compose up -d --build inventory
+pnpm demo:infra
 ```
 
 `BETTER_AUTH_SECRET` debe ser una clave aleatoria de al menos 32 caracteres. Puedes generarla con `openssl rand -base64 48` y guardarla en `.env`; `BETTER_AUTH_URL` apunta a `http://localhost:3001`. Configura `EVENT_BUS=nats` y `NATS_URL=nats://localhost:4222` para Orders y el bridge de Notifications. Ambos fallan al arrancar si no pueden conectar a NATS. La API ya no consume esos eventos.
@@ -68,7 +110,7 @@ pnpm dev
 - Web: <http://localhost:5173>
 - API: <http://localhost:3001>
 - Orders: <http://localhost:3002>
-- Inventory: <http://localhost:3003/api/inventory/health>
+- Inventory: <http://localhost:3001/api/inventory/health>
 - Notifications bridge: <http://localhost:3001/api/notifications/health>
 
 El API proxifica `/api/orders` a Orders, `/api/inventory` a Inventory y `/api/notifications` al bridge. `POST /api/events/ingest` recibe las notificaciones del handler con `x-ingest-token` y mantiene la timeline de la web. La configuración del contenedor está en [el README de Inventory](apps/inventory-service/README.md), la de pedidos en [el README de Orders](apps/orders-service/README.md) y la de Lambda en [el README de Notifications](apps/notifications-lambda/README.md).

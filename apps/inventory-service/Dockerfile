@@ -12,7 +12,7 @@ RUN pnpm --filter @mercadoya/inventory-service deploy --legacy --prod /runtime
 
 FROM node:24-bookworm-slim
 WORKDIR /app
-ENV NODE_ENV=production PORT=3003
+ENV NODE_ENV=production PORT=3003 IDENTITY_URL=http://host.docker.internal:3001
 COPY --from=build /runtime ./
 USER node
 EXPOSE 3003

@@ -29,12 +29,14 @@ export function createApiLayer() {
       headers.delete('host');
       headers.delete('content-length');
       try {
+        const body = ['GET', 'HEAD'].includes(c.req.raw.method)
+          ? undefined
+          : await c.req.raw.arrayBuffer();
         const response = await fetch(upstream, {
           method: c.req.raw.method,
           headers,
-          body: c.req.raw.body,
-          duplex: 'half',
-        } as RequestInit);
+          body,
+        });
         return response;
       } catch (error) {
         console.error(`No se pudo contactar ${serviceName}:`, error);

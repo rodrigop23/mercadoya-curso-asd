@@ -33,6 +33,15 @@ export function createOrdersRoutes(
   });
 
   routes.post('/', async (c) => {
+    let session: Awaited<ReturnType<IdentityContract['getSession']>>;
+    try {
+      session = await identity.getSession(c.req.raw.headers);
+    } catch (error) {
+      console.error('No se pudo validar la sesión del pedido:', error);
+      return c.json({ error: 'No se pudo validar la sesión.' }, 502);
+    }
+    if (!session) return c.json({ error: 'Inicia sesión para crear un pedido.' }, 401);
+
     let body: unknown;
     try {
       body = await c.req.json();
@@ -52,10 +61,9 @@ export function createOrdersRoutes(
     }
 
     try {
-      const session = await identity.getSession(c.req.raw.headers);
       const result = await orders.createOrder({
         ...parsed.data,
-        buyerId: session?.user.id ?? null,
+        buyerId: session.user.id,
       });
 
       return c.json({ order: result.order }, 202);

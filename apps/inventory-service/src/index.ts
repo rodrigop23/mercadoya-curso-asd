@@ -5,13 +5,14 @@ import { fileURLToPath } from 'node:url';
 import { createCatalogHttpClient } from './catalog/http.js';
 import { closeDb } from './db/index.js';
 import { createEventBus } from './events/event-bus.js';
+import { createIdentityContract } from './identity/contract.js';
 import { createInventoryModule } from './inventory/index.js';
 
 config({ path: fileURLToPath(new URL('../../../.env', import.meta.url)) });
 
 const catalog = createCatalogHttpClient();
 const eventBus = await createEventBus();
-const inventory = createInventoryModule(catalog, eventBus);
+const inventory = createInventoryModule(catalog, eventBus, createIdentityContract());
 await eventBus.subscribe('orders.placed', 'inventory.reserve', inventory.onOrderPlaced);
 
 const app = new Hono();

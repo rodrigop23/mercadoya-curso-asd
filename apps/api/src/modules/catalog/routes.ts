@@ -1,6 +1,7 @@
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
 import { fileURLToPath } from 'node:url';
+import { timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 
 import type { IdentityContract } from '../identity/contract.js';
@@ -31,7 +32,9 @@ export function createCatalogRoutes(identity: IdentityContract, catalogContract:
   routes.use('/api/internal/catalog/*', async (c, next) => {
     const token = process.env.CATALOG_INTERNAL_TOKEN;
     if (!token) return c.json({ error: 'Catalog internal token is not configured.' }, 503);
-    if (c.req.header('x-catalog-internal-token') !== token) {
+    const supplied = Buffer.from(c.req.header('x-catalog-internal-token') ?? '');
+    const expected = Buffer.from(token);
+    if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
     await next();
