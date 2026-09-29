@@ -21,8 +21,9 @@ La rama [`v2-integration`](https://github.com/rodrigop23/mercadoya-curso-asd/tre
 Material para el walkthrough:
 
 - Demos: [V0 naive](docs/demo-v0.md) en la rama [`v0-naive`](https://github.com/rodrigop23/mercadoya-curso-asd/tree/v0-naive), [V1 modular](docs/demo-v1.md) en la rama [`v1-modular`](https://github.com/rodrigop23/mercadoya-curso-asd/tree/v1-modular) y [V2 integración](docs/demo-v2.md) en la rama [`v2-integration`](https://github.com/rodrigop23/mercadoya-curso-asd/tree/v2-integration).
-- ADRs: [0001 — monolito primero](docs/adr/0001-usar-monolito-primero.md), [0002 — stack React, Hono y Postgres](docs/adr/0002-elegir-stack-react-hono-postgres.md), [0003 — Identity y Catalog por contrato](docs/adr/0003-modular-identity-catalog-por-contrato.md) y [0006 — NATS y pedidos por eventos](docs/adr/0006-nats-order-placed-event-driven.md).
-- Diagramas C4 en Mermaid: [nivel 1 — contexto](docs/diagrams/c4-1-context.md), [nivel 2 — contenedores](docs/diagrams/c4-2-containers.md) y [nivel 3 — componentes V1](docs/diagrams/c4-3-components.md).
+- ADRs: [0001 — monolito primero](docs/adr/0001-usar-monolito-primero.md), [0002 — stack React, Hono y Postgres](docs/adr/0002-elegir-stack-react-hono-postgres.md), [0003 — Identity y Catalog por contrato](docs/adr/0003-modular-identity-catalog-por-contrato.md), [0004 — pipeline local de imágenes](docs/adr/0004-media-pipeline-pipes-filters.md), [0005 — módulos service-based](docs/adr/0005-service-based-api-layer-schemas.md), [0006 — pedidos por eventos con NATS](docs/adr/0006-nats-order-placed-event-driven.md) y [0007 — demo cloud S3 aislada](docs/adr/0007-cloud-pipeline-demo-s3-aislado.md).
+- C4 en Mermaid para S4 / V2: [nivel 1, contexto](docs/diagrams/c4-1-context.md), [nivel 2, contenedores](docs/diagrams/c4-2-containers.md) y [nivel 3, componentes](docs/diagrams/c4-3-components.md).
+- Secuencias Mermaid: [pipeline local de imágenes](docs/diagrams/seq-media-pipeline.md) y [fan-out de `orders.placed`](docs/diagrams/seq-order-placed-fanout.md).
 
 ## Requisitos
 
@@ -127,6 +128,7 @@ pnpm format     # Aplica oxfmt en los paquetes y la configuración de raíz
 apps/
   api/             Hono + TypeScript + Drizzle ORM
   web/             React + Vite + TanStack Router + TypeScript
+  cloud-pipeline-demo/ CDK + Lambda, demo aislada de S3
 packages/
   tsconfig/        Configuración compartida de TypeScript
 ```

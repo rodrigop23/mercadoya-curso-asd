@@ -1,47 +1,38 @@
-# 5. Evolucionar a service-based pragmático: más módulos, API layer y schemas lógicos
+# 5. Módulos service-based dentro del monolito
 
-## Status
+## Estado
 
-Accepted
+Aceptada
 
-## Context
+## Contexto
 
-ADR 0001 mantiene **un** deploy y **una** DB. ADR 0003 delimitó Identity y Catalog por contrato. La teoría de sesión 4 describe **arquitectura basada en servicios**: servicios de dominio “gruesos” (orden de magnitud 4–12), UI separada, acceso remoto vía API, a menudo **base compartida**, sin el costo operativo de microservicios.
+ADR 0001 mantiene un proceso de backend y una base de datos. ADR 0003 delimitó Identity y Catalog mediante contratos. La sesión 4 amplía el recorrido con publicación de imágenes, pedidos, reserva de stock y notificaciones.
 
-El journey de la práctica S4 necesita: publicar con foto, tomar un pedido, reservar stock y notificar. Eso no cabe limpio en solo Identity + Catalog sin mezclar responsabilidades (stock ≠ ficha de producto; “email” ≠ Orders).
+Identity y Catalog no deben absorber todas esas responsabilidades. La API también necesita un punto único para montar las rutas, mientras cada módulo conserva sus contratos y sus tablas.
 
-También necesitamos un **API layer** explícito (gateway) como en la topología del material teórico, y evitar la “librería única de entidades” que hace que un cambio de tabla golpee a todos.
+## Decisión
 
-**Prerrequisito de producto (no es este ADR):** la UI de `apps/web` se pulirá con skills de IA (p. ej. Impeccable) **antes** de construir estas piezas; lo nuevo de S4 se apoya en esa base visual.
+MercadoYa sigue como un monolito modular. Un solo proceso Node/Hono compone seis módulos de dominio:
 
-## Decision
+- `identity`, para autenticación y roles.
+- `catalog`, para productos y stock expuesto por contrato.
+- `media`, para procesar imágenes.
+- `orders`, para crear pedidos y mantener su estado.
+- `inventory`, para reservar stock.
+- `notifications`, para registrar notificaciones mediante un stub.
 
-Evolucionamos el monolito modular hacia un shape **service-based pragmático** *dentro del mismo proceso*:
+`apps/api/src/api-layer.ts` compone los módulos y monta sus rutas en una sola aplicación Hono. Identity y Catalog conservan las rutas de V1. Orders, Media, Inventory y Notifications exponen sus rutas bajo `/api/orders`, `/api/media`, `/api/inventory` y `/api/notifications`. La creación de producto llega a `/api/products`; Catalog llama a Media mediante `MediaContract` para procesar la imagen.
 
-**Módulos de dominio (gruesos):**
-- `identity` — auth / roles (ya existe)
-- `catalog` — productos / publicación (ya existe)
-- `media` — pipeline de imagen (ADR 0004)
-- `orders` — creación y estado de pedidos
-- `inventory` — stock / reserva (separado de Catalog a propósito)
-- `notifications` — stub de notificación (log / “email” demo)
+Los módulos colaboran mediante contratos o eventos. Catalog usa `IdentityContract` para autorizar al admin. Inventory llama a `CatalogContract` para consultar y ajustar el stock; no importa tablas de Catalog. Orders y Notifications participan en el flujo de pedidos mediante eventos, no mediante imports entre sus servicios.
 
-**API layer:** un único Hono (o facade) monta rutas por módulo (`/identity`, `/catalog`, `/media`, `/orders`, …). La web habla solo con ese layer.
+La aplicación usa una sola base PostgreSQL y un solo cliente Drizzle. Cada módulo mantiene su archivo `schema.ts`; `apps/api/src/db/schema.ts` reúne esos esquemas para el cliente compartido. Las tablas nuevas usan nombres con prefijo de módulo, como `orders_order` e `inventory_reservations`. Identity y Catalog conservan nombres existentes como `user`, `session` y `product`. Esto es propiedad lógica de tablas, no separación en bases ni esquemas PostgreSQL.
 
-**Datos:** una Postgres (ADR 0002). Partición **lógica** por schema o prefijo (`identity_`, `catalog_`, `orders_`, `inventory_`, …). Prohibido que un módulo lea/escriba tablas de otro; la integración entre dominios es por **contrato síncrono** (poco) o **eventos** (ADR 0006).
+## Consecuencias
 
-**No** adoptamos: un deploy por módulo, Linked Server, BD por servicio obligatoria, ni microservicios “de verdad”.
+Los módulos tienen límites internos claros sin sumar procesos, despliegues o bases de datos. La base compartida sigue requiriendo revisión para impedir consultas directas a tablas de otro módulo. Inventory accede al stock mediante el contrato de Catalog.
 
-### Implementación inicial
+Service-based describe la organización de capacidades detrás de una API. No convierte a MercadoYa en un sistema de microservicios.
 
-La partición lógica usa prefijos para las tablas nuevas: `media_`, `orders_`, `inventory_` y `notifications_`. Identity y Catalog conservan sus nombres de tabla V1 (`user`, `session`, `product`, entre otros) para no romper Better Auth ni los datos existentes. Cada módulo mantiene su `schema.ts`, y `apps/api/src/db/schema.ts` compone los esquemas para el cliente Drizzle.
+## Seguimiento
 
-El API layer conserva las rutas V1 `/api/auth/*`, `/api/me` y `/api/products`. Monta los módulos nuevos bajo `/api/media`, `/api/orders`, `/api/inventory` y `/api/notifications`. Identity y Catalog exponen además `/api/identity/health` y `/api/catalog/health`.
-
-## Consequences
-
-**Más fácil:** mapa mental alineado con Percy (service-based ≠ microservicios); demos de topología reales; Inventory y Notifications se pueden reaccionar por eventos sin inflar Catalog; camino de extracción futura por módulo.
-
-**Más difícil / trade-offs:** más carpetas y disciplina de imports; el API layer es un hop más de diseño (aunque sea el mismo proceso); la BD compartida sigue permitiendo atajos si no hay lint/revisión.
-
-**Seguimiento:** integración asíncrona entre Orders e Inventory/Notifications (ADR 0006).
+La comunicación asíncrona de Orders con Inventory y Notifications está definida en ADR 0006.

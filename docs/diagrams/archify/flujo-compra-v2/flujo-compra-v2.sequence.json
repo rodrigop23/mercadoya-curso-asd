@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Del pedido al resultado: éxito o rechazo",
+    "output": "docs/diagramas/flujo-compra-v2/flujo-compra-v2.html",
+    "viewBox": [1080, 1020],
+    "column_fit": "spread",
+    "quality_profile": "showcase"
+  },
+  "participants": [
+    { "id": "client", "type": "external", "label": "Cliente", "sublabel": "navegador" },
+    { "id": "orders", "type": "backend", "label": "Orders API", "sublabel": "módulo de pedidos" },
+    { "id": "postgres", "type": "database", "label": "PostgreSQL", "sublabel": "órdenes y stock" },
+    { "id": "nats", "type": "messagebus", "label": "NATS", "sublabel": "EventBus / subjects" },
+    { "id": "inventory", "type": "backend", "label": "Inventory", "sublabel": "reserva de stock" },
+    { "id": "catalog", "type": "backend", "label": "Catalog", "sublabel": "ajuste de stock" },
+    { "id": "notifications", "type": "backend", "label": "Notifications", "sublabel": "sender stub" }
+  ],
+  "segments": [
+    { "from": 150, "to": 302, "label": "Crear y aceptar el pedido" },
+    { "from": 318, "to": 394, "label": "Procesamiento asíncrono" },
+    { "from": 410, "to": 662, "label": "ALT A · stock reservado" },
+    { "from": 678, "to": 826, "label": "ALT B · reserva rechazada" },
+    { "from": 842, "to": 950, "label": "Consultar el resultado" }
+  ],
+  "messages": [
+    { "id": "submit-order", "from": "client", "to": "orders", "y": 176, "label": "POST /api/orders · productId + quantity", "variant": "emphasis" },
+    { "id": "save-pending", "from": "orders", "to": "postgres", "y": 212, "label": "Guardar pedido pending y generar orderId", "variant": "default" },
+    { "id": "publish-order", "from": "orders", "to": "nats", "y": 248, "label": "publish orders.placed (v1)", "variant": "emphasis" },
+    { "id": "accept-order", "from": "orders", "to": "client", "y": 284, "label": "202 Accepted · orderId · pending", "variant": "return" },
+    { "id": "deliver-order", "from": "nats", "to": "inventory", "y": 340, "label": "consume orders.placed", "variant": "emphasis" },
+    { "id": "notify-pending", "from": "nats", "to": "notifications", "y": 376, "label": "consume orders.placed · aviso inicial", "variant": "dashed" },
+    { "id": "reserve-stock", "from": "inventory", "to": "catalog", "y": 432, "label": "reserve(productId, quantity)", "variant": "default" },
+    { "id": "adjust-stock", "from": "catalog", "to": "postgres", "y": 468, "label": "Descontar stock con ajuste atómico", "variant": "default" },
+    { "id": "save-reservation", "from": "inventory", "to": "postgres", "y": 504, "label": "Guardar inventory_reservations", "variant": "default" },
+    { "id": "publish-reserved", "from": "inventory", "to": "nats", "y": 540, "label": "publish inventory.reserved (v1)", "variant": "emphasis" },
+    { "id": "deliver-reserved", "from": "nats", "to": "orders", "y": 576, "label": "consume inventory.reserved", "variant": "emphasis" },
+    { "id": "confirm-order", "from": "orders", "to": "postgres", "y": 612, "label": "Guardar confirmed si sigue pending", "variant": "default" },
+    { "id": "notify-confirmed", "from": "nats", "to": "notifications", "y": 648, "label": "consume inventory.reserved · confirmado", "variant": "dashed" },
+    { "id": "publish-rejected", "from": "inventory", "to": "nats", "y": 704, "label": "publish inventory.rejected + reason", "variant": "emphasis", "note": "Reasons: invalid_quantity, product_not_found, insufficient_stock o stock_limit." },
+    { "id": "deliver-rejected", "from": "nats", "to": "orders", "y": 740, "label": "consume inventory.rejected · orders.reject", "variant": "emphasis" },
+    { "id": "reject-order", "from": "orders", "to": "postgres", "y": 776, "label": "Guardar rejected + rejectionReason", "variant": "default" },
+    { "id": "notify-rejected", "from": "nats", "to": "notifications", "y": 812, "label": "consume inventory.rejected · aviso (stub)", "variant": "dashed" },
+    { "id": "poll-order", "from": "client", "to": "orders", "y": 868, "label": "GET /api/orders/:orderId · cada 750 ms si pending", "variant": "default" },
+    { "id": "return-result", "from": "orders", "to": "client", "y": 904, "label": "200 · confirmed | rejected + razón", "variant": "return" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Dos resultados alternativos",
+      "items": [
+        "inventory.reserved confirma el pedido; inventory.rejected guarda rejected y su razón.",
+        "Los módulos pertenecen a la misma API. Sin Outbox, una caída entre guardar pending y publicar puede dejarlo pendiente."
+      ]
+    }
+  ]
+}

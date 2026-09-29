@@ -1,6 +1,6 @@
-# C4 nivel 2 — Containers
+# C4 nivel 2: contenedores de MercadoYa en S4
 
-Vista de ejecución de MercadoYa. En desarrollo, la SPA está en `:5173` y la API en `:3001`.
+Vista de ejecución de MercadoYa. La SPA corre en `:5173`; la API Hono corre en `:3001`.
 
 ```mermaid
 flowchart LR
@@ -9,15 +9,21 @@ flowchart LR
   subgraph mercadoya["Sistema MercadoYa"]
     direction LR
     web["Web SPA<br/>@mercadoya/web<br/>Vite + React · :5173"]
-    api["API monolítica<br/>@mercadoya/api<br/>Hono · :3001"]
-    postgres[("PostgreSQL<br/>Base de datos")]
+    api["API monolítica<br/>@mercadoya/api<br/>Hono · :3001<br/>Un solo proceso"]
+    postgres[("PostgreSQL<br/>Base compartida")]
     uploads[("Disco local<br/>apps/api/uploads/")]
+    nats["NATS<br/>Broker local · Docker Compose"]
   end
 
-  browser -->|"carga la SPA · HTTP :5173"| web
-  web -->|"la SPA llama a la API · HTTP :3001"| api
-  api -->|"SQL mediante Drizzle"| postgres
-  api -->|"guarda y sirve imágenes en /uploads/*"| uploads
+  cloud["Cloud pipeline demo<br/>AWS S3 inbox → Lambda → S3 outbox<br/>Fuera del publish"]
+
+  browser -->|carga la SPA · HTTP :5173| web
+  web -->|solicitudes API · HTTP :3001| api
+  api -->|SQL mediante Drizzle| postgres
+  api -->|guarda y sirve imágenes| uploads
+  api <-->|publica y consume eventos| nats
 ```
 
-Identity y Catalog se ejecutan dentro del mismo proceso de la API. `uploads/` es almacenamiento local del monolito, no un servicio separado.
+Los seis módulos de dominio corren dentro del mismo proceso API. PostgreSQL y NATS se inician localmente con Docker Compose; si NATS no está disponible al inicio, la API puede usar el transporte in-process. `uploads/` guarda los archivos del pipeline local.
+
+`cloud-pipeline-demo` es un apéndice independiente. No hay una relación de red entre la API y AWS en el flujo de publicación o compra.
