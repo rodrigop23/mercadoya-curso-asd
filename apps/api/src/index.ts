@@ -1,9 +1,7 @@
 import { serve } from '@hono/node-server';
 import { createApiLayer } from './api-layer.js';
-import { createEventBusFromEnv } from './events/bootstrap.js';
 
-const eventBus = await createEventBusFromEnv();
-const app = await createApiLayer(eventBus);
+const app = createApiLayer();
 
 const server = serve(
   {
@@ -15,10 +13,7 @@ const server = serve(
   },
 );
 
-const shutdown = async () => {
-  server.close();
-  await eventBus.close();
-};
+const shutdown = () => server.close();
 
-process.once('SIGINT', () => void shutdown());
-process.once('SIGTERM', () => void shutdown());
+process.once('SIGINT', shutdown);
+process.once('SIGTERM', shutdown);

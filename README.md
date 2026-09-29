@@ -16,6 +16,8 @@ La rama [`v2-integration`](https://github.com/rodrigop23/mercadoya-curso-asd/tre
 
 `docker-compose.yml` inicia Postgres y NATS. El apéndice [`apps/cloud-pipeline-demo`](apps/cloud-pipeline-demo/README.md) muestra un pipeline S3→Lambda→S3 aislado; no participa en el publish de MercadoYa ni requiere credenciales AWS para `pnpm dev`.
 
+En `v3-services`, Orders corre como proceso Node, Inventory como contenedor y Notifications usa un handler AWS Lambda. Un bridge NATS invoca ese handler directamente durante la clase local o mediante Function URL en AWS. Consulta [la guía de Notifications](apps/notifications-lambda/README.md).
+
 ## Arquitectura y decisiones
 
 Material para el walkthrough:
@@ -40,7 +42,7 @@ pnpm install
 
 ## Base de datos local
 
-La API usa Drizzle ORM con el driver `node-postgres` (`pg`). Copia la configuración de ejemplo, asigna un valor aleatorio a `CATALOG_INTERNAL_TOKEN`, inicia PostgreSQL y NATS, y aplica el esquema antes de iniciar Inventory:
+La API usa Drizzle ORM con el driver `node-postgres` (`pg`). Copia la configuración de ejemplo, asigna valores aleatorios a `CATALOG_INTERNAL_TOKEN`, `NOTIFICATIONS_INGEST_TOKEN` y `NOTIFICATIONS_INVOKE_TOKEN`, inicia PostgreSQL y NATS, y aplica el esquema antes de iniciar Inventory:
 
 ```sh
 cp .env.example .env
@@ -49,7 +51,7 @@ pnpm --filter @mercadoya/api db:push
 docker compose up -d --build inventory
 ```
 
-`BETTER_AUTH_SECRET` debe ser una clave aleatoria de al menos 32 caracteres. Puedes generarla con `openssl rand -base64 48` y guardarla en `.env`; `BETTER_AUTH_URL` apunta a `http://localhost:3001`. Configura `EVENT_BUS=nats` y `NATS_URL=nats://localhost:4222` para ejecutar el API junto a Orders. Ambos procesos fallan al arrancar si no pueden conectar a NATS.
+`BETTER_AUTH_SECRET` debe ser una clave aleatoria de al menos 32 caracteres. Puedes generarla con `openssl rand -base64 48` y guardarla en `.env`; `BETTER_AUTH_URL` apunta a `http://localhost:3001`. Configura `EVENT_BUS=nats` y `NATS_URL=nats://localhost:4222` para Orders y el bridge de Notifications. Ambos fallan al arrancar si no pueden conectar a NATS. La API ya no consume esos eventos.
 
 `docker-compose.yml` conserva PostgreSQL en el volumen `postgres_data`. NATS expone el cliente en `4222` y el endpoint de monitoreo en `8222`. Inventory corre en un contenedor en `3003`; se conecta al API del host mediante `host.docker.internal:3001`. Para detener los contenedores ejecuta `docker compose down`; `docker compose down -v` también elimina los datos de PostgreSQL.
 
@@ -57,7 +59,7 @@ Los comandos de esquema disponibles son `pnpm --filter @mercadoya/api db:generat
 
 ## Desarrollo
 
-Con Inventory, PostgreSQL y NATS activos en Compose, inicia web, API y Orders en paralelo desde la raíz:
+Con Inventory, PostgreSQL y NATS activos en Compose, inicia web, API, Orders y el bridge de Notifications en paralelo desde la raíz:
 
 ```sh
 pnpm dev
@@ -67,8 +69,9 @@ pnpm dev
 - API: <http://localhost:3001>
 - Orders: <http://localhost:3002>
 - Inventory: <http://localhost:3003/api/inventory/health>
+- Notifications bridge: <http://localhost:3001/api/notifications/health>
 
-El API proxifica `/api/orders` a Orders y `/api/inventory` a Inventory. La configuración del contenedor, el healthcheck y el puente HTTP a Catalog están en [el README de Inventory](apps/inventory-service/README.md). La configuración y el puente de sesión con Identity están en [el README de Orders](apps/orders-service/README.md).
+El API proxifica `/api/orders` a Orders, `/api/inventory` a Inventory y `/api/notifications` al bridge. `POST /api/events/ingest` recibe las notificaciones del handler con `x-ingest-token` y mantiene la timeline de la web. La configuración del contenedor está en [el README de Inventory](apps/inventory-service/README.md), la de pedidos en [el README de Orders](apps/orders-service/README.md) y la de Lambda en [el README de Notifications](apps/notifications-lambda/README.md).
 
 También puedes iniciar una aplicación individualmente con `pnpm --filter @mercadoya/web dev`, `pnpm --filter @mercadoya/api dev` o `pnpm --filter @mercadoya/orders-service dev`.
 
@@ -134,6 +137,7 @@ apps/
   api/             Hono + TypeScript + Drizzle ORM
   orders-service/  Proceso Hono para pedidos y consumo NATS
   inventory-service/ Contenedor Hono para reservas y consumo NATS
+  notifications-lambda/ Handler Lambda, bridge NATS y stack CDK
   web/             React + Vite + TanStack Router + TypeScript
   cloud-pipeline-demo/ CDK + Lambda, demo aislada de S3
 packages/

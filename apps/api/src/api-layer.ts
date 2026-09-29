@@ -4,32 +4,13 @@ import { cors } from 'hono/cors';
 import { createCatalogModule } from './modules/catalog/index.js';
 import { createIdentityModule } from './modules/identity/index.js';
 import { createMediaModule } from './modules/media/index.js';
-import { createNotificationsModule } from './modules/notifications/index.js';
-import type { EventBus } from './events/event-bus.js';
 import { createEventsRoutes } from './events/routes.js';
 
-export async function createApiLayer(eventBus: EventBus) {
+export function createApiLayer() {
   const identity = createIdentityModule();
   const media = createMediaModule();
   const catalog = createCatalogModule(identity.contract, media.contract);
-  const notifications = createNotificationsModule(eventBus.transport);
   const app = new Hono();
-
-  await eventBus.subscribe(
-    'orders.placed',
-    'notifications.order-placed',
-    notifications.onOrderPlaced,
-  );
-  await eventBus.subscribe(
-    'inventory.reserved',
-    'notifications.order-confirmed',
-    notifications.onInventoryReserved,
-  );
-  await eventBus.subscribe(
-    'inventory.rejected',
-    'notifications.order-rejected',
-    notifications.onInventoryRejected,
-  );
 
   app.use('/api/*', cors({ origin: 'http://localhost:5173', credentials: true }));
   app.get('/', (c) => c.text('MercadoYa API está lista.'));
@@ -71,12 +52,17 @@ export async function createApiLayer(eventBus: EventBus) {
     process.env.INVENTORY_SERVICE_URL || 'http://localhost:3003',
     'Inventory',
   );
+  const proxyNotifications = proxyService(
+    process.env.NOTIFICATIONS_BRIDGE_URL || 'http://localhost:3004',
+    'Notifications bridge',
+  );
   app.all('/api/orders', proxyOrders);
   app.all('/api/orders/*', proxyOrders);
   app.route('/api/events', createEventsRoutes());
   app.all('/api/inventory', proxyInventory);
   app.all('/api/inventory/*', proxyInventory);
-  app.route('/api/notifications', notifications.routes);
+  app.all('/api/notifications', proxyNotifications);
+  app.all('/api/notifications/*', proxyNotifications);
 
   return app;
 }

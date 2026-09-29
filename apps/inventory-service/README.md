@@ -1,6 +1,6 @@
 # Inventory service
 
-Inventory corre como contenedor Node/Hono en `:3003`. Consume `orders.placed` de NATS, consulta y ajusta stock mediante el API de Catalog, registra la reserva en `inventory_reservations` y publica `inventory.reserved` o `inventory.rejected`. Orders recibe el resultado y cambia el estado del pedido; Notifications sigue en el API.
+Inventory corre como contenedor Node/Hono en `:3003`. Consume `orders.placed` de NATS, consulta y ajusta stock mediante el API de Catalog, registra la reserva en `inventory_reservations` y publica `inventory.reserved` o `inventory.rejected`. Orders recibe el resultado y cambia el estado del pedido; el bridge de Notifications invoca el handler Lambda.
 
 ## Imagen y arranque
 
