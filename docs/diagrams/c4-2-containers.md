@@ -1,4 +1,6 @@
-# C4 nivel 2: contenedores de MercadoYa en S4
+# C4 nivel 2: contenedores de MercadoYa en S4 / V2 (histórico)
+
+Este diagrama conserva la arquitectura de la rama `v2-integration`. Para el runtime actual consulta [contenedores S5](c4-2-containers-v3.md).
 
 Vista de ejecución de MercadoYa. La SPA corre en `:5173`; la API Hono corre en `:3001`.
 

@@ -1,4 +1,6 @@
-# C4 nivel 3: componentes de MercadoYa en S4 / V2
+# C4 nivel 3: componentes de MercadoYa en S4 / V2 (histórico)
+
+Este diagrama conserva la composición del API en `v2-integration`. Para el runtime actual consulta [componentes S5](c4-3-components-v3.md).
 
 La API compone seis módulos en un proceso Hono. NATS conecta los handlers de eventos; Catalog no consume `orders.placed`.
 

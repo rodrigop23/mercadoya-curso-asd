@@ -8,4 +8,4 @@ Los tres schemas de eventos conservan `buyerId: string | null` por compatibilida
 
 `reservationResponseV1Schema` conserva el JSON de lectura de reservas. `reservationResponseV2Schema` exige además `reservation.status: "reserved"`. Estos DTO son del API HTTP y no alteran los eventos NATS v1 ni sus subjects.
 
-El [OpenAPI de Inventory](../../apps/inventory-service/openapi.yaml) describe el borde HTTP para health y lectura de reservas. La reserva se solicita por NATS, no por HTTP. El OpenAPI de Catalog queda pendiente para el prompt 07.
+El [OpenAPI de Inventory](../../apps/inventory-service/openapi.yaml) describe el borde HTTP para health y lectura de reservas. La reserva se solicita por NATS, no por HTTP. No se creó un OpenAPI de Catalog; queda fuera de este laboratorio.

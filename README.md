@@ -1,6 +1,6 @@
 # MercadoYa
 
-Monorepo de MercadoYa con pnpm workspaces y Turborepo. Incluye una app React con Vite y TanStack Router y una API Hono. V0 implementa productos naive; V1 separa Identity y Catalog por contrato; V2 agrega Media, Orders, Inventory, Notifications y procesamiento de pedidos por eventos.
+Monorepo de MercadoYa con pnpm workspaces y Turborepo. Incluye una app React con Vite y TanStack Router y una API Hono. V0 implementa productos naive; V1 separa Identity y Catalog por contrato; V2 agrega Media, Orders, Inventory, Notifications y procesamiento de pedidos por eventos. S5 (`v3-services`) extrae Orders, Inventory y Notifications, y monta el catálogo admin como MF en iframe.
 
 ## Demo V0 naive
 
@@ -25,9 +25,10 @@ El [paquete de contratos `@mercadoya/contracts`](packages/contracts/README.md) c
 Material para el walkthrough:
 
 - Demos: [V0 naive](docs/demo-v0.md) en la rama [`v0-naive`](https://github.com/rodrigop23/mercadoya-curso-asd/tree/v0-naive), [V1 modular](docs/demo-v1.md) en la rama [`v1-modular`](https://github.com/rodrigop23/mercadoya-curso-asd/tree/v1-modular) y [V2 integración](docs/demo-v2.md) en la rama [`v2-integration`](https://github.com/rodrigop23/mercadoya-curso-asd/tree/v2-integration).
-- ADRs: [0001 — monolito primero](docs/adr/0001-usar-monolito-primero.md), [0002 — stack React, Hono y Postgres](docs/adr/0002-elegir-stack-react-hono-postgres.md), [0003 — Identity y Catalog por contrato](docs/adr/0003-modular-identity-catalog-por-contrato.md), [0004 — pipeline local de imágenes](docs/adr/0004-media-pipeline-pipes-filters.md), [0005 — módulos service-based](docs/adr/0005-service-based-api-layer-schemas.md), [0006 — pedidos por eventos con NATS](docs/adr/0006-nats-order-placed-event-driven.md) y [0007 — demo cloud S3 aislada](docs/adr/0007-cloud-pipeline-demo-s3-aislado.md).
-- C4 en Mermaid para S4 / V2: [nivel 1, contexto](docs/diagrams/c4-1-context.md), [nivel 2, contenedores](docs/diagrams/c4-2-containers.md) y [nivel 3, componentes](docs/diagrams/c4-3-components.md).
-- Secuencias Mermaid: [pipeline local de imágenes](docs/diagrams/seq-media-pipeline.md) y [fan-out de `orders.placed`](docs/diagrams/seq-order-placed-fanout.md).
+- ADRs V0–V2: [0001 — monolito primero](docs/adr/0001-usar-monolito-primero.md), [0002 — stack React, Hono y Postgres](docs/adr/0002-elegir-stack-react-hono-postgres.md), [0003 — Identity y Catalog por contrato](docs/adr/0003-modular-identity-catalog-por-contrato.md), [0004 — pipeline local de imágenes](docs/adr/0004-media-pipeline-pipes-filters.md), [0005 — módulos service-based](docs/adr/0005-service-based-api-layer-schemas.md), [0006 — pedidos por eventos con NATS](docs/adr/0006-nats-order-placed-event-driven.md) y [0007 — demo cloud S3 aislada](docs/adr/0007-cloud-pipeline-demo-s3-aislado.md).
+- ADRs S5: [0008 — versión HTTP y despliegue de Inventory](docs/adr/0008-versionado-inventory.md), [0009 — Orders como proceso](docs/adr/0009-orders-proceso-tradicional.md), [0010 — Inventory en contenedores](docs/adr/0010-inventory-contenedor.md), [0011 — Notifications Lambda y bridge](docs/adr/0011-notifications-lambda-bridge.md), [0012 — API gateway y auth](docs/adr/0012-api-gateway-auth.md), [0013 — contratos y OpenAPI Inventory](docs/adr/0013-contracts-openapi-inventory.md) y [0014 — MF admin en iframe](docs/adr/0014-mf-catalog-iframe.md).
+- C4 S5 en Mermaid: [contexto](docs/diagrams/c4-1-context.md), [contenedores](docs/diagrams/c4-2-containers-v3.md) y [componentes del API](docs/diagrams/c4-3-components-v3.md).
+- Secuencias S5: [compra con NATS, Inventory y Notifications](docs/diagrams/seq-order-placed-fanout-v3.md) y [admin en MF catálogo](docs/diagrams/seq-admin-mf-catalog.md). Las [vistas V2](docs/diagrams/c4-2-containers.md) y [Archify](docs/diagrams/archify/README.md) se conservan como material histórico.
 
 ## Requisitos
 
@@ -205,6 +206,7 @@ apps/
   orders-service/  Proceso Hono para pedidos y consumo NATS
   inventory-service/ Dos despliegues Hono para lectura de reservas; v1 consume NATS
   notifications-lambda/ Handler Lambda, bridge NATS y stack CDK
+  mf-catalog/      MF de productos admin en iframe, Vite :5174
   web/             React + Vite + TanStack Router + TypeScript
   cloud-pipeline-demo/ CDK + Lambda, demo aislada de S3
 packages/
