@@ -118,7 +118,7 @@ function ProductCard({ product }: { product: Product }) {
               disabled={product.stock === 0 || mutation.isPending}
               aria-invalid={quantity.length > 0 && !quantityIsValid}
               onChange={(event) => setQuantity(event.currentTarget.value)}
-              className="h-9 text-center tabular-nums"
+              className="h-9 text-center tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
             />
           </div>
           <Button
