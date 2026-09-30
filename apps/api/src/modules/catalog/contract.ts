@@ -1,3 +1,6 @@
+import type { StockAdjustmentResult } from '@mercadoya/contracts';
+export type { StockAdjustmentResult } from '@mercadoya/contracts';
+
 export type CatalogProduct = {
   id: string;
   title: string;
@@ -18,10 +21,6 @@ export type CreateProductInput = {
 };
 
 export type UpdateProductInput = Omit<CreateProductInput, 'image'> & { image?: File };
-
-export type StockAdjustmentResult =
-  | { adjusted: true; availableStock: number }
-  | { adjusted: false; reason: 'product_not_found' | 'insufficient_stock' | 'stock_limit' };
 
 export interface CatalogContract {
   listProducts(): Promise<CatalogProduct[]>;

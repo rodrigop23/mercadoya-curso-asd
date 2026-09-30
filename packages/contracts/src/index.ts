@@ -91,11 +91,11 @@ export interface InventoryPort {
   }): Promise<ReservationResult>;
 }
 
-export type StockAdjustmentResult =
-  | { adjusted: true; availableStock: number }
-  | { adjusted: false; reason: 'product_not_found' | 'insufficient_stock' | 'stock_limit' };
+export type StockAdjustmentResult = import('./http.js').StockAdjustmentResponse;
 
 export interface CatalogStockContract {
   getAvailableStock(productId: string): Promise<number | null>;
   adjustStock(productId: string, delta: number): Promise<StockAdjustmentResult>;
 }
+
+export * from './http.js';

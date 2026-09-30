@@ -1,0 +1,471 @@
+# Generado por @mercadoya/contracts. No editar; ejecutar pnpm openapi:generate.
+openapi: 3.1.0
+info:
+  title: MercadoYa Identity
+  version: 1.0.0
+  description: Borde usado por la web y los servicios. /api/auth/* delega GET/POST restantes al proveedor Better Auth y admin plugin; este documento fija login, logout y sesión, no reemplaza la API completa del proveedor. El módulo sigue dentro del BFF.
+servers:
+  - url: http://localhost:3001
+    description: BFF local; los paths incluyen /api.
+paths:
+  /api/identity/health:
+    get:
+      operationId: identityHealth
+      summary: Estado de Identity
+      security: []
+      responses:
+        "200":
+          description: El proceso responde.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - module
+                  - ok
+                properties:
+                  module:
+                    type: string
+                    const: identity
+                  ok:
+                    type: boolean
+                    const: true
+  /api/me:
+    get:
+      operationId: getMe
+      summary: Consultar sesión y usuario actuales
+      security:
+        - betterAuthSession: []
+      responses:
+        "200":
+          description: Sesión actual serializada a JSON.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentitySession"
+        "401":
+          description: Falta una sesión o credencial válida.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/auth/get-session:
+    get:
+      operationId: getAuthSession
+      summary: Consultar sesión mediante Better Auth
+      security:
+        - betterAuthSession: []
+        - {}
+      responses:
+        "200":
+          description: Sesión o null si no hay sesión válida.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: "#/components/schemas/IdentitySession"
+                  - type: "null"
+        default:
+          description: Error del proveedor.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+  /api/auth/sign-out:
+    post:
+      operationId: signOut
+      summary: Cerrar sesión y expirar la cookie
+      security:
+        - betterAuthSession: []
+      responses:
+        "200":
+          description: Sesión cerrada.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignOutResponse"
+        default:
+          description: Error del proveedor.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignOutBody"
+  /api/auth/sign-up/email:
+    post:
+      operationId: signUpEmail
+      summary: sign-up por email con Better Auth
+      security: []
+      responses:
+        "200":
+          description: Usuario y token opaco de sesión. La sesión HTTP usa Set-Cookie.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignUpResponse"
+          headers:
+            Set-Cookie:
+              description: Cookie HttpOnly de Better Auth.
+              schema:
+                type: string
+        "400":
+          description: Hono puede devolver ZodError; Better Auth puede devolver code/message.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: "#/components/schemas/AuthError"
+                  - type: object
+                    required:
+                      - success
+                      - error
+                    properties:
+                      success:
+                        const: false
+                      error:
+                        type: object
+                        additionalProperties: true
+        default:
+          description: Error de Better Auth, incluidos autenticación y rate limit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignUp"
+  /api/auth/sign-in/email:
+    post:
+      operationId: signInEmail
+      summary: sign-in por email con Better Auth
+      security: []
+      responses:
+        "200":
+          description: Usuario y token opaco de sesión. La sesión HTTP usa Set-Cookie.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignInResponse"
+          headers:
+            Set-Cookie:
+              description: Cookie HttpOnly de Better Auth.
+              schema:
+                type: string
+        "400":
+          description: Hono puede devolver ZodError; Better Auth puede devolver code/message.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: "#/components/schemas/AuthError"
+                  - type: object
+                    required:
+                      - success
+                      - error
+                    properties:
+                      success:
+                        const: false
+                      error:
+                        type: object
+                        additionalProperties: true
+        default:
+          description: Error de Better Auth, incluidos autenticación y rate limit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignIn"
+components:
+  securitySchemes:
+    betterAuthSession:
+      type: apiKey
+      in: cookie
+      name: better-auth.session_token
+      description: Cookie Better Auth local. En HTTPS puede usar el prefijo __Secure-. No es Bearer JWT.
+  schemas:
+    IdentitySession:
+      type: object
+      properties:
+        session:
+          type: object
+          properties:
+            id:
+              type: string
+            userId:
+              type: string
+            expiresAt:
+              type: string
+              format: date-time
+              pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$
+            token:
+              type: string
+            createdAt:
+              type: string
+              format: date-time
+              pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$
+            updatedAt:
+              type: string
+              format: date-time
+              pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$
+            ipAddress:
+              type:
+                - string
+                - "null"
+            userAgent:
+              type:
+                - string
+                - "null"
+            impersonatedBy:
+              type:
+                - string
+                - "null"
+          required:
+            - id
+            - userId
+            - expiresAt
+            - token
+            - createdAt
+            - updatedAt
+          additionalProperties: {}
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+            email:
+              type: string
+              format: email
+              pattern: ^(?:[A-Za-z0-9_'+\-]+\.)*[A-Za-z0-9_'+\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\-]*\.)+[A-Za-z]{2,}$
+            name:
+              type: string
+            emailVerified:
+              type: boolean
+            image:
+              type:
+                - string
+                - "null"
+            createdAt:
+              type: string
+              format: date-time
+              pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$
+            updatedAt:
+              type: string
+              format: date-time
+              pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$
+            role:
+              type:
+                - string
+                - "null"
+          required:
+            - id
+            - email
+            - name
+            - emailVerified
+            - createdAt
+            - updatedAt
+          additionalProperties: {}
+      required:
+        - session
+        - user
+      additionalProperties: {}
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        details:
+          type: object
+          propertyNames:
+            type: string
+          additionalProperties:
+            type: array
+            items:
+              type: string
+      required:
+        - error
+    AuthError:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+      required:
+        - code
+        - message
+      additionalProperties: {}
+    SignOutResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        url:
+          type: string
+        redirect:
+          type: boolean
+      required:
+        - success
+      additionalProperties: {}
+    SignOutBody:
+      type: object
+      properties:
+        callbackURL:
+          type: string
+        disableRedirect:
+          type: boolean
+        state:
+          type: string
+    SignUpResponse:
+      type: object
+      properties:
+        token:
+          type:
+            - string
+            - "null"
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+            email:
+              type: string
+              format: email
+              pattern: ^(?:[A-Za-z0-9_'+\-]+\.)*[A-Za-z0-9_'+\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\-]*\.)+[A-Za-z]{2,}$
+            name:
+              type: string
+            emailVerified:
+              type: boolean
+            image:
+              type:
+                - string
+                - "null"
+            createdAt:
+              type: string
+              format: date-time
+              pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$
+            updatedAt:
+              type: string
+              format: date-time
+              pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$
+            role:
+              type:
+                - string
+                - "null"
+          required:
+            - id
+            - email
+            - name
+            - emailVerified
+            - createdAt
+            - updatedAt
+          additionalProperties: {}
+      required:
+        - token
+        - user
+      additionalProperties: {}
+    SignUp:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        email:
+          type: string
+          format: email
+          pattern: ^(?:[A-Za-z0-9_'+\-]+\.)*[A-Za-z0-9_'+\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\-]*\.)+[A-Za-z]{2,}$
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+        image:
+          type: string
+        callbackURL:
+          type: string
+      required:
+        - name
+        - email
+        - password
+      additionalProperties: false
+    SignInResponse:
+      type: object
+      properties:
+        redirect:
+          type: boolean
+        token:
+          type: string
+        url:
+          type: string
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+            email:
+              type: string
+              format: email
+              pattern: ^(?:[A-Za-z0-9_'+\-]+\.)*[A-Za-z0-9_'+\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\-]*\.)+[A-Za-z]{2,}$
+            name:
+              type: string
+            emailVerified:
+              type: boolean
+            image:
+              type:
+                - string
+                - "null"
+            createdAt:
+              type: string
+              format: date-time
+              pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$
+            updatedAt:
+              type: string
+              format: date-time
+              pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$
+            role:
+              type:
+                - string
+                - "null"
+          required:
+            - id
+            - email
+            - name
+            - emailVerified
+            - createdAt
+            - updatedAt
+          additionalProperties: {}
+      required:
+        - redirect
+        - token
+        - user
+      additionalProperties: {}
+    SignIn:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          pattern: ^(?:[A-Za-z0-9_'+\-]+\.)*[A-Za-z0-9_'+\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\-]*\.)+[A-Za-z]{2,}$
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+        rememberMe:
+          type: boolean
+        callbackURL:
+          type: string
+      required:
+        - email
+        - password
+      additionalProperties: false

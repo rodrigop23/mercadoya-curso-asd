@@ -1,6 +1,6 @@
 {
   "name": "@mercadoya/contracts",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -14,9 +14,15 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "oxlint .",
     "format": "oxfmt .",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "openapi:generate": "node scripts/openapi.mjs",
+    "openapi:check": "node scripts/openapi.mjs --check && redocly lint --config redocly.yaml"
   },
   "dependencies": {
-    "zod": "^4.6.5"
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@redocly/cli": "2.0.0",
+    "yaml": "2.8.1"
   }
 }

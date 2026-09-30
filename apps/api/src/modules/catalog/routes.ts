@@ -3,27 +3,11 @@ import { Hono } from 'hono';
 import { fileURLToPath } from 'node:url';
 import { timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
+import { productFormSchema, stockAdjustmentSchema } from '@mercadoya/contracts';
 
 import type { IdentityContract } from '../identity/contract.js';
 import { InvalidMediaError } from '../media/contract.js';
 import type { CatalogContract } from './contract.js';
-
-const productFormSchema = z.object({
-  title: z.string().trim().min(1, 'El título es obligatorio.').max(160),
-  description: z.string().trim().min(1, 'La descripción es obligatoria.').max(5000),
-  price: z
-    .string()
-    .trim()
-    .regex(/^\d+(?:\.\d{1,2})?$/, 'El precio debe tener hasta dos decimales.')
-    .transform(Number)
-    .pipe(z.number().finite().positive().max(99_999_999.99)),
-  stock: z
-    .string()
-    .trim()
-    .regex(/^\d+$/, 'El stock debe ser un número entero no negativo.')
-    .transform(Number)
-    .pipe(z.number().int().min(0).max(2_147_483_647)),
-});
 
 export function createCatalogRoutes(identity: IdentityContract, catalogContract: CatalogContract) {
   const routes = new Hono();
@@ -51,15 +35,7 @@ export function createCatalogRoutes(identity: IdentityContract, catalogContract:
     const id = z.uuid().safeParse(c.req.param('id'));
     if (!id.success) return c.json({ error: 'Identificador de producto inválido.' }, 400);
     const body = await c.req.json().catch(() => null);
-    const parsed = z
-      .object({
-        delta: z
-          .number()
-          .int()
-          .safe()
-          .refine((value) => value !== 0),
-      })
-      .safeParse(body);
+    const parsed = stockAdjustmentSchema.safeParse(body);
     if (!parsed.success)
       return c.json({ error: 'El ajuste debe ser un entero distinto de cero.' }, 400);
     return c.json(await catalogContract.adjustStock(id.data, parsed.data.delta));

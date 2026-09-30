@@ -1,28 +1,9 @@
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
-import { z } from 'zod';
+import { signUpSchema, signInSchema } from '@mercadoya/contracts';
 
 import { auth } from './auth.js';
 import type { IdentityContract } from './contract.js';
-
-const signUpSchema = z
-  .object({
-    name: z.string().min(1),
-    email: z.email(),
-    password: z.string().min(8).max(128),
-    image: z.string().optional(),
-    callbackURL: z.string().optional(),
-  })
-  .strict();
-
-const signInSchema = z
-  .object({
-    email: z.email(),
-    password: z.string().min(8).max(128),
-    rememberMe: z.boolean().optional(),
-    callbackURL: z.string().optional(),
-  })
-  .strict();
 
 function requestWithValidatedBody(request: Request, body: unknown) {
   const headers = new Headers(request.headers);

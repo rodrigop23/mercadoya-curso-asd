@@ -50,6 +50,18 @@
         "build"
       ],
       "outputs": []
+    },
+    "openapi:generate": {
+      "dependsOn": [
+        "build"
+      ],
+      "cache": false
+    },
+    "openapi:check": {
+      "dependsOn": [
+        "build"
+      ],
+      "cache": false
     }
   }
 }

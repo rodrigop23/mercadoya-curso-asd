@@ -14,7 +14,7 @@ Orders e Inventory intercambian eventos NATS. Inventory también expone lectura 
 
 ## Consecuencias
 
-Un cambio de esquema de evento exige coordinar productores y consumidores. Versionar el JSON HTTP no cambia los subjects NATS. El paquete no comparte tablas Drizzle. La saga y sus transiciones constan en [ADR 0015](0015-saga-coreografia-compensacion.md). OpenAPI Catalog queda fuera de este laboratorio.
+Un cambio de esquema de evento exige coordinar productores y consumidores. Versionar el JSON HTTP no cambia los subjects NATS. El paquete no comparte tablas Drizzle. La saga y sus transiciones constan en [ADR 0015](0015-saga-coreografia-compensacion.md). ADR 0016 amplía la documentación a Orders, Identity, Catalog y Media con generación reproducible desde contracts.
 
 ## Referencias
 

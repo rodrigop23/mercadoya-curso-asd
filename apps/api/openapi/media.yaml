@@ -1,0 +1,69 @@
+# Generado por @mercadoya/contracts. No editar; ejecutar pnpm openapi:generate.
+openapi: 3.1.0
+info:
+  title: MercadoYa Media
+  version: 1.0.0
+  description: La ruta estática /uploads/* la monta Catalog. La entrada de Media es image en multipart de Catalog; no hay upload HTTP autónomo. Polar y gateway Kong quedan para decisiones futuras.
+servers:
+  - url: http://localhost:3001
+    description: BFF local; los paths incluyen /api.
+paths:
+  /api/media/health:
+    get:
+      operationId: mediaHealth
+      summary: Estado de Media
+      security: []
+      responses:
+        "200":
+          description: El proceso responde.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - module
+                  - ok
+                properties:
+                  module:
+                    type: string
+                    const: media
+                  ok:
+                    type: boolean
+                    const: true
+  /uploads/{file}:
+    get:
+      operationId: readUpload
+      summary: Leer una imagen publicada por Catalog
+      security: []
+      responses:
+        "200":
+          description: Imagen full o thumb.
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Archivo no encontrado; respuesta del middleware estático.
+      parameters:
+        - name: file
+          in: path
+          required: true
+          schema:
+            type: string
+components:
+  securitySchemes:
+    betterAuthSession:
+      type: apiKey
+      in: cookie
+      name: better-auth.session_token
+      description: Cookie Better Auth local. En HTTPS puede usar el prefijo __Secure-. No es Bearer JWT.
+  schemas: {}

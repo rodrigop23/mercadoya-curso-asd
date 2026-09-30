@@ -1,14 +1,5 @@
-import { z } from 'zod';
+import { stockResponseSchema, stockAdjustmentResponseSchema } from '@mercadoya/contracts';
 import type { CatalogStockContract } from '@mercadoya/contracts';
-
-const stockResponse = z.object({ availableStock: z.number().int().nonnegative().nullable() });
-const adjustmentResponse = z.discriminatedUnion('adjusted', [
-  z.object({ adjusted: z.literal(true), availableStock: z.number().int().nonnegative() }),
-  z.object({
-    adjusted: z.literal(false),
-    reason: z.enum(['product_not_found', 'insufficient_stock', 'stock_limit']),
-  }),
-]);
 
 export function createCatalogHttpClient(): CatalogStockContract {
   const origin = process.env.CATALOG_URL || 'http://localhost:3001';
@@ -30,13 +21,13 @@ export function createCatalogHttpClient(): CatalogStockContract {
 
   return {
     async getAvailableStock(productId) {
-      const result = stockResponse.parse(
+      const result = stockResponseSchema.parse(
         await request(`/api/internal/catalog/products/${encodeURIComponent(productId)}/stock`),
       );
       return result.availableStock;
     },
     async adjustStock(productId, delta) {
-      return adjustmentResponse.parse(
+      return stockAdjustmentResponseSchema.parse(
         await request(
           `/api/internal/catalog/products/${encodeURIComponent(productId)}/adjust-stock`,
           {

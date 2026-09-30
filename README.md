@@ -18,7 +18,7 @@ La rama [`v2-integration`](https://github.com/rodrigop23/mercadoya-curso-asd/tre
 
 En `v3-services`, Orders corre como proceso Node, Inventory como contenedor y Notifications usa un handler AWS Lambda. Un bridge NATS invoca ese handler directamente durante la clase local o mediante Function URL en AWS. Consulta [la guía de Notifications](apps/notifications-lambda/README.md).
 
-El [paquete de contratos `@mercadoya/contracts`](packages/contracts/README.md) contiene los eventos NATS v1 y los puertos de Inventory. El [OpenAPI de Inventory](apps/inventory-service/openapi.yaml) es el ejemplo de API HTTP de la clase; explóralo en [Swagger UI](http://localhost:3003/docs), también disponible en [Inventory v2](http://localhost:3005/docs).
+El [paquete `@mercadoya/contracts`](packages/contracts/README.md) centraliza schemas HTTP/eventos y documenta ownership, generación reproducible y versionado. Specs OpenAPI: [Inventory v1/v2](apps/inventory-service/openapi.yaml), [Orders](apps/orders-service/openapi.yaml), [Identity](apps/api/openapi/identity.yaml), [Catalog](apps/api/openapi/catalog.yaml) y [Media](apps/api/openapi/media.yaml). Inventory conserva [Swagger UI](http://localhost:3003/docs), también en [v2](http://localhost:3005/docs). La estrategia generate-from-code y sus límites constan en [ADR 0016](docs/adr/0016-http-event-contracts.md).
 
 ## Arquitectura y decisiones
 
@@ -52,12 +52,13 @@ pnpm install --frozen-lockfile
 pnpm typecheck
 pnpm lint
 pnpm build
+pnpm openapi:check
 pnpm test
 ```
 
 Turbo ejecuta los scripts de todos los workspaces que los declaran. `build` incluye `@mercadoya/contracts`, API, Orders, Inventory, Notifications, web, MF catálogo y el demo cloud. `typecheck` construye primero las dependencias de cada consumidor para resolver los exports de `contracts` desde un checkout limpio. `test` construye el paquete y sus dependencias antes de ejecutar su suite. El nuevo script raíz `test` delega en Turbo; los scripts existentes se conservan.
 
-La suite usa `node:test` de Node 24.14.1. Los tests de `contracts` importan el export público compilado y verifican los subjects NATS v1, eventos válidos, versiones, UUIDs, cantidades, fechas, causas de rechazo, override de pago y compatibilidad de las respuestas HTTP de Inventory v1/v2. Notifications conserva sus tests del handler con `fetch` simulado para envío e ingest. No se inicia ningún servidor ni se requiere Postgres, NATS, Docker, `.env`, credenciales AWS o secretos de producción. Esto no cubre persistencia, transporte NATS, browser ni el flujo completo de compra.
+La suite usa `node:test` de Node 24.14.1. Los nuevos tests comprueban DTOs de Orders, Identity y Catalog, multipart, stock interno y auth/servers de las specs. `pnpm openapi:check` compara specs y schemas generados byte a byte y ejecuta Redocly; `pnpm openapi:generate` los regenera. Los tests de `contracts` importan el export público compilado y verifican los subjects NATS v1, eventos válidos, versiones, UUIDs, cantidades, fechas, causas de rechazo, override de pago y compatibilidad de las respuestas HTTP de Inventory v1/v2. Notifications conserva sus tests del handler con `fetch` simulado para envío e ingest. No se inicia ningún servidor ni se requiere Postgres, NATS, Docker, `.env`, credenciales AWS o secretos de producción. Esto no cubre persistencia, transporte NATS, browser ni el flujo completo de compra.
 
 Para ejecutar solo una suite con sus builds previos:
 

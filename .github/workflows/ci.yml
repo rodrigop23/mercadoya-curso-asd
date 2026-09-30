@@ -37,5 +37,7 @@ jobs:
         run: pnpm lint
       - name: Build
         run: pnpm build
+      - name: Validate versioned OpenAPI and generated schemas
+        run: pnpm openapi:check
       - name: Test
         run: pnpm test

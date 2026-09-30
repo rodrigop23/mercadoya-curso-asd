@@ -11,7 +11,9 @@
     "format:root": "oxfmt package.json turbo.json .oxlintrc.json .oxfmtrc.json",
     "typecheck": "turbo run typecheck",
     "demo:saga": "turbo run demo:saga --filter @mercadoya/orders-service",
-    "test": "turbo run test"
+    "test": "turbo run test",
+    "openapi:generate": "turbo run openapi:generate --filter=@mercadoya/contracts",
+    "openapi:check": "turbo run openapi:check --filter=@mercadoya/contracts"
   },
   "devDependencies": {
     "esbuild": "0.28.2",

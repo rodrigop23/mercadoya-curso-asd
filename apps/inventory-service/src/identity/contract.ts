@@ -1,9 +1,8 @@
-import { z } from 'zod';
-
-const sessionSchema = z.object({ user: z.object({ id: z.string() }) });
+import type { z } from 'zod';
+import { sessionBuyerSchema } from '@mercadoya/contracts';
 
 export type IdentityContract = {
-  getSession(headers: Headers): Promise<z.infer<typeof sessionSchema> | null>;
+  getSession(headers: Headers): Promise<z.infer<typeof sessionBuyerSchema> | null>;
 };
 
 export function createIdentityContract(): IdentityContract {
@@ -18,7 +17,7 @@ export function createIdentityContract(): IdentityContract {
       const response = await fetch(new URL('/api/me', origin), { headers: forwarded });
       if (response.status === 401) return null;
       if (!response.ok) throw new Error(`Identity respondió ${response.status}.`);
-      return sessionSchema.parse(await response.json());
+      return sessionBuyerSchema.parse(await response.json());
     },
   };
 }

@@ -1,13 +1,9 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { createOrderSchema } from '@mercadoya/contracts';
 
 import type { IdentityContract } from '../identity/contract.js';
 import type { createOrdersService } from './service.js';
-
-const createOrderSchema = z.object({
-  productId: z.string().uuid(),
-  quantity: z.number().int().positive().max(2_147_483_647),
-});
 
 export function createOrdersRoutes(
   orders: ReturnType<typeof createOrdersService>,
