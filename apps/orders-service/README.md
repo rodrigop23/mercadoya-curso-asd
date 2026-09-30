@@ -6,14 +6,14 @@ Usa el mismo `DATABASE_URL` PostgreSQL que `@mercadoya/catalog-service` y la tab
 
 Variables en el `.env` de la raíz:
 
-| Variable | Valor local | Uso |
-| --- | --- | --- |
-| `PORT` | `3002` por defecto | Puerto del servicio. Si arrancas todo con `pnpm dev`, deja la variable sin definir para no cambiar el puerto del API. |
-| `DATABASE_URL` | URL de PostgreSQL de Compose | Base compartida con el API. |
-| `EVENT_BUS` | `nats` | Es el único transporte admitido por Orders. |
-| `NATS_URL` | `nats://localhost:4222` | Servidor NATS. Orders falla al arrancar si no conecta. |
-| `IDENTITY_URL` | `http://localhost:3006` | JWKS de Identity para verificar JWT. |
-| `ORDERS_SERVICE_URL` | `http://localhost:3002` | Destino del proxy del API; se configura en el API. |
+| Variable             | Valor local                  | Uso                                                                                                                   |
+| -------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `PORT`               | `3002` por defecto           | Puerto del servicio. Si arrancas todo con `pnpm dev`, deja la variable sin definir para no cambiar el puerto del API. |
+| `DATABASE_URL`       | URL de PostgreSQL de Compose | Base compartida con el API.                                                                                           |
+| `EVENT_BUS`          | `nats`                       | Es el único transporte admitido por Orders.                                                                           |
+| `NATS_URL`           | `nats://localhost:4222`      | Servidor NATS. Orders falla al arrancar si no conecta.                                                                |
+| `IDENTITY_URL`       | `http://localhost:3006`      | JWKS de Identity para verificar JWT.                                                                                  |
+| `ORDERS_SERVICE_URL` | `http://localhost:3002`      | Destino del proxy del API; se configura en el API.                                                                    |
 
 Compose inicia Orders. `pnpm dev` inicia web y MF. El navegador llama a Kong `:8000/api/orders` con cookie de sesión o Bearer JWT. Kong valida la credencial con Identity y reenvía un JWT. Orders verifica RS256, kid, issuer, audience, subject, role y expiración mediante JWKS, sin llamar a `/api/me`. El buyerId procede del claim sub. POST y GET de pedidos requieren autenticación; health permanece público. Acceso directo al servicio requiere Bearer, nunca solo cookie. `JWT_ISSUER=http://localhost:8000` y `JWT_AUDIENCE=mercadoya-services` coinciden con Identity. Consulta [Identity](../identity-service/README.md).
 

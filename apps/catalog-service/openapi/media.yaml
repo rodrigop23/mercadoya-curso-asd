@@ -14,7 +14,7 @@ paths:
       summary: Estado de Media
       security: []
       responses:
-        "200":
+        '200':
           description: El proceso responde.
           content:
             application/json:
@@ -36,7 +36,7 @@ paths:
       summary: Leer una imagen publicada por Catalog
       security: []
       responses:
-        "200":
+        '200':
           description: Imagen full o thumb.
           content:
             image/jpeg:
@@ -51,7 +51,7 @@ paths:
               schema:
                 type: string
                 format: binary
-        "404":
+        '404':
           description: Archivo no encontrado; respuesta del middleware estático.
       parameters:
         - name: file

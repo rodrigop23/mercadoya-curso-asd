@@ -3,9 +3,7 @@ import { db } from '../db/index.js';
 import type { CatalogStockContract, InventoryPort, ReservationResult } from '@mercadoya/contracts';
 import { inventoryReservation } from './schema.js';
 
-export function createInventoryContract(
-  catalog: CatalogStockContract,
-): InventoryPort & {
+export function createInventoryContract(catalog: CatalogStockContract): InventoryPort & {
   release(orderId: string): Promise<{ productId: string; quantity: number } | null>;
 } {
   return {

@@ -1,0 +1,16 @@
+{
+  "extends": "../tsconfig/base.json",
+  "include": ["src"],
+  "compilerOptions": {
+    "target": "ES2022",
+    "jsx": "react-jsx",
+    "module": "ESNext",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "moduleResolution": "Bundler",
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "types": ["react", "react-dom"],
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+  }
+}

@@ -137,18 +137,18 @@ pnpm dev
 | Postgres             | 5432   | `docker compose ps postgres`                     |
 | NATS                 | 4222   | `http://localhost:8222` para monitoreo           |
 
-| Tipo                  | Mecanismo                                                                     | Quién lo usa                                                               |
-| --------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Sesión browser | Cookie Better Auth, persistida y validada por Identity | Browser mediante Kong |
-| JWT de aplicación | RS256 verificado por JWKS y claims | Kong mediante Identity; Orders, Inventory y Catalog admin |
-| Servicio a Catalog    | `x-catalog-internal-token` y `CATALOG_INTERNAL_TOKEN`                         | Inventory hacia http://catalog:3007, sin publicar stock en Kong                                     |
-| Lambda y bridge a API | `x-invoke-token` y `x-ingest-token`, con secretos distintos                   | Notifications                                                              |
+| Tipo                  | Mecanismo                                                   | Quién lo usa                                                    |
+| --------------------- | ----------------------------------------------------------- | --------------------------------------------------------------- |
+| Sesión browser        | Cookie Better Auth, persistida y validada por Identity      | Browser mediante Kong                                           |
+| JWT de aplicación     | RS256 verificado por JWKS y claims                          | Kong mediante Identity; Orders, Inventory y Catalog admin       |
+| Servicio a Catalog    | `x-catalog-internal-token` y `CATALOG_INTERNAL_TOKEN`       | Inventory hacia http://catalog:3007, sin publicar stock en Kong |
+| Lambda y bridge a API | `x-invoke-token` y `x-ingest-token`, con secretos distintos | Notifications                                                   |
 
 La autenticación de usuario y los secretos entre servicios cumplen fines distintos. Esta demo no incluye service mesh. GET de pedidos y reservas requieren JWT dentro de los servicios. Kong admite también cookie browser y emite el JWT upstream. La lectura de reservas conserva el acceso de clase sin verificar la propiedad del pedido.
 
-| Versión  | Cambio observable                                                                                                                                                                                                                        |
-| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| API HTTP | `/api/inventory/v1/reservations/:orderId` conserva el JSON anterior; `/v2/` exige además `reservation.status: "reserved"`.                                                                                                               |
+| Versión  | Cambio observable                                                                                                                                                                                                               |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| API HTTP | `/api/inventory/v1/reservations/:orderId` conserva el JSON anterior; `/v2/` exige además `reservation.status: "reserved"`.                                                                                                      |
 | Servicio | Compose ejecuta `inventory-v1` e `inventory-v2` con `SERVICE_VERSION` distinto. Cada respuesta lleva `X-Service-Version`. Solo v2 consume `orders.placed` y `payment.failed`, para reservar y compensar sin consumidores en v1. |
 
 Consulta el [guion de Inventory](apps/inventory-service/README.md) para comparar ambas respuestas con el mismo pedido y la misma cookie. La decisión está resumida en el [ADR 0008](docs/adr/0008-versionado-inventory.md).
@@ -309,11 +309,14 @@ apps/
 packages/
   contracts/       Eventos NATS v1 y puertos compartidos
   tsconfig/        Configuración compartida de TypeScript
+  ui/              ShadCN/Base UI y tokens compartidos por host y MF
 ```
 
 La API parte del template `nodejs` de `create-hono`; la web parte del modo `router-only` de `@tanstack/cli` y conserva su estructura de rutas file-based en `apps/web/src/routes/`.
 
 Turbo coordina `dev`, `build`, `lint`, `format` y `typecheck` a partir de los scripts de cada workspace. La web tiene una ruta inicial configurada con TanStack Router. Las tareas de desarrollo son persistentes y se ejecutan en paralelo.
+
+Host y MF importan los componentes y CSS de [`@mercadoya/ui`](packages/ui/README.md). Esa guía documenta los exports y cómo añadir componentes con la CLI de ShadCN.
 
 ## Toolchain del sistema
 

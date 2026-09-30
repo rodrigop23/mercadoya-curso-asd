@@ -16,7 +16,7 @@ paths:
       summary: Estado de Orders
       security: []
       responses:
-        "200":
+        '200':
           description: El proceso responde.
           content:
             application/json:
@@ -40,42 +40,42 @@ paths:
         - betterAuthSession: []
         - applicationJWT: []
       responses:
-        "202":
+        '202':
           description: Pedido aceptado; la saga resuelve el estado.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/OrderResponse"
-        "400":
+                $ref: '#/components/schemas/OrderResponse'
+        '400':
           description: Solicitud inválida.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
-        "401":
+                $ref: '#/components/schemas/Error'
+        '401':
           description: Falta una sesión o credencial válida.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
-        "500":
+                $ref: '#/components/schemas/Error'
+        '500':
           description: Falló la operación.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
-        "502":
+                $ref: '#/components/schemas/Error'
+        '502':
           description: El servicio remoto no está disponible.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: '#/components/schemas/Error'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CreateOrder"
+              $ref: '#/components/schemas/CreateOrder'
       description: buyerId procede del claim sub verificado. Campos extra como paymentMode se descartan; solo el CLI interno usa ese override.
   /api/orders/{orderId}:
     get:
@@ -85,36 +85,36 @@ paths:
         - betterAuthSession: []
         - applicationJWT: []
       responses:
-        "200":
+        '200':
           description: Pedido encontrado.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/OrderResponse"
-        "400":
+                $ref: '#/components/schemas/OrderResponse'
+        '400':
           description: Solicitud inválida.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
-        "404":
+                $ref: '#/components/schemas/Error'
+        '404':
           description: No encontrado.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
-        "500":
+                $ref: '#/components/schemas/Error'
+        '500':
           description: Falló la operación.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
-        "502":
+                $ref: '#/components/schemas/Error'
+        '502':
           description: El servicio remoto no está disponible.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: '#/components/schemas/Error'
       parameters:
         - name: orderId
           in: path
@@ -157,7 +157,7 @@ components:
             buyerId:
               type:
                 - string
-                - "null"
+                - 'null'
             status:
               type: string
               enum:
@@ -167,7 +167,7 @@ components:
             rejectionReason:
               type:
                 - string
-                - "null"
+                - 'null'
             createdAt:
               type: string
               format: date-time

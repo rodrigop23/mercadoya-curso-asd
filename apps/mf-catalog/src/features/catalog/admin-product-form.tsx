@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@mercadoya/ui/components/button';
 import {
   Dialog,
   DialogContent,
@@ -9,8 +9,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { FieldGroup } from '@/components/ui/field';
+} from '@mercadoya/ui/components/dialog';
+import { FieldGroup } from '@mercadoya/ui/components/field';
 import { useAppForm } from '@/hooks/use-app-form';
 import { createProduct, productsQueryOptions, updateProduct, type Product } from '@/lib/products';
 

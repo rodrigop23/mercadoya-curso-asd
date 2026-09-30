@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@mercadoya/ui/components/button';
 import {
   Card,
   CardContent,
@@ -9,9 +9,9 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+} from '@mercadoya/ui/components/card';
+import { Input } from '@mercadoya/ui/components/input';
+import { Label } from '@mercadoya/ui/components/label';
 import { authClient } from '@/lib/auth-client';
 
 type AuthPageProps = {

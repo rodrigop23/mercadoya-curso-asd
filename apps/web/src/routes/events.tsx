@@ -3,10 +3,10 @@ import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { ArrowRight, ListFilter, Radio } from 'lucide-react';
 
-import { buttonVariants, Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { buttonVariants, Button } from '@mercadoya/ui/components/button';
+import { Card, CardContent, CardDescription, CardHeader } from '@mercadoya/ui/components/card';
+import { Input } from '@mercadoya/ui/components/input';
+import { Label } from '@mercadoya/ui/components/label';
 import { EventTimeline } from '@/components/event-timeline';
 import { eventsQueryOptions } from '@/lib/events';
 

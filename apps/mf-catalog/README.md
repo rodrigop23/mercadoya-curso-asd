@@ -15,3 +15,5 @@ El iframe ofrece despliegue y estilos independientes, a costa de un documento y 
 Configura `VITE_MF_CATALOG_URL` en el host si el remoto cambia de URL. Configura `VITE_API_URL` y `VITE_HOST_URL` en este proceso si cambian la API o el host. Sus valores por defecto son `http://localhost:8000` y `http://localhost:5173`. Usa el mismo hostname en host, remoto y API durante la demo; mezclar `localhost` con `127.0.0.1` impide compartir la cookie.
 
 El catálogo buyer en `/catalog` sigue en el host. Buyer + admin no son dos MF; la composición aquí es host + pieza remota de administración.
+
+Los componentes ShadCN/Base UI y el CSS de Tailwind v4 se importan de [`@mercadoya/ui`](../../packages/ui/README.md). Consulta esa guía para añadir componentes y mantener los aliases compartidos.

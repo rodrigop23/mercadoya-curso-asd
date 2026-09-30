@@ -4,14 +4,14 @@
 
 ## Specs y ownership
 
-| Contrato | Spec versionada | Owner de implementación |
-| --- | --- | --- |
-| Inventory HTTP v1/v2 y alias | [Inventory](../../apps/inventory-service/openapi.yaml) | `apps/inventory-service` |
-| Orders HTTP | [Orders](../../apps/orders-service/openapi.yaml) | `apps/orders-service` |
-| Identity, login y sesión | [Identity](../../apps/identity-service/openapi.yaml) | `apps/identity-service` |
-| Catalog público y stock interno | [Catalog](../../apps/catalog-service/openapi/catalog.yaml) | `apps/catalog-service/src/modules/catalog` |
-| Media, health y lectura de imágenes | [Media](../../apps/catalog-service/openapi/media.yaml) | Media procesa imágenes; Catalog monta `/uploads/*` |
-| NATS saga v1 | [JSON Schemas por subject](events.schema.json) | Orders publica pedidos y resultados del simulador Payment; Inventory publica reserva, rechazo y liberación |
+| Contrato                            | Spec versionada                                            | Owner de implementación                                                                                    |
+| ----------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Inventory HTTP v1/v2 y alias        | [Inventory](../../apps/inventory-service/openapi.yaml)     | `apps/inventory-service`                                                                                   |
+| Orders HTTP                         | [Orders](../../apps/orders-service/openapi.yaml)           | `apps/orders-service`                                                                                      |
+| Identity, login y sesión            | [Identity](../../apps/identity-service/openapi.yaml)       | `apps/identity-service`                                                                                    |
+| Catalog público y stock interno     | [Catalog](../../apps/catalog-service/openapi/catalog.yaml) | `apps/catalog-service/src/modules/catalog`                                                                 |
+| Media, health y lectura de imágenes | [Media](../../apps/catalog-service/openapi/media.yaml)     | Media procesa imágenes; Catalog monta `/uploads/*`                                                         |
+| NATS saga v1                        | [JSON Schemas por subject](events.schema.json)             | Orders publica pedidos y resultados del simulador Payment; Inventory publica reserva, rechazo y liberación |
 
 El owner del módulo revisa su spec y los schemas en cada cambio de handler. Los owners de consumidores afectados deben revisar cambios incompatibles. Identity corre en su servicio propio; Catalog y Media comparten `apps/catalog-service` en :3007; API conserva solo la timeline. Media recibe `image` mediante multipart de Catalog, no tiene una ruta independiente de upload. Identity documenta los endpoints que usan la web y los servicios; el catch-all GET/POST `/api/auth/*` también delega endpoints del proveedor Better Auth y su plugin admin. No declaramos esos endpoints adicionales como contratos propios de MercadoYa.
 

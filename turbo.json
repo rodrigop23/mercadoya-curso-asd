@@ -18,11 +18,12 @@
       "outputs": []
     },
     "lint": {
-      "outputs": []
+      "outputs": [],
+      "dependsOn": ["^lint"]
     },
     "typecheck": {
       "outputs": [],
-      "dependsOn": ["^build"]
+      "dependsOn": ["^build", "^typecheck"]
     },
     "demo:saga": {
       "cache": false,

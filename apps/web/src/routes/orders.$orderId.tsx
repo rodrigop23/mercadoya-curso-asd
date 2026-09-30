@@ -3,8 +3,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { ArrowLeft, CheckCircle2, CircleAlert, LoaderCircle } from 'lucide-react';
 
-import { buttonVariants } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
+import { buttonVariants } from '@mercadoya/ui/components/button';
+import { Card, CardContent, CardDescription, CardHeader } from '@mercadoya/ui/components/card';
 import { EventTimeline } from '@/components/event-timeline';
 import { eventsQueryOptions } from '@/lib/events';
 import { orderQueryOptions } from '@/lib/orders';

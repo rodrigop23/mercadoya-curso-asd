@@ -14,7 +14,7 @@ paths:
       summary: Estado de Identity
       security: []
       responses:
-        "200":
+        '200':
           description: El proceso responde.
           content:
             application/json:
@@ -37,18 +37,18 @@ paths:
       security:
         - betterAuthSession: []
       responses:
-        "200":
+        '200':
           description: Sesión actual serializada a JSON.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/IdentitySession"
-        "401":
+                $ref: '#/components/schemas/IdentitySession'
+        '401':
           description: Falta una sesión o credencial válida.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: '#/components/schemas/Error'
   /api/auth/get-session:
     get:
       operationId: getAuthSession
@@ -57,20 +57,20 @@ paths:
         - betterAuthSession: []
         - {}
       responses:
-        "200":
+        '200':
           description: Sesión o null si no hay sesión válida.
           content:
             application/json:
               schema:
                 anyOf:
-                  - $ref: "#/components/schemas/IdentitySession"
-                  - type: "null"
+                  - $ref: '#/components/schemas/IdentitySession'
+                  - type: 'null'
         default:
           description: Error del proveedor.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AuthError"
+                $ref: '#/components/schemas/AuthError'
   /api/auth/sign-out:
     post:
       operationId: signOut
@@ -78,48 +78,48 @@ paths:
       security:
         - betterAuthSession: []
       responses:
-        "200":
+        '200':
           description: Sesión cerrada.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SignOutResponse"
+                $ref: '#/components/schemas/SignOutResponse'
         default:
           description: Error del proveedor.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AuthError"
+                $ref: '#/components/schemas/AuthError'
       requestBody:
         required: false
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SignOutBody"
+              $ref: '#/components/schemas/SignOutBody'
   /api/auth/sign-up/email:
     post:
       operationId: signUpEmail
       summary: sign-up por email con Better Auth
       security: []
       responses:
-        "200":
+        '200':
           description: Usuario y token opaco de sesión. La sesión HTTP usa Set-Cookie.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SignUpResponse"
+                $ref: '#/components/schemas/SignUpResponse'
           headers:
             Set-Cookie:
               description: Cookie HttpOnly de Better Auth.
               schema:
                 type: string
-        "400":
+        '400':
           description: Hono puede devolver ZodError; Better Auth puede devolver code/message.
           content:
             application/json:
               schema:
                 anyOf:
-                  - $ref: "#/components/schemas/AuthError"
+                  - $ref: '#/components/schemas/AuthError'
                   - type: object
                     required:
                       - success
@@ -135,37 +135,37 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AuthError"
+                $ref: '#/components/schemas/AuthError'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SignUp"
+              $ref: '#/components/schemas/SignUp'
   /api/auth/sign-in/email:
     post:
       operationId: signInEmail
       summary: sign-in por email con Better Auth
       security: []
       responses:
-        "200":
+        '200':
           description: Usuario y token opaco de sesión. La sesión HTTP usa Set-Cookie.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SignInResponse"
+                $ref: '#/components/schemas/SignInResponse'
           headers:
             Set-Cookie:
               description: Cookie HttpOnly de Better Auth.
               schema:
                 type: string
-        "400":
+        '400':
           description: Hono puede devolver ZodError; Better Auth puede devolver code/message.
           content:
             application/json:
               schema:
                 anyOf:
-                  - $ref: "#/components/schemas/AuthError"
+                  - $ref: '#/components/schemas/AuthError'
                   - type: object
                     required:
                       - success
@@ -181,13 +181,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AuthError"
+                $ref: '#/components/schemas/AuthError'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SignIn"
+              $ref: '#/components/schemas/SignIn'
   /api/auth/token:
     get:
       operationId: applicationToken
@@ -195,30 +195,30 @@ paths:
       security:
         - betterAuthSession: []
       responses:
-        "200":
+        '200':
           description: JWT con duración de cinco minutos.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApplicationToken"
-        "401":
+                $ref: '#/components/schemas/ApplicationToken'
+        '401':
           description: Falta una sesión o credencial válida.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: '#/components/schemas/Error'
   /api/auth/jwks:
     get:
       operationId: publicJwks
       summary: Claves públicas para verificar JWT
       security: []
       responses:
-        "200":
+        '200':
           description: JWKS público; kid identifica la clave.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PublicJwks"
+                $ref: '#/components/schemas/PublicJwks'
 components:
   securitySchemes:
     applicationJWT:
@@ -259,15 +259,15 @@ components:
             ipAddress:
               type:
                 - string
-                - "null"
+                - 'null'
             userAgent:
               type:
                 - string
-                - "null"
+                - 'null'
             impersonatedBy:
               type:
                 - string
-                - "null"
+                - 'null'
           required:
             - id
             - userId
@@ -292,7 +292,7 @@ components:
             image:
               type:
                 - string
-                - "null"
+                - 'null'
             createdAt:
               type: string
               format: date-time
@@ -304,7 +304,7 @@ components:
             role:
               type:
                 - string
-                - "null"
+                - 'null'
           required:
             - id
             - email
@@ -370,7 +370,7 @@ components:
         token:
           type:
             - string
-            - "null"
+            - 'null'
         user:
           type: object
           properties:
@@ -387,7 +387,7 @@ components:
             image:
               type:
                 - string
-                - "null"
+                - 'null'
             createdAt:
               type: string
               format: date-time
@@ -399,7 +399,7 @@ components:
             role:
               type:
                 - string
-                - "null"
+                - 'null'
           required:
             - id
             - email
@@ -460,7 +460,7 @@ components:
             image:
               type:
                 - string
-                - "null"
+                - 'null'
             createdAt:
               type: string
               format: date-time
@@ -472,7 +472,7 @@ components:
             role:
               type:
                 - string
-                - "null"
+                - 'null'
           required:
             - id
             - email

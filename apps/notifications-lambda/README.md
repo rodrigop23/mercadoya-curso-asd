@@ -2,11 +2,11 @@
 
 Notifications recibe solo los desenlaces `payment.succeeded`, `inventory.rejected` y `payment.failed`. Valida los eventos con los schemas de `@mercadoya/contracts`, renderiza tres templates React Email en español y envía HTML y texto con Resend. Después registra el resultado en `POST /api/events/ingest`. No escribe en `notifications_messages`.
 
-| Subject | Template | Asunto |
-| --- | --- | --- |
-| `payment.succeeded` | `order-confirmed` | Pedido confirmado |
-| `inventory.rejected` | `order-rejected-stock` | No pudimos completar tu pedido |
-| `payment.failed` | `order-rejected-payment` | El pago no se completó |
+| Subject              | Template                 | Asunto                         |
+| -------------------- | ------------------------ | ------------------------------ |
+| `payment.succeeded`  | `order-confirmed`        | Pedido confirmado              |
+| `inventory.rejected` | `order-rejected-stock`   | No pudimos completar tu pedido |
+| `payment.failed`     | `order-rejected-payment` | El pago no se completó         |
 
 El bridge no se suscribe a `orders.placed`, `inventory.reserved` ni `inventory.released`. Si llegan directamente al handler autenticado, responde 202 sin enviar ni ingestar. La reserva de stock no confirma un pedido.
 

@@ -11,9 +11,9 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+} from '@mercadoya/ui/components/alert-dialog';
+import { Button } from '@mercadoya/ui/components/button';
+import { Card, CardContent } from '@mercadoya/ui/components/card';
 import { AdminProductForm } from '@/features/catalog/admin-product-form';
 import { deleteProduct, productImageUrl, productsQueryOptions, type Product } from '@/lib/products';
 

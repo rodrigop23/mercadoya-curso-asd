@@ -16,7 +16,7 @@ paths:
       summary: Estado de Catalog
       security: []
       responses:
-        "200":
+        '200':
           description: El proceso responde.
           content:
             application/json:
@@ -38,12 +38,12 @@ paths:
       summary: Listar productos
       security: []
       responses:
-        "200":
+        '200':
           description: Productos ordenados por fecha de creación descendente.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ProductsResponse"
+                $ref: '#/components/schemas/ProductsResponse'
     post:
       operationId: createProduct
       summary: Crear producto con imagen
@@ -51,51 +51,51 @@ paths:
         - betterAuthSession: []
         - applicationJWT: []
       responses:
-        "201":
+        '201':
           description: Producto creado.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ProductResponse"
-        "400":
+                $ref: '#/components/schemas/ProductResponse'
+        '400':
           description: Solicitud inválida.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
-        "401":
+                $ref: '#/components/schemas/Error'
+        '401':
           description: Falta una sesión o credencial válida.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
-        "403":
+                $ref: '#/components/schemas/Error'
+        '403':
           description: Se requiere rol admin.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
-        "413":
+                $ref: '#/components/schemas/Error'
+        '413':
           description: El formulario supera 3145728 bytes. Kong puede devolver HTML; Catalog devuelve JSON.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: '#/components/schemas/Error'
             text/html:
               schema:
                 type: string
-        "500":
+        '500':
           description: Falló la operación.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: '#/components/schemas/Error'
       requestBody:
         required: true
         content:
           multipart/form-data:
             schema:
-              $ref: "#/components/schemas/CreateProduct"
+              $ref: '#/components/schemas/CreateProduct'
       description: Requiere admin. Media procesa la imagen dentro del módulo; no existe endpoint HTTP de upload separado.
   /api/products/{id}:
     put:
@@ -105,51 +105,51 @@ paths:
         - betterAuthSession: []
         - applicationJWT: []
       responses:
-        "200":
+        '200':
           description: Producto actualizado.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ProductResponse"
-        "400":
+                $ref: '#/components/schemas/ProductResponse'
+        '400':
           description: Solicitud inválida.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
-        "401":
+                $ref: '#/components/schemas/Error'
+        '401':
           description: Falta una sesión o credencial válida.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
-        "403":
+                $ref: '#/components/schemas/Error'
+        '403':
           description: Se requiere rol admin.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
-        "404":
+                $ref: '#/components/schemas/Error'
+        '404':
           description: No encontrado.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
-        "413":
+                $ref: '#/components/schemas/Error'
+        '413':
           description: El formulario supera 3145728 bytes. Kong puede devolver HTML; Catalog devuelve JSON.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: '#/components/schemas/Error'
             text/html:
               schema:
                 type: string
-        "500":
+        '500':
           description: Falló la operación.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: '#/components/schemas/Error'
       parameters:
         - name: id
           in: path
@@ -163,7 +163,7 @@ paths:
         content:
           multipart/form-data:
             schema:
-              $ref: "#/components/schemas/UpdateProduct"
+              $ref: '#/components/schemas/UpdateProduct'
     delete:
       operationId: deleteProduct
       summary: Eliminar producto y sus imágenes
@@ -171,38 +171,38 @@ paths:
         - betterAuthSession: []
         - applicationJWT: []
       responses:
-        "204":
+        '204':
           description: Producto eliminado; sin cuerpo.
-        "400":
+        '400':
           description: Solicitud inválida.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
-        "401":
+                $ref: '#/components/schemas/Error'
+        '401':
           description: Falta una sesión o credencial válida.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
-        "403":
+                $ref: '#/components/schemas/Error'
+        '403':
           description: Se requiere rol admin.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
-        "404":
+                $ref: '#/components/schemas/Error'
+        '404':
           description: No encontrado.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
-        "500":
+                $ref: '#/components/schemas/Error'
+        '500':
           description: Falló la operación.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: '#/components/schemas/Error'
       parameters:
         - name: id
           in: path
@@ -221,30 +221,30 @@ paths:
       security:
         - catalogInternalToken: []
       responses:
-        "200":
+        '200':
           description: null si no existe el producto.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/StockResponse"
-        "400":
+                $ref: '#/components/schemas/StockResponse'
+        '400':
           description: Solicitud inválida.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
-        "401":
+                $ref: '#/components/schemas/Error'
+        '401':
           description: Falta una sesión o credencial válida.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
-        "503":
+                $ref: '#/components/schemas/Error'
+        '503':
           description: Token interno no configurado.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: '#/components/schemas/Error'
       parameters:
         - name: id
           in: path
@@ -263,30 +263,30 @@ paths:
       security:
         - catalogInternalToken: []
       responses:
-        "200":
+        '200':
           description: Resultado de negocio; los rechazos también usan HTTP 200.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/StockAdjustmentResponse"
-        "400":
+                $ref: '#/components/schemas/StockAdjustmentResponse'
+        '400':
           description: Solicitud inválida.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
-        "401":
+                $ref: '#/components/schemas/Error'
+        '401':
           description: Falta una sesión o credencial válida.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
-        "503":
+                $ref: '#/components/schemas/Error'
+        '503':
           description: Token interno no configurado.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: '#/components/schemas/Error'
       parameters:
         - name: id
           in: path
@@ -300,7 +300,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/StockAdjustment"
+              $ref: '#/components/schemas/StockAdjustment'
 components:
   securitySchemes:
     applicationJWT:
@@ -483,7 +483,7 @@ components:
             - type: integer
               minimum: 0
               maximum: 9007199254740991
-            - type: "null"
+            - type: 'null'
       required:
         - availableStock
     StockAdjustmentResponse:

@@ -20,27 +20,27 @@ La imagen se construye con `apps/inventory-service/Dockerfile` desde el contexto
 
 Prueba los healthchecks mediante el gateway con `curl -i http://localhost:8000/api/inventory/v1/health` y `curl -i http://localhost:8000/api/inventory/v2/health`. Ambos responden con `serviceVersion` y `X-Service-Version` distintos. Docker consulta el healthcheck de cada contenedor cada 10 segundos. Indica que responde el proceso; no comprueba conectividad con Catalog. Catalog debe estar levantado antes de crear pedidos.
 
-| Variable                 | Valor en Compose                   | Uso                                                                                                    |
-| ------------------------ | ---------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `PORT`                   | `3003`                             | Puerto HTTP interno. No lo fijes en el `.env` de la raíz porque también lo leen API y Orders.          |
-| `SERVICE_VERSION`        | `v1` o `v2`                       | Decide las rutas HTTP y el valor de `X-Service-Version`. Solo v2 consume `orders.placed` y `payment.failed`; es el default si falta la variable.              |
-| `DATABASE_URL`           | Host `postgres`                    | La misma instancia PostgreSQL, solo la tabla `inventory_reservations` para Inventory.                  |
-| `EVENT_BUS`              | `nats`                             | Único transporte admitido.                                                                             |
-| `NATS_URL`               | `nats://nats:4222`                 | Inventory falla al arrancar si NATS no conecta.                                                        |
-| `CATALOG_URL`            | `http://catalog:3007` | Origen interno de Catalog; no pasa por Kong. Para ejecución local sin Docker, usa `http://localhost:3007`.                 |
-| `IDENTITY_URL`           | `http://identity:3006` | JWKS de Identity. Para ejecución local sin Docker, usa `http://localhost:3006`.                 |
-| `CATALOG_INTERNAL_TOKEN` | Leído del `.env` de la raíz        | Token compartido para las rutas `/api/internal/catalog/*`. Catalog e Inventory deben tener el mismo valor. |
-| `INVENTORY_V1_URL`       | `http://localhost:3003` en host | Solo compatibilidad explícita en `/api/inventory/v1/*`.                                               |
-| `INVENTORY_V2_URL`       | `http://localhost:3005` en host | Destino por defecto de `/api/inventory/v2/*` y del alias sin versión.                                                                       |
+| Variable                 | Valor en Compose                | Uso                                                                                                                                              |
+| ------------------------ | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PORT`                   | `3003`                          | Puerto HTTP interno. No lo fijes en el `.env` de la raíz porque también lo leen API y Orders.                                                    |
+| `SERVICE_VERSION`        | `v1` o `v2`                     | Decide las rutas HTTP y el valor de `X-Service-Version`. Solo v2 consume `orders.placed` y `payment.failed`; es el default si falta la variable. |
+| `DATABASE_URL`           | Host `postgres`                 | La misma instancia PostgreSQL, solo la tabla `inventory_reservations` para Inventory.                                                            |
+| `EVENT_BUS`              | `nats`                          | Único transporte admitido.                                                                                                                       |
+| `NATS_URL`               | `nats://nats:4222`              | Inventory falla al arrancar si NATS no conecta.                                                                                                  |
+| `CATALOG_URL`            | `http://catalog:3007`           | Origen interno de Catalog; no pasa por Kong. Para ejecución local sin Docker, usa `http://localhost:3007`.                                       |
+| `IDENTITY_URL`           | `http://identity:3006`          | JWKS de Identity. Para ejecución local sin Docker, usa `http://localhost:3006`.                                                                  |
+| `CATALOG_INTERNAL_TOKEN` | Leído del `.env` de la raíz     | Token compartido para las rutas `/api/internal/catalog/*`. Catalog e Inventory deben tener el mismo valor.                                       |
+| `INVENTORY_V1_URL`       | `http://localhost:3003` en host | Solo compatibilidad explícita en `/api/inventory/v1/*`.                                                                                          |
+| `INVENTORY_V2_URL`       | `http://localhost:3005` en host | Destino por defecto de `/api/inventory/v2/*` y del alias sin versión.                                                                            |
 
 El baseline histórico de Catalog conserva la definición de la tabla en `apps/catalog-service/src/db/inventory-schema.ts` y sus migraciones en `apps/catalog-service/drizzle`. Inventory posee su copia del schema en `src/inventory/schema.ts`; no importa código ni tablas de Catalog. El token compartido solo protege el puente de clase. Para otro entorno, usa una clave aleatoria y limita el acceso de red a las rutas internas.
 
 Health es público. Las reservas requieren autenticación. Kong `:8000` acepta la sesión browser o Bearer y reenvía JWT. Inventory verifica RS256, kid, issuer/audience y claims mediante JWKS, sin consultar `/api/me` ni reenviar cookies. El acceso directo requiere Bearer JWT. `IDENTITY_URL=http://identity:3006` en Compose; issuer es `http://localhost:8000` y audience `mercadoya-services`. Una credencial inválida produce 401. Se mantiene el acceso de lectura de clase sin comprobar ownership de la reserva. El alias sin versión usa v2; v1 es explícito y deprecated.
 
-| Concepto | Qué cambia en esta demo | Cómo comprobarlo |
-| --- | --- | --- |
-| Versión de API | El contrato HTTP v2 exige `reservation.status: "reserved"`; v1 conserva el JSON anterior. | Consulta el mismo `orderId` en `/v1/reservations/` y `/v2/reservations/`. |
-| Versión de servicio | Dos despliegues de la misma imagen usan `SERVICE_VERSION=v1` y `v2`. | `docker compose ps inventory-v1 inventory-v2` y el header `X-Service-Version`. |
+| Concepto            | Qué cambia en esta demo                                                                   | Cómo comprobarlo                                                               |
+| ------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Versión de API      | El contrato HTTP v2 exige `reservation.status: "reserved"`; v1 conserva el JSON anterior. | Consulta el mismo `orderId` en `/v1/reservations/` y `/v2/reservations/`.      |
+| Versión de servicio | Dos despliegues de la misma imagen usan `SERVICE_VERSION=v1` y `v2`.                      | `docker compose ps inventory-v1 inventory-v2` y el header `X-Service-Version`. |
 
 Después de iniciar sesión y crear un pedido con stock, guarda su `orderId` y ejecuta:
 

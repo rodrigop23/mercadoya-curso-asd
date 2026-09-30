@@ -31,11 +31,11 @@ jobs:
           install: false
       - name: Install frozen dependencies
         run: pnpm install --frozen-lockfile
-      - name: Typecheck
+      - name: Typecheck all workspaces including shared UI
         run: pnpm typecheck
-      - name: Lint
+      - name: Lint all workspaces including shared UI
         run: pnpm lint
-      - name: Build
+      - name: Build all consumers including web and mf-catalog
         run: pnpm build
       - name: Validate versioned OpenAPI and generated schemas
         run: pnpm openapi:check

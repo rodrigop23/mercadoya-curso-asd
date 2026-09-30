@@ -2,8 +2,8 @@ import { Link } from '@tanstack/react-router';
 import { ShieldCheck } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-import { buttonVariants } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { buttonVariants } from '@mercadoya/ui/components/button';
+import { Card, CardContent } from '@mercadoya/ui/components/card';
 import { authClient } from '@/lib/auth-client';
 
 type AdminAccessGuardProps = {
