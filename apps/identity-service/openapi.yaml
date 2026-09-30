@@ -2,11 +2,11 @@
 openapi: 3.1.0
 info:
   title: MercadoYa Identity
-  version: 1.0.0
-  description: Borde usado por la web y los servicios. /api/auth/* delega GET/POST restantes al proveedor Better Auth y admin plugin; este documento fija login, logout y sesión, no reemplaza la API completa del proveedor. El módulo sigue dentro del BFF.
+  version: 2.0.0
+  description: Borde usado por la web y los servicios. /api/auth/* delega GET/POST restantes al proveedor Better Auth y admin plugin; este documento fija login, logout y sesión, no reemplaza la API completa del proveedor. Identity corre en su propio proceso.
 servers:
-  - url: http://localhost:3001
-    description: BFF local; los paths incluyen /api.
+  - url: http://localhost:8000
+    description: Kong OSS local; los paths incluyen /api.
 paths:
   /api/identity/health:
     get:
@@ -188,8 +188,44 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/SignIn"
+  /api/auth/token:
+    get:
+      operationId: applicationToken
+      summary: Emitir JWT desde una sesión browser
+      security:
+        - betterAuthSession: []
+      responses:
+        "200":
+          description: JWT con duración de cinco minutos.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplicationToken"
+        "401":
+          description: Falta una sesión o credencial válida.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/auth/jwks:
+    get:
+      operationId: publicJwks
+      summary: Claves públicas para verificar JWT
+      security: []
+      responses:
+        "200":
+          description: JWKS público; kid identifica la clave.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicJwks"
 components:
   securitySchemes:
+    applicationJWT:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: RS256, kid, sub, role, iss=http://localhost:8000, aud=mercadoya-services, iat y exp. Directo al servicio requiere Bearer; Kong admite también sesión browser.
     betterAuthSession:
       type: apiKey
       in: cookie
@@ -469,3 +505,42 @@ components:
         - email
         - password
       additionalProperties: false
+    ApplicationToken:
+      type: object
+      properties:
+        token:
+          type: string
+          minLength: 1
+      required:
+        - token
+    PublicJwks:
+      type: object
+      properties:
+        keys:
+          type: array
+          items:
+            type: object
+            properties:
+              kid:
+                type: string
+                minLength: 1
+              kty:
+                type: string
+                const: RSA
+              alg:
+                type: string
+                const: RS256
+              n:
+                type: string
+                minLength: 1
+              e:
+                type: string
+                minLength: 1
+            required:
+              - kid
+              - kty
+              - alg
+              - n
+              - e
+      required:
+        - keys

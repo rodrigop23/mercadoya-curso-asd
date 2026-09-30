@@ -3,8 +3,8 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "dev": "turbo run build --filter @mercadoya/contracts && turbo run dev",
-    "demo:infra": "docker compose up -d postgres nats && pnpm --filter @mercadoya/api db:push && docker compose stop inventory-v1 inventory-v2 && docker compose up -d --build --remove-orphans inventory-v1 inventory-v2",
+    "dev": "turbo run dev --filter=@mercadoya/web --filter=@mercadoya/mf-catalog",
+    "demo:infra": "docker compose up -d postgres nats && pnpm --filter @mercadoya/api db:migrate && pnpm --filter @mercadoya/identity-service db:migrate && mkdir -p apps/api/uploads && LOCAL_UID=$(id -u) LOCAL_GID=$(id -g) docker compose up -d --build",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "format": "turbo run format format:root",

@@ -2,7 +2,7 @@
 
 Proceso Node/Hono para crear y consultar pedidos. Escucha en `http://localhost:3002` y conserva el ciclo `pending` → `confirmed` o `rejected`. Publica `orders.placed` y consume los resultados de Inventory y Payment por NATS.
 
-Usa el mismo `DATABASE_URL` PostgreSQL que `@mercadoya/api` y la tabla existente `orders_order`. Por ahora, las migraciones de esa tabla siguen en `apps/api/drizzle`; `pnpm --filter @mercadoya/api db:push` aplica el esquema. La separación de bases queda para una fase posterior.
+Usa el mismo `DATABASE_URL` PostgreSQL que `@mercadoya/api` y la tabla existente `orders_order`. Por ahora, las migraciones de esa tabla siguen en `apps/api/drizzle`; `pnpm --filter @mercadoya/api db:migrate` aplica el esquema. La separación de bases queda para una fase posterior.
 
 Variables en el `.env` de la raíz:
 
@@ -12,10 +12,10 @@ Variables en el `.env` de la raíz:
 | `DATABASE_URL` | URL de PostgreSQL de Compose | Base compartida con el API. |
 | `EVENT_BUS` | `nats` | Es el único transporte admitido por Orders. |
 | `NATS_URL` | `nats://localhost:4222` | Servidor NATS. Orders falla al arrancar si no conecta. |
-| `IDENTITY_URL` | `http://localhost:3001` | Origen del API para consultar `GET /api/me`. |
+| `IDENTITY_URL` | `http://localhost:3006` | JWKS de Identity para verificar JWT. |
 | `ORDERS_SERVICE_URL` | `http://localhost:3002` | Destino del proxy del API; se configura en el API. |
 
-`pnpm dev` inicia web, API y Orders. Para iniciar solo este proceso, usa `pnpm --filter @mercadoya/orders-service dev`. El navegador llama `:3001/api/orders`; el API reenvía método, ruta, query, cabeceras y cuerpo. Orders reenvía la cookie o `Authorization` a `:3001/api/me` y usa `user.id` como `buyerId`. `POST /api/orders` sin sesión responde `401`; si Identity no está disponible, responde `502`. `GET /api/orders/:orderId` y `/health` permanecen públicos para consultar el estado eventual durante la demo.
+Compose inicia Orders. `pnpm dev` inicia web y MF. El navegador llama a Kong `:8000/api/orders` con cookie de sesión o Bearer JWT. Kong valida la credencial con Identity y reenvía un JWT. Orders verifica RS256, kid, issuer, audience, subject, role y expiración mediante JWKS, sin llamar a `/api/me`. El buyerId procede del claim sub. POST y GET de pedidos requieren autenticación; health permanece público. Acceso directo al servicio requiere Bearer, nunca solo cookie. `JWT_ISSUER=http://localhost:8000` y `JWT_AUDIENCE=mercadoya-services` coinciden con Identity. Consulta [Identity](../identity-service/README.md).
 
 ## Saga por coreografía y compensación
 

@@ -2,11 +2,11 @@
 openapi: 3.1.0
 info:
   title: MercadoYa Orders
-  version: 1.0.0
-  description: HTTP actual; GET público, POST con cookie. El BFF también puede devolver 502 al fallar el proxy.
+  version: 2.0.0
+  description: Kong acepta sesión browser o JWT. Orders directo requiere Bearer JWT verificado por JWKS. Health público.
 servers:
-  - url: http://localhost:3001
-    description: BFF local; los paths incluyen /api.
+  - url: http://localhost:8000
+    description: Kong OSS local; los paths incluyen /api.
   - url: http://localhost:3002
     description: Orders directo.
 paths:
@@ -38,6 +38,7 @@ paths:
       summary: Crear un pedido pendiente y publicar orders.placed
       security:
         - betterAuthSession: []
+        - applicationJWT: []
       responses:
         "202":
           description: Pedido aceptado; la saga resuelve el estado.
@@ -75,12 +76,14 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/CreateOrder"
-      description: buyerId procede de la sesión. Campos extra como paymentMode se descartan; solo el CLI interno usa ese override.
+      description: buyerId procede del claim sub verificado. Campos extra como paymentMode se descartan; solo el CLI interno usa ese override.
   /api/orders/{orderId}:
     get:
       operationId: getOrder
-      summary: Consultar un pedido sin autenticación
-      security: []
+      summary: Consultar un pedido autenticado
+      security:
+        - betterAuthSession: []
+        - applicationJWT: []
       responses:
         "200":
           description: Pedido encontrado.
@@ -122,6 +125,11 @@ paths:
             pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
 components:
   securitySchemes:
+    applicationJWT:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: RS256, kid, sub, role, iss=http://localhost:8000, aud=mercadoya-services, iat y exp. Directo al servicio requiere Bearer; Kong admite también sesión browser.
     betterAuthSession:
       type: apiKey
       in: cookie

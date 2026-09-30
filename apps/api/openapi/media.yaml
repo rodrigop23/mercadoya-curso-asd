@@ -3,10 +3,10 @@ openapi: 3.1.0
 info:
   title: MercadoYa Media
   version: 1.0.0
-  description: La ruta estática /uploads/* la monta Catalog. La entrada de Media es image en multipart de Catalog; no hay upload HTTP autónomo. Polar y gateway Kong quedan para decisiones futuras.
+  description: La ruta estática /uploads/* la monta Catalog. La entrada de Media es image en multipart de Catalog; no hay upload HTTP autónomo. Kong proxifica Catalog y Media; Polar queda para decisiones futuras.
 servers:
-  - url: http://localhost:3001
-    description: BFF local; los paths incluyen /api.
+  - url: http://localhost:8000
+    description: Kong OSS local; los paths incluyen /api.
 paths:
   /api/media/health:
     get:
@@ -61,6 +61,11 @@ paths:
             type: string
 components:
   securitySchemes:
+    applicationJWT:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: RS256, kid, sub, role, iss=http://localhost:8000, aud=mercadoya-services, iat y exp. Directo al servicio requiere Bearer; Kong admite también sesión browser.
     betterAuthSession:
       type: apiKey
       in: cookie

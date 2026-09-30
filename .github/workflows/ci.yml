@@ -41,3 +41,48 @@ jobs:
         run: pnpm openapi:check
       - name: Test
         run: pnpm test
+
+  identity-gateway-smoke:
+    name: Identity and Kong smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/setup@v3
+        with:
+          node-version-file: .node-version
+          cache: true
+          cache-dependency-path: pnpm-lock.yaml
+          install: false
+      - run: pnpm install --frozen-lockfile
+      - name: Generate ephemeral credentials
+        run: |
+          node --input-type=module <<'JS'
+          import { randomBytes } from 'node:crypto';
+          import { writeFileSync } from 'node:fs';
+          const names = ['BETTER_AUTH_SECRET', 'CATALOG_INTERNAL_TOKEN', 'NOTIFICATIONS_INGEST_TOKEN', 'NOTIFICATIONS_INVOKE_TOKEN'];
+          const values = names.map(name => `${name}=${randomBytes(48).toString('base64url')}`);
+          writeFileSync('.env', values.join('\n') + '\nDATABASE_URL=postgresql://mercadoya:mercadoya_local@localhost:5432/mercadoya\n', { mode: 0o600 });
+          JS
+      - name: Initialize infrastructure and migrations
+        run: |
+          docker compose up -d --wait postgres nats
+          pnpm --filter @mercadoya/api db:migrate
+          pnpm --filter @mercadoya/identity-service db:migrate
+          pnpm --filter @mercadoya/jwt-verifier build
+      - name: Build and start Kong OSS and services
+        run: |
+          mkdir -p apps/api/uploads
+          LOCAL_UID=$(id -u) LOCAL_GID=$(id -g) docker compose up -d --build
+      - name: Login, JWKS and create order smoke
+        env:
+          DATABASE_URL: postgresql://mercadoya:mercadoya_local@localhost:5432/mercadoya
+        run: pnpm --filter @mercadoya/identity-service smoke
+      - name: Diagnostics on failure
+        if: failure()
+        run: docker compose logs --tail=100
+      - name: Cleanup ephemeral stack
+        if: always()
+        run: docker compose down -v --remove-orphans

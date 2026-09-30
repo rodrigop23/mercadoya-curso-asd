@@ -8,14 +8,14 @@
 | --- | --- | --- |
 | Inventory HTTP v1/v2 y alias | [Inventory](../../apps/inventory-service/openapi.yaml) | `apps/inventory-service` |
 | Orders HTTP | [Orders](../../apps/orders-service/openapi.yaml) | `apps/orders-service` |
-| Identity, login y sesión | [Identity](../../apps/api/openapi/identity.yaml) | `apps/api/src/modules/identity` |
+| Identity, login y sesión | [Identity](../../apps/identity-service/openapi.yaml) | `apps/identity-service` |
 | Catalog público y stock interno | [Catalog](../../apps/api/openapi/catalog.yaml) | `apps/api/src/modules/catalog` |
 | Media, health y lectura de imágenes | [Media](../../apps/api/openapi/media.yaml) | Media procesa imágenes; Catalog monta `/uploads/*` |
 | NATS saga v1 | [JSON Schemas por subject](events.schema.json) | Orders publica pedidos y resultados del simulador Payment; Inventory publica reserva, rechazo y liberación |
 
-El owner del módulo revisa su spec y los schemas en cada cambio de handler. Los owners de consumidores afectados deben revisar cambios incompatibles. Identity/Catalog/Media siguen dentro del BFF. Media recibe `image` mediante multipart de Catalog, no tiene una ruta independiente de upload. Identity documenta los endpoints que usan la web y los servicios; el catch-all GET/POST `/api/auth/*` también delega endpoints del proveedor Better Auth y su plugin admin. No declaramos esos endpoints adicionales como contratos propios de MercadoYa.
+El owner del módulo revisa su spec y los schemas en cada cambio de handler. Los owners de consumidores afectados deben revisar cambios incompatibles. Identity corre en su servicio propio; Catalog y Media siguen en API. Media recibe `image` mediante multipart de Catalog, no tiene una ruta independiente de upload. Identity documenta los endpoints que usan la web y los servicios; el catch-all GET/POST `/api/auth/*` también delega endpoints del proveedor Better Auth y su plugin admin. No declaramos esos endpoints adicionales como contratos propios de MercadoYa.
 
-El server principal es el BFF local `http://localhost:3001`. Orders también anuncia `3002`; Inventory declara `3003` o `3005` en cada path según la versión que realmente sirve ese proceso. Estos servers son ejemplos locales en las specs, no forman parte de los DTO. No hay URLs internas ni tablas en el paquete publicado.
+El server principal es Kong local `http://localhost:8000`. Orders también anuncia `3002`; Inventory declara `3003` o `3005` en cada path según la versión que realmente sirve ese proceso. Estos servers son ejemplos locales en las specs, no forman parte de los DTO. No hay URLs internas ni tablas en el paquete publicado.
 
 ## Generación desde código
 
@@ -41,7 +41,7 @@ Zod transforma `price`/`stock` de multipart a números después de validar strin
 
 La web envía la cookie Better Auth con `credentials: include`. En localhost se llama `better-auth.session_token`; HTTPS puede añadir `__Secure-`. El token en las respuestas del proveedor es opaco, no implica Bearer JWT. `POST /api/orders` requiere sesión; `GET /api/orders/{orderId}` y health son públicos. Inventory requiere sesión para leer reservas y hoy no compara el comprador. Catalog exige rol `admin` para escritura; el stock interno usa `x-catalog-internal-token`, no la cookie del navegador.
 
-`/api/me` devuelve sesión/usuario o 401; `/api/auth/get-session` puede devolver `null` con 200. Los schemas de respuestas del proveedor admiten campos adicionales de plugins. Los adapters `sessionBuyerSchema` leen solo `user.id` y conservan la conducta anterior de los servicios. Los tipos de puertos que usan `Date` o `File` siguen siendo adapters del módulo, no DTO HTTP.
+`/api/me` devuelve sesión/usuario o 401; `/api/auth/get-session` puede devolver `null` con 200. Los schemas de respuestas del proveedor admiten campos adicionales de plugins. El schema `sessionBuyerSchema` permanece como adapter de sesión. Orders e Inventory obtienen sub de un JWT verificado por JWKS. `applicationJwtClaimsSchema`, `applicationTokenResponseSchema` y `publicJwksSchema` describen el nuevo contrato; el schema de claims no sustituye la comprobación criptográfica. Los tipos de puertos que usan `Date` o `File` siguen siendo adapters del módulo, no DTO HTTP.
 
 ## Versionado y breaking changes
 
@@ -53,7 +53,7 @@ Los eventos mantienen exactamente `orders.placed`, `inventory.reserved`, `invent
 
 Para eventos incompatibles se añade un schema con `version` nuevo y subject versionado acordado, con publicación/consumo paralelo durante la migración. No se sustituye el payload de un subject v1 con datos incompatibles. Los tests de parse deben cubrir ambos contratos y su correlación antes de retirar v1.
 
-Inventory conserva su `info.version: 2.0.0`, HTTP v1/v2 y los alias v1 obsoletos existentes. Este cambio no decide el cutover, ni mueve suscripciones NATS a v2. Polar y Kong quedan como bordes futuros sin contratos nuevos. La extracción de Identity/Catalog y la autenticación futura requieren decisiones posteriores.
+Inventory anuncia `info.version: 4.0.0` por el requisito JWT directo; conserva HTTP v1/v2 y el alias de aplicación v2. Orders e Identity anuncian `2.0.0`. Solo Inventory v2 consume eventos de saga. Kong es el borde HTTP y Identity el propietario de sesión/JWT. Catalog y Media permanecen en API; Polar sigue pendiente.
 
 ## Referencias verificadas
 

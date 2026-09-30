@@ -11,7 +11,7 @@ apis:
   orders:
     root: ../../apps/orders-service/openapi.yaml
   identity:
-    root: ../../apps/api/openapi/identity.yaml
+    root: ../../apps/identity-service/openapi.yaml
   catalog:
     root: ../../apps/api/openapi/catalog.yaml
   media:

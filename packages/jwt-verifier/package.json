@@ -1,0 +1,25 @@
+{
+  "name": "@mercadoya/jwt-verifier",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "oxlint .",
+    "format": "oxfmt .",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "jose": "6.2.12"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0"
+  }
+}

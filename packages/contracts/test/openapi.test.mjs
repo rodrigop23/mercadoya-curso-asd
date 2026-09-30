@@ -4,7 +4,7 @@ import { generatedDocuments } from '../scripts/openapi.mjs';
 
 const inventory = generatedDocuments.get('apps/inventory-service/openapi.yaml');
 const orders = generatedDocuments.get('apps/orders-service/openapi.yaml');
-const identity = generatedDocuments.get('apps/api/openapi/identity.yaml');
+const identity = generatedDocuments.get('apps/identity-service/openapi.yaml');
 const catalog = generatedDocuments.get('apps/api/openapi/catalog.yaml');
 
 test('Inventory anuncia el despliegue correcto para cada versión y usa el alias v2', () => {
@@ -13,7 +13,7 @@ test('Inventory anuncia el despliegue correcto para cada versión y usa el alias
     const v2 = !prefix.endsWith('v1');
     assert.deepEqual(
       path.servers.map((server) => server.url),
-      ['http://localhost:3001', v2 ? 'http://localhost:3005' : 'http://localhost:3003'],
+      ['http://localhost:8000', v2 ? 'http://localhost:3005' : 'http://localhost:3003'],
     );
     assert.equal(path.get.deprecated, v2 ? undefined : true);
     assert.equal(
@@ -36,16 +36,22 @@ test('Inventory anuncia el despliegue correcto para cada versión y usa el alias
   }
 });
 
-test('los bordes documentados conservan cookie, GET público y token interno de stock', () => {
-  assert.deepEqual(orders.paths['/api/orders/{orderId}'].get.security, []);
-  assert.deepEqual(orders.paths['/api/orders'].post.security, [{ betterAuthSession: [] }]);
+test('los bordes documentados distinguen sesión browser, JWT y token interno de stock', () => {
+  assert.deepEqual(orders.paths['/api/orders/{orderId}'].get.security, [
+    { betterAuthSession: [] },
+    { applicationJWT: [] },
+  ]);
+  assert.deepEqual(orders.paths['/api/orders'].post.security, [
+    { betterAuthSession: [] },
+    { applicationJWT: [] },
+  ]);
   assert.deepEqual(identity.paths['/api/me'].get.security, [{ betterAuthSession: [] }]);
   assert.deepEqual(catalog.paths['/api/internal/catalog/products/{id}/stock'].get.security, [
     { catalogInternalToken: [] },
   ]);
   for (const doc of generatedDocuments.values()) {
     assert.equal(doc.components.securitySchemes.betterAuthSession.in, 'cookie');
-    assert.equal(JSON.stringify(doc).includes('bearerFormat'), false);
+    assert.equal(doc.components.securitySchemes.applicationJWT.bearerFormat, 'JWT');
   }
   assert.equal(
     catalog.paths['/api/products'].post.requestBody.content['multipart/form-data'].schema.$ref,

@@ -5,8 +5,8 @@ info:
   version: 1.0.0
   description: Catalog sigue dentro del BFF. Multipart conserva strings para price/stock; los refinements numéricos se ejecutan después de convertirlos. Las rutas internas son un borde HTTP real, no URLs de infraestructura en DTOs.
 servers:
-  - url: http://localhost:3001
-    description: BFF local; los paths incluyen /api.
+  - url: http://localhost:8000
+    description: Kong OSS local; los paths incluyen /api.
 paths:
   /api/catalog/health:
     get:
@@ -47,6 +47,7 @@ paths:
       summary: Crear producto con imagen
       security:
         - betterAuthSession: []
+        - applicationJWT: []
       responses:
         "201":
           description: Producto creado.
@@ -91,6 +92,7 @@ paths:
       summary: Actualizar producto; la imagen es opcional
       security:
         - betterAuthSession: []
+        - applicationJWT: []
       responses:
         "200":
           description: Producto actualizado.
@@ -147,6 +149,7 @@ paths:
       summary: Eliminar producto y sus imágenes
       security:
         - betterAuthSession: []
+        - applicationJWT: []
       responses:
         "204":
           description: Producto eliminado; sin cuerpo.
@@ -274,6 +277,11 @@ paths:
               $ref: "#/components/schemas/StockAdjustment"
 components:
   securitySchemes:
+    applicationJWT:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: RS256, kid, sub, role, iss=http://localhost:8000, aud=mercadoya-services, iat y exp. Directo al servicio requiere Bearer; Kong admite también sesión browser.
     betterAuthSession:
       type: apiKey
       in: cookie

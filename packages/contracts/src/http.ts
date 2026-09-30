@@ -142,3 +142,25 @@ export type IdentitySessionResponse = z.infer<typeof identitySessionResponseSche
 export type ProductResponse = z.infer<typeof productResponseSchema>;
 export type ProductFormInput = z.input<typeof productFormSchema>;
 export type StockAdjustmentResponse = z.infer<typeof stockAdjustmentResponseSchema>;
+
+// Application tokens differ from Better Auth's session cookie/cache.
+export const applicationJwtClaimsSchema = z.object({
+  sub: z.string().min(1),
+  role: z.enum(['user', 'admin']),
+  iss: z.string().url(),
+  aud: z.string().min(1),
+  iat: z.number().int(),
+  exp: z.number().int(),
+});
+export const applicationTokenResponseSchema = z.object({ token: z.string().min(1) });
+export const publicJwksSchema = z.object({
+  keys: z.array(
+    z.object({
+      kid: z.string().min(1),
+      kty: z.literal('RSA'),
+      alg: z.literal('RS256'),
+      n: z.string().min(1),
+      e: z.string().min(1),
+    }),
+  ),
+});

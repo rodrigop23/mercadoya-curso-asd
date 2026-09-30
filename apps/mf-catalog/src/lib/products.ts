@@ -1,6 +1,6 @@
 import { queryOptions } from '@tanstack/react-query';
 
-export const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
+export const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
 export function productImageUrl(imagePath: string) {
   const encodedPath = imagePath.split('/').map(encodeURIComponent).join('/');

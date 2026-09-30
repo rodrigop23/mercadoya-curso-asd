@@ -10,8 +10,12 @@ const jsonSchema = (schema, io = 'input') => {
   const { $schema: _dialect, ...result } = z.toJSONSchema(schema, { target: 'draft-2020-12', io });
   return result;
 };
+const bearer = { applicationJWT: [] };
+const applicationAuth = [{ betterAuthSession: [] }, bearer];
 const cookie = { betterAuthSession: [] };
 const schemas = {
+  ApplicationToken: contracts.applicationTokenResponseSchema,
+  PublicJwks: contracts.publicJwksSchema,
   Error: contracts.errorResponseSchema,
   CreateOrder: contracts.createOrderSchema,
   OrderResponse: contracts.orderResponseSchema,
@@ -99,7 +103,10 @@ const health = (module, version) =>
       ...(version ? { serviceVersion: { type: 'string', const: version } } : {}),
     },
   });
-const bff = { url: 'http://localhost:3001', description: 'BFF local; los paths incluyen /api.' };
+const bff = {
+  url: 'http://localhost:8000',
+  description: 'Kong OSS local; los paths incluyen /api.',
+};
 const doc = (title, version, paths, description, servers = [bff]) => {
   // Solo exportamos componentes utilizados por este documento.
   const used = new Set(
@@ -114,6 +121,13 @@ const doc = (title, version, paths, description, servers = [bff]) => {
     paths,
     components: {
       securitySchemes: {
+        applicationJWT: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          description:
+            'RS256, kid, sub, role, iss=http://localhost:8000, aud=mercadoya-services, iat y exp. Directo al servicio requiere Bearer; Kong admite también sesión browser.',
+        },
         betterAuthSession: {
           type: 'apiKey',
           in: 'cookie',
@@ -141,7 +155,7 @@ documents.set(
   'apps/orders-service/openapi.yaml',
   doc(
     'Orders',
-    '1.0.0',
+    '2.0.0',
     {
       '/api/orders/health': {
         get: op('ordersHealth', 'Estado de Orders', { 200: health('orders') }),
@@ -155,23 +169,23 @@ documents.set(
             ...errors(400, 401, 500, 502),
           },
           {
-            security: [cookie],
+            security: applicationAuth,
             requestBody: body('CreateOrder'),
             description:
-              'buyerId procede de la sesión. Campos extra como paymentMode se descartan; solo el CLI interno usa ese override.',
+              'buyerId procede del claim sub verificado. Campos extra como paymentMode se descartan; solo el CLI interno usa ese override.',
           },
         ),
       },
       '/api/orders/{orderId}': {
         get: op(
           'getOrder',
-          'Consultar un pedido sin autenticación',
+          'Consultar un pedido autenticado',
           { 200: response('Pedido encontrado.', 'OrderResponse'), ...errors(400, 404, 500, 502) },
-          { parameters: [id('orderId')] },
+          { security: applicationAuth, parameters: [id('orderId')] },
         ),
       },
     },
-    'HTTP actual; GET público, POST con cookie. El BFF también puede devolver 502 al fallar el proxy.',
+    'Kong acepta sesión browser o JWT. Orders directo requiere Bearer JWT verificado por JWKS. Health público.',
     [bff, { url: 'http://localhost:3002', description: 'Orders directo.' }],
   ),
 );
@@ -253,13 +267,26 @@ for (const [route, request, result, operation] of [
     ),
   };
 }
+identityPaths['/api/auth/token'] = {
+  get: op(
+    'applicationToken',
+    'Emitir JWT desde una sesión browser',
+    { 200: response('JWT con duración de cinco minutos.', 'ApplicationToken'), ...errors(401) },
+    { security: [cookie] },
+  ),
+};
+identityPaths['/api/auth/jwks'] = {
+  get: op('publicJwks', 'Claves públicas para verificar JWT', {
+    200: response('JWKS público; kid identifica la clave.', 'PublicJwks'),
+  }),
+};
 documents.set(
-  'apps/api/openapi/identity.yaml',
+  'apps/identity-service/openapi.yaml',
   doc(
     'Identity',
-    '1.0.0',
+    '2.0.0',
     identityPaths,
-    'Borde usado por la web y los servicios. /api/auth/* delega GET/POST restantes al proveedor Better Auth y admin plugin; este documento fija login, logout y sesión, no reemplaza la API completa del proveedor. El módulo sigue dentro del BFF.',
+    'Borde usado por la web y los servicios. /api/auth/* delega GET/POST restantes al proveedor Better Auth y admin plugin; este documento fija login, logout y sesión, no reemplaza la API completa del proveedor. Identity corre en su propio proceso.',
   ),
 );
 
@@ -285,7 +312,7 @@ documents.set(
           'Crear producto con imagen',
           { 201: response('Producto creado.', 'ProductResponse'), ...productResponses },
           {
-            security: [cookie],
+            security: applicationAuth,
             requestBody: body('CreateProduct', 'multipart/form-data'),
             description:
               'Requiere admin. Media procesa la imagen dentro del módulo; no existe endpoint HTTP de upload separado.',
@@ -302,7 +329,7 @@ documents.set(
             ...errors(404),
           },
           {
-            security: [cookie],
+            security: applicationAuth,
             parameters: [id('id')],
             requestBody: body('UpdateProduct', 'multipart/form-data'),
           },
@@ -311,7 +338,7 @@ documents.set(
           'deleteProduct',
           'Eliminar producto y sus imágenes',
           { 204: response('Producto eliminado; sin cuerpo.'), ...errors(400, 401, 403, 404, 500) },
-          { security: [cookie], parameters: [id('id')] },
+          { security: applicationAuth, parameters: [id('id')] },
         ),
       },
       '/api/internal/catalog/products/{id}/stock': {
@@ -399,11 +426,11 @@ for (const [prefix, version, legacy] of [
         ...errors(400, 401, 404, 500, 502),
       },
       {
-        security: [cookie],
+        security: applicationAuth,
         parameters: [id('orderId')],
         ...(version === 'v1' ? { deprecated: true } : {}),
         description:
-          'Valida sesión con Identity; no verifica que el usuario sea comprador. La reserva entra por NATS. ' +
+          'Verifica Bearer JWT mediante JWKS de Identity; no verifica que el usuario sea comprador. La reserva entra por NATS. ' +
           (version === 'v1'
             ? 'Retenido para compatibilidad. Migra a /api/inventory/v2/reservations/{orderId}, que añade reservation.status. Sin fecha de retirada.'
             : 'Contrato de aplicación por defecto; reservation.status es obligatorio.'),
@@ -432,7 +459,7 @@ documents.set(
   'apps/inventory-service/openapi.yaml',
   doc(
     'Inventory HTTP API',
-    '3.0.0',
+    '4.0.0',
     inventoryPaths,
     'V2 es el default de aplicación y del alias sin versión. Solo el despliegue v2 consume la saga. V1 se retiene explícito y deprecated, sin fecha de retirada. No existe POST de reserva.',
   ),
@@ -463,7 +490,7 @@ const media = doc(
       ),
     },
   },
-  'La ruta estática /uploads/* la monta Catalog. La entrada de Media es image en multipart de Catalog; no hay upload HTTP autónomo. Polar y gateway Kong quedan para decisiones futuras.',
+  'La ruta estática /uploads/* la monta Catalog. La entrada de Media es image en multipart de Catalog; no hay upload HTTP autónomo. Kong proxifica Catalog y Media; Polar queda para decisiones futuras.',
 );
 documents.set('apps/api/openapi/media.yaml', media);
 const eventSchemas = Object.fromEntries(

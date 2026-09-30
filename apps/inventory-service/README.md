@@ -16,9 +16,9 @@ pnpm demo:infra
 pnpm dev
 ```
 
-La imagen se construye con `apps/inventory-service/Dockerfile` desde el contexto de la raíz. Su segunda etapa contiene Node, el código compilado, dependencias de producción y el `openapi.yaml` canónico. Compose crea dos servicios con la misma imagen y `SERVICE_VERSION=v1|v2`; publica `3003` y `3005`, conecta la base en `postgres:5432`, NATS en `nats:4222`, Catalog e Identity en `host.docker.internal:3001`. El mapeo `host-gateway` también permite esa dirección en Linux. El API y Orders continúan como procesos Node iniciados por `pnpm dev`.
+La imagen se construye con `apps/inventory-service/Dockerfile` desde el contexto de la raíz. Su segunda etapa contiene Node, el código compilado, dependencias de producción y el `openapi.yaml` canónico. Compose crea dos servicios con la misma imagen y `SERVICE_VERSION=v1|v2`; publica `3003` y `3005`, conecta la base en `postgres:5432`, NATS en `nats:4222`, Catalog en `http://api:3001` e Identity en `http://identity:3006`. API y Orders también corren en Compose.
 
-Prueba los healthchecks mediante el gateway con `curl -i http://localhost:3001/api/inventory/v1/health` y `curl -i http://localhost:3001/api/inventory/v2/health`. Ambos responden con `serviceVersion` y `X-Service-Version` distintos. Docker consulta el healthcheck de cada contenedor cada 10 segundos. Indica que responde el proceso; no comprueba conectividad con Catalog. El API debe estar levantado antes de crear pedidos.
+Prueba los healthchecks mediante el gateway con `curl -i http://localhost:8000/api/inventory/v1/health` y `curl -i http://localhost:8000/api/inventory/v2/health`. Ambos responden con `serviceVersion` y `X-Service-Version` distintos. Docker consulta el healthcheck de cada contenedor cada 10 segundos. Indica que responde el proceso; no comprueba conectividad con Catalog. El API debe estar levantado antes de crear pedidos.
 
 | Variable                 | Valor en Compose                   | Uso                                                                                                    |
 | ------------------------ | ---------------------------------- | ------------------------------------------------------------------------------------------------------ |
@@ -27,15 +27,15 @@ Prueba los healthchecks mediante el gateway con `curl -i http://localhost:3001/a
 | `DATABASE_URL`           | Host `postgres`                    | La misma instancia PostgreSQL, solo la tabla `inventory_reservations` para Inventory.                  |
 | `EVENT_BUS`              | `nats`                             | Único transporte admitido.                                                                             |
 | `NATS_URL`               | `nats://nats:4222`                 | Inventory falla al arrancar si NATS no conecta.                                                        |
-| `CATALOG_URL`            | `http://host.docker.internal:3001` | Origen del API monolito. Para ejecución local sin Docker, usa `http://localhost:3001`.                 |
-| `IDENTITY_URL`           | `http://host.docker.internal:3001` | Origen de `GET /api/me`. Para ejecución local sin Docker, usa `http://localhost:3001`.                 |
+| `CATALOG_URL`            | `http://api:3001` | Origen del API con Catalog. Para ejecución local sin Docker, usa `http://localhost:3001`.                 |
+| `IDENTITY_URL`           | `http://identity:3006` | JWKS de Identity. Para ejecución local sin Docker, usa `http://localhost:3006`.                 |
 | `CATALOG_INTERNAL_TOKEN` | Leído del `.env` de la raíz        | Token compartido para las rutas `/api/internal/catalog/*`. API e Inventory deben tener el mismo valor. |
 | `INVENTORY_V1_URL`       | `http://localhost:3003` en el API | Solo compatibilidad explícita en `/api/inventory/v1/*`.                                               |
 | `INVENTORY_V2_URL`       | `http://localhost:3005` en el API | Destino por defecto de `/api/inventory/v2/*` y del alias sin versión.                                                                       |
 
 El API conserva la definición de la tabla en `apps/api/src/db/inventory-schema.ts` y sus migraciones en `apps/api/drizzle`. Inventory posee su copia del schema en `src/inventory/schema.ts`; no importa código ni tablas de Catalog. El token compartido solo protege el puente de clase. Para otro entorno, usa una clave aleatoria y limita el acceso de red a las rutas internas.
 
-`GET /api/inventory/v1/health` y `/v2/health` son públicos. `GET /api/inventory/v1/reservations/:orderId` y `/v2/reservations/:orderId` exigen una sesión Better Auth: Inventory reenvía la cookie o `Authorization` a Identity y responde `401` si falta la sesión. Una sesión válida permite consultar una reserva por UUID, con `404` cuando aún no existe. Esta ruta de lectura de clase no comprueba que el usuario sea el comprador del pedido. El navegador accede mediante el gateway en `:3001`. Las rutas sin versión usan el contrato v2 y el despliegue v2. Las operaciones v1 son explícitas, deprecated y no tienen fecha de retirada.
+Health es público. Las reservas requieren autenticación. Kong `:8000` acepta la sesión browser o Bearer y reenvía JWT. Inventory verifica RS256, kid, issuer/audience y claims mediante JWKS, sin consultar `/api/me` ni reenviar cookies. El acceso directo requiere Bearer JWT. `IDENTITY_URL=http://identity:3006` en Compose; issuer es `http://localhost:8000` y audience `mercadoya-services`. Una credencial inválida produce 401. Se mantiene el acceso de lectura de clase sin comprobar ownership de la reserva. El alias sin versión usa v2; v1 es explícito y deprecated.
 
 | Concepto | Qué cambia en esta demo | Cómo comprobarlo |
 | --- | --- | --- |
@@ -46,7 +46,7 @@ Después de iniciar sesión y crear un pedido con stock, guarda su `orderId` y e
 
 ```sh
 ORDER_ID=<uuid-del-pedido>
-curl -i -b /tmp/mercadoya-cookies.txt "http://localhost:3001/api/inventory/v2/reservations/$ORDER_ID"
+curl -i -b /tmp/mercadoya-cookies.txt "http://localhost:8000/api/inventory/v2/reservations/$ORDER_ID"
 docker compose ps inventory-v1 inventory-v2
 ```
 
@@ -70,4 +70,4 @@ Tras cambiar el runtime, ejecuta `docker compose up -d --build inventory-v1 inve
 
 ## Deprecación HTTP
 
-Desde el 30 de septiembre de 2026, las respuestas de rutas v1 incluyen `Deprecation: @1790726400` según [RFC 9745](https://www.rfc-editor.org/rfc/rfc9745.html) y `Link` con `rel="successor-version"` hacia la ruta v2 equivalente. El BFF conserva esos headers. OpenAPI marca las operaciones v1 como `deprecated: true` y documenta su sucesor. No se emite `Sunset` porque no hay fecha de retirada acordada. V1 conserva su JSON y health; el alias sin versión sirve v2 y exige migrar clientes que esperaban el JSON v1.
+Desde el 30 de septiembre de 2026, las respuestas de rutas v1 incluyen `Deprecation: @1790726400` según [RFC 9745](https://www.rfc-editor.org/rfc/rfc9745.html) y `Link` con `rel="successor-version"` hacia la ruta v2 equivalente. Kong conserva esos headers. OpenAPI marca las operaciones v1 como `deprecated: true` y documenta su sucesor. No se emite `Sunset` porque no hay fecha de retirada acordada. V1 conserva su JSON y health; el alias sin versión sirve v2 y exige migrar clientes que esperaban el JSON v1.

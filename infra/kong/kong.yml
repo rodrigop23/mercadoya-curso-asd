@@ -1,0 +1,89 @@
+_format_version: '3.0'
+services:
+  - name: identity
+    url: http://identity:3006
+    routes:
+      - name: identity-public
+        paths: ['/api/auth', '/api/me', '~/api/identity/health$']
+        strip_path: false
+  - name: orders
+    url: http://orders:3002
+    routes:
+      - name: orders-health
+        paths: ['~/api/orders/health$']
+        strip_path: false
+      - name: orders-protected
+        paths: ['/api/orders']
+        strip_path: false
+        plugins:
+          - name: identity-auth
+            config: { verify_url: 'http://identity:3006/api/identity/verify' }
+  - name: inventory-v2
+    url: http://inventory-v2:3003
+    routes:
+      - name: inventory-health
+        paths: ['~/api/inventory/health$', '~/api/inventory/v2/health$']
+        strip_path: false
+      - name: inventory-protected
+        paths: ['/api/inventory']
+        strip_path: false
+        plugins:
+          - name: identity-auth
+            config: { verify_url: 'http://identity:3006/api/identity/verify' }
+  - name: inventory-v1
+    url: http://inventory-v1:3003
+    routes:
+      - name: inventory-v1-health
+        paths: ['~/api/inventory/v1/health$']
+        strip_path: false
+      - name: inventory-v1-protected
+        paths: ['/api/inventory/v1']
+        strip_path: false
+        plugins:
+          - name: identity-auth
+            config: { verify_url: 'http://identity:3006/api/identity/verify' }
+  - name: notifications
+    url: http://notifications:3004
+    routes:
+      - name: notifications-health
+        paths: ['~/api/notifications/health$']
+        strip_path: false
+      - name: notifications-protected
+        paths: ['/api/notifications']
+        strip_path: false
+        plugins:
+          - name: identity-auth
+            config: { verify_url: 'http://identity:3006/api/identity/verify' }
+  - name: api-remaining
+    url: http://api:3001
+    routes:
+      - name: catalog-mutations
+        paths: ['/api/products']
+        methods: ['POST', 'PUT', 'DELETE', 'PATCH']
+        strip_path: false
+        plugins:
+          - name: identity-auth
+            config: { verify_url: 'http://identity:3006/api/identity/verify' }
+      - name: catalog-public
+        paths: ['/api/products', '/api/catalog/health', '/api/media/health', '/uploads']
+        strip_path: false
+      - name: events-ingest-internal-only
+        paths: ['~/api/events/ingest$']
+        strip_path: false
+        plugins:
+          - name: request-termination
+            config: { status_code: 404, message: 'Not found' }
+      - name: events-protected
+        paths: ['/api/events']
+        strip_path: false
+        plugins:
+          - name: identity-auth
+            config: { verify_url: 'http://identity:3006/api/identity/verify' }
+plugins:
+  - name: cors
+    config:
+      origins: ['http://localhost:5173', 'http://localhost:5174']
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
+      headers: ['Content-Type', 'Authorization']
+      credentials: true
+      preflight_continue: false

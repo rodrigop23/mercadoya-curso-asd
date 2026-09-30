@@ -2,16 +2,16 @@
 openapi: 3.1.0
 info:
   title: MercadoYa Inventory HTTP API
-  version: 3.0.0
+  version: 4.0.0
   description: V2 es el default de aplicación y del alias sin versión. Solo el despliegue v2 consume la saga. V1 se retiene explícito y deprecated, sin fecha de retirada. No existe POST de reserva.
 servers:
-  - url: http://localhost:3001
-    description: BFF local; los paths incluyen /api.
+  - url: http://localhost:8000
+    description: Kong OSS local; los paths incluyen /api.
 paths:
   /api/inventory/health:
     servers:
-      - url: http://localhost:3001
-        description: BFF local; los paths incluyen /api.
+      - url: http://localhost:8000
+        description: Kong OSS local; los paths incluyen /api.
       - url: http://localhost:3005
         description: Inventory v2 directo.
     get:
@@ -41,8 +41,8 @@ paths:
                     const: v2
   /api/inventory/reservations/{orderId}:
     servers:
-      - url: http://localhost:3001
-        description: BFF local; los paths incluyen /api.
+      - url: http://localhost:8000
+        description: Kong OSS local; los paths incluyen /api.
       - url: http://localhost:3005
         description: Inventory v2 directo.
     get:
@@ -50,6 +50,7 @@ paths:
       summary: Consultar reserva v2
       security:
         - betterAuthSession: []
+        - applicationJWT: []
       responses:
         "200":
           description: Reserva encontrada.
@@ -101,11 +102,11 @@ paths:
             type: string
             format: uuid
             pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
-      description: Valida sesión con Identity; no verifica que el usuario sea comprador. La reserva entra por NATS. Contrato de aplicación por defecto; reservation.status es obligatorio.
+      description: Verifica Bearer JWT mediante JWKS de Identity; no verifica que el usuario sea comprador. La reserva entra por NATS. Contrato de aplicación por defecto; reservation.status es obligatorio.
   /api/inventory/v1/health:
     servers:
-      - url: http://localhost:3001
-        description: BFF local; los paths incluyen /api.
+      - url: http://localhost:8000
+        description: Kong OSS local; los paths incluyen /api.
       - url: http://localhost:3003
         description: Inventory v1 directo.
     get:
@@ -147,8 +148,8 @@ paths:
       description: Retenido para compatibilidad. Usa /api/inventory/v2/health.
   /api/inventory/v1/reservations/{orderId}:
     servers:
-      - url: http://localhost:3001
-        description: BFF local; los paths incluyen /api.
+      - url: http://localhost:8000
+        description: Kong OSS local; los paths incluyen /api.
       - url: http://localhost:3003
         description: Inventory v1 directo.
     get:
@@ -156,6 +157,7 @@ paths:
       summary: Consultar reserva v1
       security:
         - betterAuthSession: []
+        - applicationJWT: []
       responses:
         "200":
           description: Reserva encontrada.
@@ -267,11 +269,11 @@ paths:
             format: uuid
             pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
       deprecated: true
-      description: Valida sesión con Identity; no verifica que el usuario sea comprador. La reserva entra por NATS. Retenido para compatibilidad. Migra a /api/inventory/v2/reservations/{orderId}, que añade reservation.status. Sin fecha de retirada.
+      description: Verifica Bearer JWT mediante JWKS de Identity; no verifica que el usuario sea comprador. La reserva entra por NATS. Retenido para compatibilidad. Migra a /api/inventory/v2/reservations/{orderId}, que añade reservation.status. Sin fecha de retirada.
   /api/inventory/v2/health:
     servers:
-      - url: http://localhost:3001
-        description: BFF local; los paths incluyen /api.
+      - url: http://localhost:8000
+        description: Kong OSS local; los paths incluyen /api.
       - url: http://localhost:3005
         description: Inventory v2 directo.
     get:
@@ -301,8 +303,8 @@ paths:
                     const: v2
   /api/inventory/v2/reservations/{orderId}:
     servers:
-      - url: http://localhost:3001
-        description: BFF local; los paths incluyen /api.
+      - url: http://localhost:8000
+        description: Kong OSS local; los paths incluyen /api.
       - url: http://localhost:3005
         description: Inventory v2 directo.
     get:
@@ -310,6 +312,7 @@ paths:
       summary: Consultar reserva v2
       security:
         - betterAuthSession: []
+        - applicationJWT: []
       responses:
         "200":
           description: Reserva encontrada.
@@ -361,9 +364,14 @@ paths:
             type: string
             format: uuid
             pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
-      description: Valida sesión con Identity; no verifica que el usuario sea comprador. La reserva entra por NATS. Contrato de aplicación por defecto; reservation.status es obligatorio.
+      description: Verifica Bearer JWT mediante JWKS de Identity; no verifica que el usuario sea comprador. La reserva entra por NATS. Contrato de aplicación por defecto; reservation.status es obligatorio.
 components:
   securitySchemes:
+    applicationJWT:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: RS256, kid, sub, role, iss=http://localhost:8000, aud=mercadoya-services, iat y exp. Directo al servicio requiere Bearer; Kong admite también sesión browser.
     betterAuthSession:
       type: apiKey
       in: cookie

@@ -14,6 +14,8 @@ export function createOrdersRoutes(
   routes.get('/health', (c) => c.json({ module: 'orders', ok: true }));
 
   routes.get('/:orderId', async (c) => {
+    const session = await identity.getSession(c.req.raw.headers);
+    if (!session) return c.json({ error: 'Unauthorized' }, 401);
     const parsedOrderId = z.string().uuid().safeParse(c.req.param('orderId'));
     if (!parsedOrderId.success) {
       return c.json({ error: 'El identificador del pedido no es válido.' }, 400);

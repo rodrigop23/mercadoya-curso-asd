@@ -2,7 +2,7 @@
 
 ## Estado
 
-Aceptada en S5 (`v3-services`).
+Reemplazada por [ADR 0017: Identity propio y Kong OSS](0017-identity-kong-jwks.md). El contenido siguiente conserva la decisión histórica de S5.
 
 ## Contexto
 
