@@ -93,7 +93,7 @@ jobs:
           node --input-type=module <<'JS'
           import { randomBytes } from 'node:crypto';
           import { writeFileSync } from 'node:fs';
-          const names = ['BETTER_AUTH_SECRET', 'CATALOG_INTERNAL_TOKEN', 'NOTIFICATIONS_INGEST_TOKEN', 'NOTIFICATIONS_INVOKE_TOKEN'];
+          const names = ['BETTER_AUTH_SECRET', 'CATALOG_INTERNAL_TOKEN', 'NOTIFICATIONS_INVOKE_TOKEN'];
           const values = names.map(name => `${name}=${randomBytes(48).toString('base64url')}`);
           writeFileSync('.env', values.join('\n') + '\nDATABASE_URL=postgresql://mercadoya:mercadoya_local@localhost:5432/mercadoya\n', { mode: 0o600 });
           JS
@@ -105,7 +105,7 @@ jobs:
           pnpm --filter @mercadoya/jwt-verifier build
       - name: Build and start Kong OSS and services
         run: |
-          mkdir -p apps/api/uploads
+          mkdir -p apps/catalog-service/uploads
           LOCAL_UID=$(id -u) LOCAL_GID=$(id -g) docker compose up -d --build
       - name: Login, JWKS, Catalog CRUD and saga smoke
         env:
@@ -122,6 +122,20 @@ jobs:
           set +a
           docker compose exec -T postgres psql -U mercadoya -d mercadoya -c "INSERT INTO product (title, description, price, stock, image_path) VALUES ('Saga CI', 'Producto de prueba', 10, 5, 'media/saga-ci.png')"
           docker compose run --rm --no-deps -e CATALOG_URL=http://catalog:3007 -e GATEWAY_URL=http://kong:8000 -e CATALOG_INTERNAL_TOKEN orders node dist/demo-saga.js
+      - name: Notifications NATS outcomes without HTTP ingest
+        run: |
+          docker compose logs --no-log-prefix notifications > /tmp/notifications.log
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { readFileSync } from 'node:fs';
+          const entries = readFileSync('/tmp/notifications.log', 'utf8').split('\n').flatMap(line => {
+            try { return [JSON.parse(line)]; } catch { return []; }
+          });
+          for (const subject of ['payment.succeeded', 'inventory.rejected', 'payment.failed']) {
+            assert.ok(entries.some(entry => entry.step === 'notification.created' && entry.subject === subject && entry.emailStatus === 'stub'), subject);
+          }
+          assert.equal(entries.some(entry => entry.type === 'event.handler_error'), false);
+          JS
       - name: Diagnostics on failure
         if: failure()
         run: docker compose logs --tail=100

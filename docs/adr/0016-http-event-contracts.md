@@ -18,4 +18,4 @@ Los refinements posteriores a transforms de multipart requieren descripciones y 
 
 ## Referencias
 
-[Ownership, comandos y política de versionado](../../packages/contracts/README.md), [Inventory](../../apps/inventory-service/openapi.yaml), [Orders](../../apps/orders-service/openapi.yaml), [Identity](../../apps/api/openapi/identity.yaml), [Catalog](../../apps/api/openapi/catalog.yaml) y [Media](../../apps/api/openapi/media.yaml).
+[Ownership, comandos y política de versionado](../../packages/contracts/README.md), [Inventory](../../apps/inventory-service/openapi.yaml), [Orders](../../apps/orders-service/openapi.yaml), [Identity](../../apps/identity-service/openapi.yaml), [Catalog](../../apps/catalog-service/openapi/catalog.yaml) y [Media](../../apps/catalog-service/openapi/media.yaml).

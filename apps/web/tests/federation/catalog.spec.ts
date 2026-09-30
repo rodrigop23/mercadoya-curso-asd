@@ -183,3 +183,41 @@ test('fallo del remote conserva shell y muestra recuperación', async ({ page })
     page.getByRole('heading', { name: 'Encuentra algo bueno cerca.', exact: true }),
   ).toBeVisible();
 });
+
+test('buyer consulta el estado del pedido hasta confirmación', async ({ page }, testInfo) => {
+  await gateway(page, 'user');
+  let reads = 0;
+  const orderId = 'e9ac6bbd-a36a-4ac8-9803-04cfc6e29b81';
+  await page.route(`http://localhost:8000/api/orders/${orderId}`, async (route) => {
+    reads++;
+    await route.fulfill({
+      json: {
+        order: {
+          id: orderId,
+          productId: 'smoke',
+          quantity: 1,
+          buyerId: 'admin-smoke',
+          status: reads > 1 ? 'confirmed' : 'pending',
+          rejectionReason: null,
+          createdAt: '2026-09-30T12:00:00.000Z',
+          updatedAt: '2026-09-30T12:00:00.000Z',
+        },
+      },
+    });
+  });
+  const eventRequests: string[] = [];
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.startsWith('/api/events'))
+      eventRequests.push(request.url());
+  });
+  await page.goto(`/orders/${orderId}`);
+  await expect(page.getByText('Confirmado', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Resumen' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Eventos', exact: true })).toHaveCount(0);
+  await expect(page.getByText('Event timeline', { exact: true })).toHaveCount(0);
+  expect(eventRequests).toEqual([]);
+  await page.screenshot({ path: testInfo.outputPath('order-desktop.png'), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole('heading', { name: 'Resumen' })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('order-mobile.png'), fullPage: true });
+});

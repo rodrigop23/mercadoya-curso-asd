@@ -3,7 +3,7 @@ openapi: 3.1.0
 info:
   title: MercadoYa Media
   version: 1.0.0
-  description: Catalog/Media en :3007 monta /uploads/* y conserva el directorio histórico apps/api/uploads en Compose. La entrada de Media es image en multipart de Catalog; no hay upload HTTP autónomo. Kong proxifica Catalog y Media; Polar queda para decisiones futuras.
+  description: Catalog/Media en :3007 monta /uploads/* y conserva el directorio apps/catalog-service/uploads en Compose. La entrada de Media es image en multipart de Catalog; no hay upload HTTP autónomo. Kong proxifica Catalog y Media; Polar queda para decisiones futuras.
 servers:
   - url: http://localhost:8000
     description: Kong OSS local; los paths incluyen /api.
@@ -14,7 +14,7 @@ paths:
       summary: Estado de Media
       security: []
       responses:
-        '200':
+        "200":
           description: El proceso responde.
           content:
             application/json:
@@ -36,7 +36,7 @@ paths:
       summary: Leer una imagen publicada por Catalog
       security: []
       responses:
-        '200':
+        "200":
           description: Imagen full o thumb.
           content:
             image/jpeg:
@@ -51,7 +51,7 @@ paths:
               schema:
                 type: string
                 format: binary
-        '404':
+        "404":
           description: Archivo no encontrado; respuesta del middleware estático.
       parameters:
         - name: file

@@ -5,4 +5,4 @@
 .env.*
 !.env.example
 .git
-apps/api/uploads
+apps/catalog-service/uploads

@@ -8,13 +8,13 @@ Catalog y Media comparten `apps/catalog-service` en :3007. El CRUD ya llama al p
 
 Kong enruta `/api/products`, health de Catalog/Media y `/uploads` al nuevo proceso con `strip_path: false`. GET/HEAD y preflight son públicos. Las mutaciones usan `identity-auth`; convierte la sesión en JWT o verifica el Bearer con Identity. Catalog verifica RS256/JWKS, issuer, audience, expiración y rol admin, sin cliente de sesiones. No confía en headers de identidad del caller.
 
-Inventory usa la URL interna `http://catalog:3007`. Se conservan paths y `x-catalog-internal-token`; no se mezcla con JWT ni token de Notifications. Kong bloquea `/api/internal/catalog` con 404. API queda como timeline :3001, sin proxy temporal ni código de dominio.
+Inventory usa la URL interna `http://catalog:3007`. Se conservan paths y `x-catalog-internal-token`; no se mezcla con JWT ni token de Notifications. Kong bloquea `/api/internal/catalog` con 404.
 
 ## Compatibilidad y operación
 
 PostgreSQL sigue compartido. El directorio Drizzle, su SQL y journal se trasladan de API a Catalog sin modificar la migración histórica. No se trasladan filas. La adopción idempotente de instalaciones creadas con db:push sigue disponible. Catalog aloja el baseline compartido; cada servicio conserva ownership de sus consultas y las migraciones nuevas deben ser explícitas. Identity conserva su migración propia.
 
-Compose mantiene `apps/api/uploads` como bind mount de Catalog. `image_path` no cambia. `UPLOADS_DIR` permite usar ese directorio al ejecutar en host. Solo Catalog necesita Sharp y permisos de escritura. API pierde sus dependencias ORM y Media.
+Compose monta `apps/catalog-service/uploads` como bind mount de Catalog. `image_path` no cambia. `UPLOADS_DIR` permite usar ese directorio al ejecutar en host. Solo Catalog necesita Sharp y permisos de escritura.
 
 Kong tiene `KONG_NGINX_HTTP_CLIENT_MAX_BODY_SIZE=3m`; Hono limita el cuerpo a 3145728 bytes antes de parsear multipart. La imagen mantiene 2097152 bytes. CORS permite los dos orígenes Vite con credenciales y preflight sin autenticación. Una petición con cookie desde otro origen falla en Identity. S3, mesh, JetStream/outbox, Polar y Federation quedan fuera.
 

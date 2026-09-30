@@ -1,6 +1,6 @@
 # C4 nivel 3: componentes del API, Orders y Notifications con Identity y Kong
 
-La vista abre Identity `:3006`, API `:3001`, Orders `:3002` y Notifications, detrás de Kong `:8000`. El simulador comparte el proceso Orders. En local el bridge invoca el handler en su proceso; con Function URL, el handler corre en AWS Lambda.
+La vista abre Identity `:3006`, Orders `:3002` y Notifications, detrás de Kong `:8000`. El simulador comparte el proceso Orders. En local el bridge invoca el handler en su proceso; con Function URL, el handler corre en AWS Lambda.
 
 ```mermaid
 flowchart LR
@@ -24,14 +24,13 @@ flowchart LR
   db[("PostgreSQL :5432")]
   files[("uploads")]
 
+  subgraph catalogProcess["Catalog/Media :3007"]
+    catalog["Catalog<br/>CRUD y stock interno"]
+    media["Media<br/>pipeline local"]
+  end
+
   kong["Kong OSS :8000<br/>identity-auth"]
   identity["Identity :3006<br/>Better Auth, sesión, JWT y JWKS"]
-  subgraph api["API :3001"]
-    catalog["Catalog<br/>/api/products e internal stock"]
-    media["Media<br/>/api/media y pipeline"]
-    events["Events<br/>GET /api/events<br/>POST /api/events/ingest"]
-    recent["Buffer reciente en memoria"]
-  end
 
   web -->|cookie| kong
   mf -->|cookie| kong
@@ -41,7 +40,6 @@ flowchart LR
   kong -->|Bearer, v2 y alias| inv2
   kong -->|HTTP autorizado| bridge
   kong -->|CRUD con Bearer| catalog
-  kong -->|timeline| events
   catalog -->|JWKS para rol admin| identity
   orders -->|JWKS| identity
   inv1 -->|JWKS| identity
@@ -50,7 +48,6 @@ flowchart LR
   media --> files
   identity --> db
   catalog --> db
-  events --> recent
   orders -->|SQL pedido| db
   orders -->|orders.placed| nats
   nats -->|inventory.reserved| simulator
@@ -63,7 +60,6 @@ flowchart LR
   templates -->|HTML y texto| mail
   handler --> mail
   mail -->|envío si modo resend| resend
-  handler -->|notification.stub o notification.email, x-ingest-token| events
 ```
 
-Kong verifica la cookie o JWT con Identity; Orders e Inventory verifican firma y claims JWT mediante JWKS. Inventory v2 usa rutas internas de Catalog con `x-catalog-internal-token`. El handler de Notifications escribe en Events con `x-ingest-token` y `emailStatus` igual a `stub`, `sent` o `error`. Usa siempre `DEMO_NOTIFY_EMAIL`; no busca emails por `buyerId`. La compensación de Inventory y el correo por pago fallido son independientes. Consulta [ADR 0017](../adr/0017-identity-kong-jwks.md), [ADR 0015](../adr/0015-saga-coreografia-compensacion.md) y [ADR 0011](../adr/0011-notifications-lambda-bridge.md).
+Kong verifica la cookie o JWT con Identity; Orders e Inventory verifican firma y claims JWT mediante JWKS. Inventory v2 usa rutas internas de Catalog con `x-catalog-internal-token`. El handler de Notifications registra en logs `emailStatus` igual a `stub`, `sent` o `error`. Usa siempre `DEMO_NOTIFY_EMAIL`; no busca emails por `buyerId`. La compensación de Inventory y el correo por pago fallido son independientes. Consulta [ADR 0017](../adr/0017-identity-kong-jwks.md), [ADR 0015](../adr/0015-saga-coreografia-compensacion.md) y [ADR 0011](../adr/0011-notifications-lambda-bridge.md).

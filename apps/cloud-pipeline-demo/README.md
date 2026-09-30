@@ -26,7 +26,7 @@ pnpm install
 pnpm --filter @mercadoya/cloud-pipeline-demo typecheck
 ```
 
-Usa una sesión AWS del docente. Configura un perfil con `AWS_PROFILE`, inicia sesión con `aws login` o, para IAM Identity Center, ejecuta `aws sso login --profile <perfil>`. Estas credenciales se usan solo por el CDK durante el despliegue. `apps/api`, `apps/web` y `pnpm dev` no dependen de AWS.
+Usa una sesión AWS del docente. Configura un perfil con `AWS_PROFILE`, inicia sesión con `aws login` o, para IAM Identity Center, ejecuta `aws sso login --profile <perfil>`. Estas credenciales se usan solo por el CDK durante el despliegue. los servicios locales, `apps/web` y `pnpm dev` no dependen de AWS.
 
 Desde `apps/cloud-pipeline-demo`, completa la cuenta y región del entorno, y despliega:
 
@@ -64,4 +64,4 @@ npx aws-cdk destroy
 
 ## Desarrollo local
 
-El paquete se puede invocar desde la raíz con el filtro pnpm, por ejemplo `pnpm --filter @mercadoya/cloud-pipeline-demo typecheck`. No agregues imports, credenciales ni hooks de este demo en `apps/api` o `apps/web`. No participa en los flujos de Catalog, Media, Orders ni NATS.
+El paquete se puede invocar desde la raíz con el filtro pnpm, por ejemplo `pnpm --filter @mercadoya/cloud-pipeline-demo typecheck`. No agregues imports, credenciales ni hooks de este demo en los servicios locales o `apps/web`. No participa en los flujos de Catalog, Media, Orders ni NATS.

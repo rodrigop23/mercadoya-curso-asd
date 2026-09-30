@@ -106,24 +106,10 @@ services:
     ports:
       - '127.0.0.1:3007:3007'
     volumes:
-      # Keep the historical host directory so existing image_path values still work.
-      - ./apps/api/uploads:/app/uploads
+      - ./apps/catalog-service/uploads:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
-
-  api:
-    build:
-      context: .
-      dockerfile: apps/api/Dockerfile
-    restart: unless-stopped
-    environment:
-      IDENTITY_URL: http://identity:3006
-      JWT_ISSUER: http://localhost:8000
-      JWT_AUDIENCE: mercadoya-services
-      NOTIFICATIONS_INGEST_TOKEN: ${NOTIFICATIONS_INGEST_TOKEN:?Set NOTIFICATIONS_INGEST_TOKEN}
-    ports:
-      - '127.0.0.1:3001:3001'
 
   orders:
     build:
@@ -158,8 +144,6 @@ services:
       DEMO_NOTIFY_EMAIL: ${DEMO_NOTIFY_EMAIL:-}
       NOTIFICATIONS_FUNCTION_URL: ${NOTIFICATIONS_FUNCTION_URL:-}
       NOTIFICATIONS_INVOKE_TOKEN: ${NOTIFICATIONS_INVOKE_TOKEN:?Set NOTIFICATIONS_INVOKE_TOKEN}
-      NOTIFICATIONS_INGEST_TOKEN: ${NOTIFICATIONS_INGEST_TOKEN:?Set NOTIFICATIONS_INGEST_TOKEN}
-      EVENTS_INGEST_URL: http://api:3001/api/events/ingest
     depends_on:
       nats:
         condition: service_started
@@ -183,7 +167,6 @@ services:
       - ./infra/kong/kong.yml:/etc/kong/kong.yml:ro
     depends_on:
       - identity
-      - api
       - catalog
       - orders
       - inventory-v1

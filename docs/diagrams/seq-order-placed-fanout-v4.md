@@ -13,11 +13,10 @@ sequenceDiagram
   participant DB as PostgreSQL :5432
   participant NATS as NATS :4222
   participant Inv as Inventory v2 :3005
-  participant Catalog as Catalog interno :3001
+  participant Catalog as Catalog interno :3007
   participant Bridge as Bridge :3004
   participant Handler as Handler local o Lambda
   participant Resend as Resend externo
-  participant Timeline as Events en API :3001
 
   Buyer->>Web: compra en /catalog
   Web->>API: POST /api/orders con cookie
@@ -84,11 +83,10 @@ sequenceDiagram
   alt modo Resend y destinatario configurado
     Handler->>Resend: enviar desde RESEND_FROM a DEMO_NOTIFY_EMAIL
     Resend-->>Handler: aceptación o error de envío
-    Handler->>Timeline: ingest notification.email con emailStatus sent o error
+    Handler->>Handler: registra en logs notification.email con emailStatus sent o error
   else modo stub o destinatario ausente
-    Handler->>Timeline: ingest notification.stub con emailStatus stub
+    Handler->>Handler: registra en logs notification.stub con emailStatus stub
   end
-  Note over Handler,Timeline: POST /api/events/ingest con x-ingest-token
   Web->>API: GET /api/orders/:orderId con cookie
   API->>Identity: verificar sesión y emitir JWT
   Identity-->>API: JWT
@@ -96,16 +94,10 @@ sequenceDiagram
   Orders->>Orders: verificar JWT
   Orders-->>API: estado del pedido
   API-->>Web: estado del pedido
-  Web->>API: GET /api/events?orderId=... con cookie
-  API->>Identity: verificar sesión
-  Identity-->>API: JWT
-  API->>Timeline: GET autenticado
-  Timeline-->>API: notificaciones recientes
-  API-->>Web: notificaciones recientes
 ```
 
 Los consumidores de cada desenlace avanzan en paralelo. El correo de pago fallido y el estado `rejected` no esperan `inventory.released`. Un fallo duplicado no repone stock tras una liberación completada; si no hay reserva, Inventory no publica otra liberación. El bridge no consume `orders.placed`, `inventory.reserved` ni `inventory.released`.
 
-`PAYMENT_MODE` define el resultado por defecto; el override del CLI tiene prioridad. `EMAIL_MODE` vacío usa Resend si existe `RESEND_API_KEY` y stub si no existe; `stub` fuerza simulación. Todos los correos usan `DEMO_NOTIFY_EMAIL`, sin lookup por `buyerId`. `sent` significa aceptación por Resend. El ingest y el envío no son atómicos, la timeline se pierde al reiniciar el API y NATS Core no reproduce eventos perdidos.
+`PAYMENT_MODE` define el resultado por defecto; el override del CLI tiene prioridad. `EMAIL_MODE` vacío usa Resend si existe `RESEND_API_KEY` y stub si no existe; `stub` fuerza simulación. Todos los correos usan `DEMO_NOTIFY_EMAIL`, sin lookup por `buyerId`. `sent` significa aceptación por Resend. El handler registra el resultado en logs. NATS Core no reproduce eventos perdidos.
 
 Consulta [ADR 0015](../adr/0015-saga-coreografia-compensacion.md), [ADR 0011](../adr/0011-notifications-lambda-bridge.md), [la guía de saga](../../scripts/README.md) y [la configuración de Notifications](../../apps/notifications-lambda/README.md).

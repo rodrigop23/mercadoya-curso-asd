@@ -1,5 +1,7 @@
 # ADR 0014: Montar el catálogo admin mediante iframe
 
+Documento histórico de una etapa anterior. No describe el despliegue actual ni debe usarse para iniciarlo. Consulta el [README actual](../../README.md) y el ADR 0020 sobre el retiro de la experiencia de eventos.
+
 > Decisión histórica, reemplazada por [ADR 0019](0019-catalog-module-federation.md).
 
 ## Estado

@@ -1,5 +1,7 @@
 # ADR 0009: Ejecutar Orders como servicio tradicional
 
+Documento histórico de una etapa anterior. No describe el despliegue actual ni debe usarse para iniciarlo. Consulta el [README actual](../../README.md) y el ADR 0020 sobre el retiro de la experiencia de eventos.
+
 ## Estado
 
 Aceptada en S5 (`v3-services`).

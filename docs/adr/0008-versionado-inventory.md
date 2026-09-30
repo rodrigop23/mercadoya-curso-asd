@@ -29,6 +29,6 @@ El cutover del prompt 03 fija v2 como default y propietario único de reserva y 
 ## Referencias
 
 - [Rutas HTTP y DTO](../../apps/inventory-service/src/inventory/routes.ts), [arranque y suscripción NATS](../../apps/inventory-service/src/index.ts), [OpenAPI](../../apps/inventory-service/openapi.yaml) y [Compose](../../docker-compose.yml).
-- [Gateway](../../apps/api/src/api-layer.ts), [contratos compartidos](../../packages/contracts/src/index.ts) y [guía de Inventory](../../apps/inventory-service/README.md).
+- [Gateway](../../infra/kong/kong.yml), [contratos compartidos](../../packages/contracts/src/index.ts) y [guía de Inventory](../../apps/inventory-service/README.md).
 
 La deprecación de v1 adopta [RFC 9745](https://www.rfc-editor.org/rfc/rfc9745.html): `Deprecation` contiene la fecha de deprecación y `Link` señala la ruta v2 equivalente mediante `successor-version`. No se anuncia `Sunset`. Las operaciones v1 mantienen su comportamiento y `deprecated: true` conforme a [OpenAPI Operation](https://spec.openapis.org/oas/latest.html#operation-object). Se verificaron también [routing Hono](https://hono.dev/docs/api/routing) y [servicios Compose](https://docs.docker.com/reference/compose-file/services/).

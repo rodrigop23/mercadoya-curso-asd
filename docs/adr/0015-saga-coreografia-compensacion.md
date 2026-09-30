@@ -27,7 +27,7 @@ La liberación usa un lock transaccional por pedido. Si ya no existe reserva, re
 
 `pnpm demo:saga` comprueba pago exitoso, rechazo de stock, pago fallido y liberación ante fallos duplicados. Crea pedidos persistentes y el caso exitoso consume una unidad. La guía detalla la preparación y las variables; no requiere otro proceso de pagos.
 
-La confirmación tiene una semántica distinta de V2 y del estado anterior al prompt 09. Notifications consume solo los tres desenlaces descritos en ADR 0011 y puede enviar con Resend o registrar un stub. Ni el correo ni la timeline controlan la saga.
+La confirmación tiene una semántica distinta de V2 y del estado anterior al prompt 09. Notifications consume solo los tres desenlaces descritos en ADR 0011 y puede enviar con Resend o registrar un stub. El correo no controla la saga.
 
 NATS Core no persiste eventos ni reintenta su entrega. Guardar el pedido y publicar no es atómico y no hay outbox. El ajuste HTTP en Catalog tampoco pertenece a la transacción PostgreSQL de Inventory: el lock evita duplicados concurrentes, pero no resuelve fallos entre el ajuste, el commit y la publicación. La demo no garantiza recuperación durable de una compensación interrumpida.
 
@@ -37,4 +37,4 @@ NATS Core no persiste eventos ni reintenta su entrega. Guardar el pedido y publi
 - [Simulador de pago](../../apps/orders-service/src/payment/simulator.ts) y [suscripciones de Orders](../../apps/orders-service/src/index.ts).
 - [Liberación de Inventory](../../apps/inventory-service/src/inventory/service.ts) y [publicación de inventory.released](../../apps/inventory-service/src/inventory/index.ts).
 - [CLI de saga](../../apps/orders-service/src/demo-saga.ts) y [guía de ejecución](../../scripts/README.md).
-- [ADR 0011 de Notifications](0011-notifications-lambda-bridge.md) y [secuencia canónica](../diagrams/seq-order-placed-fanout-v3.md).
+- [ADR 0011 de Notifications](0011-notifications-lambda-bridge.md) y [secuencia canónica](../diagrams/seq-order-placed-fanout-v4.md).

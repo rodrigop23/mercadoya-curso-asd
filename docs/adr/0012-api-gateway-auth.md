@@ -1,5 +1,7 @@
 # ADR 0012: Usar el API como gateway y BFF
 
+Documento histórico de una etapa anterior. No describe el despliegue actual ni debe usarse para iniciarlo. Consulta el [README actual](../../README.md) y el ADR 0020 sobre el retiro de la experiencia de eventos.
+
 ## Estado
 
 Reemplazada por [ADR 0017: Identity propio y Kong OSS](0017-identity-kong-jwks.md). El contenido siguiente conserva la decisión histórica de S5.

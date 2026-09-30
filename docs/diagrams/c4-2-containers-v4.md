@@ -11,7 +11,6 @@ flowchart LR
     mf["MF catálogo admin :5174<br/>Module Federation ESM"]
     kong["Kong OSS 3.9.1 :8000"]
     identity["Identity :3006<br/>sesión Better Auth, JWT y JWKS"]
-    api["API :3001<br/>events"]
     catalog["Catalog/Media :3007<br/>CRUD, JWT y media"]
     orders["Orders :3002<br/>proceso Node y simulador de pago"]
     inv1["Inventory v1 :3003<br/>compatibilidad HTTP y health"]
@@ -33,7 +32,6 @@ flowchart LR
   kong -->|Bearer, v1 explícito| inv1
   kong -->|Bearer, v2 y alias| inv2
   kong -->|HTTP autorizado y health público| bridge
-  kong -->|events| api
   kong -->|Catalog/Media y JWT| catalog
   kong -->|sesión y verificación| identity
   identity -->|tablas Identity y JWKS| db
@@ -52,7 +50,6 @@ flowchart LR
   orders -->|JWKS| identity
   bridge -->|invoca con token| lambda
   lambda -->|HTML y texto si modo resend| resend
-  lambda -->|ingest notification.stub o notification.email| api
 ```
 
 Compose publica `3005:3003` para v2. La base es compartida en esta demo. El slice federado ejecuta sus peticiones en el documento del host y comparte React/ReactDOM y UI. El handler no recibe NATS directamente. Inventory v2 consume `orders.placed` y `payment.failed`; v1 mantiene HTTP explícito y health. El simulador consume `inventory.reserved` y publica el resultado del pago. Kong es el entrypoint y todos los servicios backend corren en Compose. Consulta [la secuencia de saga](seq-order-placed-fanout-v4.md).

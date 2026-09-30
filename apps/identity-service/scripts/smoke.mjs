@@ -31,7 +31,6 @@ try {
   for (const path of [
     '/api/catalog/health',
     '/api/media/health',
-    '/api/events/health',
     '/api/identity/health',
     '/api/orders/health',
     '/api/inventory/health',
@@ -53,7 +52,6 @@ try {
     '/api/orders',
     '/api/inventory/reservations/' + randomUUID(),
     '/api/notifications/private',
-    '/api/events',
   ]) {
     const method = path === '/api/orders' ? 'POST' : 'GET';
     assert.equal(
@@ -75,7 +73,10 @@ try {
     (await request('/api/internal/catalog/products/' + randomUUID() + '/stock')).status,
     404,
   );
-  assert.equal((await request('/api/events/ingest', { method: 'POST' })).status, 404);
+  for (const path of ['/api/events', '/api/events/health', '/api/events/ingest']) {
+    assert.equal((await request(path)).status, 404);
+    assert.equal((await request(path, { method: 'POST' })).status, 404);
+  }
   const signup = await jsonPost('/api/auth/sign-up/email', { email, password, name: 'Smoke' });
   assert.equal(signup.status, 200);
   userId = (await signup.json()).user.id;
@@ -333,17 +334,6 @@ try {
     headers: { 'x-catalog-internal-token': internalToken },
   });
   assert.ok((await stock.json()).availableStock <= 4, 'Inventory no descontó stock en Catalog.');
-  for (let attempt = 0; attempt < 40; attempt++) {
-    const timeline = await request(`/api/events?orderId=${order.id}`, {
-      headers: { authorization: `Bearer ${token}` },
-    });
-    assert.equal(timeline.status, 200);
-    const { events } = await timeline.json();
-    if (events.some((event) => event.type === 'notification.stub' && event.orderId === order.id))
-      break;
-    if (attempt === 39) throw new Error('Notifications no registró el stub mediante su token S2S.');
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
   assert.equal(
     (
       await request('/api/orders', {

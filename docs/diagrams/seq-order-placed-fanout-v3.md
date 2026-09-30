@@ -1,5 +1,7 @@
 # Secuencia S5: saga de pedido, compensación y email
 
+Documento histórico de una etapa anterior. No describe el despliegue actual ni debe usarse para iniciarlo. Consulta el [README actual](../../README.md) y el ADR 0020 sobre el retiro de la experiencia de eventos.
+
 Esta es la secuencia canónica de `v3-services` tras los prompts 09 y 10. Solo Inventory v2 procesa los eventos de reserva y compensación; v1 conserva HTTP explícito y health. El participante de pago es un componente del mismo proceso Orders `:3002`.
 
 ```mermaid

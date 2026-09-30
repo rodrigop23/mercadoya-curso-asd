@@ -8,7 +8,7 @@ Inventory usa `CATALOG_URL=http://catalog:3007` en Compose y `http://localhost:3
 
 La imagen llega en multipart del CRUD, sin endpoint de upload separado. Acepta JPEG, PNG y WebP hasta 2 MiB; verifica firma y produce full/thumb con Sharp. Kong y Hono limitan el formulario total a 3 MiB, incluido el overhead multipart, y devuelven 413 si excede el límite. CORS admite solo `http://localhost:5173` y `http://localhost:5174` con credenciales. Identity rechaza mutaciones con cookie desde otros orígenes.
 
-Compose monta el directorio histórico `apps/api/uploads` en `/app/uploads` de Catalog con `UPLOADS_DIR=/app/uploads`. Los paths de PostgreSQL no cambian. `demo:infra` crea el directorio y usa UID/GID del host. En host configura `UPLOADS_DIR` como la ruta absoluta de `apps/api/uploads` para leer imágenes anteriores; sin la variable usa `apps/catalog-service/uploads`. No se necesita S3.
+Compose monta el directorio `apps/catalog-service/uploads` en `/app/uploads` de Catalog con `UPLOADS_DIR=/app/uploads`. Los paths de PostgreSQL no cambian. `demo:infra` crea el directorio y usa UID/GID del host. En host, el directorio por defecto es `apps/catalog-service/uploads`; `UPLOADS_DIR` permite elegir otra ruta absoluta. Al actualizar una instalación anterior, copia su carpeta de imágenes completa a este directorio antes de iniciar Catalog. Los paths relativos de PostgreSQL se conservan. No se necesita S3.
 
 ```sh
 pnpm --filter @mercadoya/catalog-service db:migrate

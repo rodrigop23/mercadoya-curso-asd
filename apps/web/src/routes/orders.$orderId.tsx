@@ -5,8 +5,6 @@ import { ArrowLeft, CheckCircle2, CircleAlert, LoaderCircle } from 'lucide-react
 
 import { buttonVariants } from '@mercadoya/ui/components/button';
 import { Card, CardContent, CardDescription, CardHeader } from '@mercadoya/ui/components/card';
-import { EventTimeline } from '@/components/event-timeline';
-import { eventsQueryOptions } from '@/lib/events';
 import { orderQueryOptions } from '@/lib/orders';
 import { productsQueryOptions } from '@/lib/products';
 
@@ -48,26 +46,12 @@ function OrderPage() {
   const order = orderQuery.data;
   const productsQuery = useQuery(productsQueryOptions);
   const product = productsQuery.data?.find((item) => item.id === order?.productId);
-  const eventsQuery = useQuery({
-    ...eventsQueryOptions({
-      limit: 100,
-      orderId,
-      refetchInterval: order?.status === 'pending' ? 750 : false,
-    }),
-    enabled: Boolean(order),
-  });
 
   useEffect(() => {
     if (order?.status === 'confirmed') {
       void queryClient.invalidateQueries({ queryKey: productsQueryOptions.queryKey });
     }
-
-    if (order?.status === 'confirmed' || order?.status === 'rejected') {
-      void queryClient.invalidateQueries({
-        queryKey: ['events', { limit: 100, orderId }],
-      });
-    }
-  }, [order?.status, orderId, queryClient]);
+  }, [order?.status, queryClient]);
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-12">
@@ -177,24 +161,6 @@ function OrderPage() {
                   </dd>
                 </div>
               </dl>
-            </CardContent>
-          </Card>
-
-          <Card className="mt-6 shadow-sm">
-            <CardHeader className="border-b border-border/70 px-5 py-5 sm:px-6">
-              <h2 className="text-base font-semibold">Event timeline</h2>
-              <CardDescription className="mt-1">
-                Publish y consume del bus, en orden de proceso y filtrados por este pedido.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="px-5 py-6 sm:px-6">
-              <EventTimeline
-                events={eventsQuery.data ? [...eventsQuery.data].reverse() : []}
-                isLoading={eventsQuery.isPending || eventsQuery.isFetching}
-                error={eventsQuery.error}
-                emptyTitle="Aún no hay eventos para este pedido"
-                emptyMessage="El API guarda la traza reciente en memoria. Vuelve a consultar mientras Inventory procesa la reserva."
-              />
             </CardContent>
           </Card>
         </>

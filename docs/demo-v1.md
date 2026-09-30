@@ -1,5 +1,7 @@
 # Demo MercadoYa V1 modular
 
+Documento histórico de una etapa anterior. No describe el despliegue actual ni debe usarse para iniciarlo. Consulta el [README actual](../README.md) y el ADR 0020 sobre el retiro de la experiencia de eventos.
+
 Walkthrough de 2–3 minutos. Mantiene los flujos del V0 y muestra los límites entre Identity y Catalog dentro de un solo deploy Hono y una sola base PostgreSQL.
 
 ## Preparar y levantar

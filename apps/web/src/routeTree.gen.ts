@@ -11,7 +11,6 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as CatalogRouteImport } from './routes/catalog'
-import { Route as EventsRouteImport } from './routes/events'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as AdminProductsRouteImport } from './routes/admin.products'
@@ -25,11 +24,6 @@ const IndexRoute = IndexRouteImport.update({
 const CatalogRoute = CatalogRouteImport.update({
   id: '/catalog',
   path: '/catalog',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const EventsRoute = EventsRouteImport.update({
-  id: '/events',
-  path: '/events',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -56,7 +50,6 @@ const OrdersOrderIdRoute = OrdersOrderIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/catalog': typeof CatalogRoute
-  '/events': typeof EventsRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/admin/products': typeof AdminProductsRoute
@@ -65,7 +58,6 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/catalog': typeof CatalogRoute
-  '/events': typeof EventsRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/admin/products': typeof AdminProductsRoute
@@ -75,7 +67,6 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/catalog': typeof CatalogRoute
-  '/events': typeof EventsRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/admin/products': typeof AdminProductsRoute
@@ -86,7 +77,6 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/catalog'
-    | '/events'
     | '/login'
     | '/register'
     | '/admin/products'
@@ -95,7 +85,6 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/catalog'
-    | '/events'
     | '/login'
     | '/register'
     | '/admin/products'
@@ -104,7 +93,6 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/catalog'
-    | '/events'
     | '/login'
     | '/register'
     | '/admin/products'
@@ -114,7 +102,6 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CatalogRoute: typeof CatalogRoute
-  EventsRoute: typeof EventsRoute
   LoginRoute: typeof LoginRoute
   RegisterRoute: typeof RegisterRoute
   AdminProductsRoute: typeof AdminProductsRoute
@@ -135,13 +122,6 @@ declare module '@tanstack/react-router' {
       path: '/catalog'
       fullPath: '/catalog'
       preLoaderRoute: typeof CatalogRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/events': {
-      id: '/events'
-      path: '/events'
-      fullPath: '/events'
-      preLoaderRoute: typeof EventsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -178,7 +158,6 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CatalogRoute: CatalogRoute,
-  EventsRoute: EventsRoute,
   LoginRoute: LoginRoute,
   RegisterRoute: RegisterRoute,
   AdminProductsRoute: AdminProductsRoute,

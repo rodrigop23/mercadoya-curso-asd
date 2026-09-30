@@ -1,5 +1,7 @@
 # C4 nivel 3: componentes del API, Orders y Notifications en S5 / v3-services
 
+Documento histórico de una etapa anterior. No describe el despliegue actual ni debe usarse para iniciarlo. Consulta el [README actual](../../README.md) y el ADR 0020 sobre el retiro de la experiencia de eventos.
+
 La vista abre el API `:3001`, Orders `:3002` y Notifications. El simulador comparte el proceso Orders. En local el bridge invoca el handler en su proceso; con Function URL, el handler corre en AWS Lambda.
 
 ```mermaid

@@ -508,7 +508,7 @@ const media = doc(
       ),
     },
   },
-  'Catalog/Media en :3007 monta /uploads/* y conserva el directorio histórico apps/api/uploads en Compose. La entrada de Media es image en multipart de Catalog; no hay upload HTTP autónomo. Kong proxifica Catalog y Media; Polar queda para decisiones futuras.',
+  'Catalog/Media en :3007 monta /uploads/* y conserva el directorio apps/catalog-service/uploads en Compose. La entrada de Media es image en multipart de Catalog; no hay upload HTTP autónomo. Kong proxifica Catalog y Media; Polar queda para decisiones futuras.',
 );
 documents.set('apps/catalog-service/openapi/media.yaml', media);
 const eventSchemas = Object.fromEntries(
