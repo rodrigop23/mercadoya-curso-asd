@@ -2,12 +2,8 @@
   "$schema": "https://turborepo.dev/schema.json",
   "tasks": {
     "build": {
-      "dependsOn": [
-        "^build"
-      ],
-      "outputs": [
-        "dist/**"
-      ]
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"]
     },
     "dev": {
       "cache": false,
@@ -26,15 +22,11 @@
     },
     "typecheck": {
       "outputs": [],
-      "dependsOn": [
-        "^build"
-      ]
+      "dependsOn": ["^build"]
     },
     "demo:saga": {
       "cache": false,
-      "dependsOn": [
-        "^build"
-      ],
+      "dependsOn": ["^build"],
       "passThroughEnv": [
         "DATABASE_URL",
         "EVENT_BUS",
@@ -42,25 +34,20 @@
         "CATALOG_URL",
         "CATALOG_INTERNAL_TOKEN",
         "ORDERS_SERVICE_URL",
+        "GATEWAY_URL",
         "DEMO_PRODUCT_ID"
       ]
     },
     "test": {
-      "dependsOn": [
-        "build"
-      ],
+      "dependsOn": ["build"],
       "outputs": []
     },
     "openapi:generate": {
-      "dependsOn": [
-        "build"
-      ],
+      "dependsOn": ["build"],
       "cache": false
     },
     "openapi:check": {
-      "dependsOn": [
-        "build"
-      ],
+      "dependsOn": ["build"],
       "cache": false
     }
   }

@@ -37,7 +37,7 @@ services:
       DATABASE_URL: postgresql://mercadoya:mercadoya_local@postgres:5432/mercadoya
       NATS_URL: nats://nats:4222
       EVENT_BUS: nats
-      CATALOG_URL: http://api:3001
+      CATALOG_URL: http://catalog:3007
       IDENTITY_URL: http://identity:3006
       JWT_ISSUER: http://localhost:8000
       JWT_AUDIENCE: mercadoya-services
@@ -61,7 +61,7 @@ services:
       DATABASE_URL: postgresql://mercadoya:mercadoya_local@postgres:5432/mercadoya
       NATS_URL: nats://nats:4222
       EVENT_BUS: nats
-      CATALOG_URL: http://api:3001
+      CATALOG_URL: http://catalog:3007
       IDENTITY_URL: http://identity:3006
       JWT_ISSUER: http://localhost:8000
       JWT_AUDIENCE: mercadoya-services
@@ -90,11 +90,11 @@ services:
       postgres:
         condition: service_healthy
 
-  api:
+  catalog:
     user: '${LOCAL_UID:-1000}:${LOCAL_GID:-1000}'
     build:
       context: .
-      dockerfile: apps/api/Dockerfile
+      dockerfile: apps/catalog-service/Dockerfile
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://mercadoya:mercadoya_local@postgres:5432/mercadoya
@@ -102,14 +102,28 @@ services:
       JWT_ISSUER: http://localhost:8000
       JWT_AUDIENCE: mercadoya-services
       CATALOG_INTERNAL_TOKEN: ${CATALOG_INTERNAL_TOKEN:?Set CATALOG_INTERNAL_TOKEN}
-      NOTIFICATIONS_INGEST_TOKEN: ${NOTIFICATIONS_INGEST_TOKEN:?Set NOTIFICATIONS_INGEST_TOKEN}
+      UPLOADS_DIR: /app/uploads
     ports:
-      - '127.0.0.1:3001:3001'
+      - '127.0.0.1:3007:3007'
     volumes:
+      # Keep the historical host directory so existing image_path values still work.
       - ./apps/api/uploads:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    environment:
+      IDENTITY_URL: http://identity:3006
+      JWT_ISSUER: http://localhost:8000
+      JWT_AUDIENCE: mercadoya-services
+      NOTIFICATIONS_INGEST_TOKEN: ${NOTIFICATIONS_INGEST_TOKEN:?Set NOTIFICATIONS_INGEST_TOKEN}
+    ports:
+      - '127.0.0.1:3001:3001'
 
   orders:
     build:
@@ -162,6 +176,7 @@ services:
       KONG_PLUGINS: bundled,identity-auth
       KONG_ADMIN_LISTEN: 'off'
       KONG_PROXY_LISTEN: 0.0.0.0:8000
+      KONG_NGINX_HTTP_CLIENT_MAX_BODY_SIZE: 3m
     ports:
       - '8000:8000'
     volumes:
@@ -169,6 +184,7 @@ services:
     depends_on:
       - identity
       - api
+      - catalog
       - orders
       - inventory-v1
       - inventory-v2

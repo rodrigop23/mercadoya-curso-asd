@@ -1,6 +1,6 @@
 # Demo de saga
 
-Prepara `.env` como indica el README raíz, ejecuta `pnpm demo:infra` y deja `pnpm dev` activo. Se requieren PostgreSQL, NATS, API/Catalog, Orders e Inventory v2 actualizado. El simulador arranca con Orders. No hay un proceso de pagos separado.
+Prepara `.env` como indica el README raíz, ejecuta `pnpm demo:infra` y deja `pnpm dev` activo. Se requieren PostgreSQL, NATS, Catalog/Media, Orders e Inventory v2 actualizado. El simulador arranca con Orders. No hay un proceso de pagos separado.
 
 Crea desde la UI admin un producto de clase con al menos dos unidades. Después ejecuta desde la raíz:
 
@@ -10,7 +10,7 @@ pnpm demo:saga
 DEMO_PRODUCT_ID=<uuid> pnpm demo:saga
 ```
 
-El script `apps/orders-service/src/demo-saga.ts` usa `DATABASE_URL`, `NATS_URL`, `CATALOG_URL`, `CATALOG_INTERNAL_TOKEN` y `ORDERS_SERVICE_URL` de `.env`. Crea un usuario local de demo y obtiene una cookie para crear pedidos por el BFF y consultar reservas v2. El escenario de pago fallido usa el servicio interno con `buyerId: null` porque el override de pago no está disponible en el POST público. Observa eventos antes de crear pedidos.
+El script `apps/orders-service/src/demo-saga.ts` usa `DATABASE_URL`, `NATS_URL`, `CATALOG_URL`, `CATALOG_INTERNAL_TOKEN` y `GATEWAY_URL` de `.env`. Crea un usuario local de demo y obtiene una cookie para crear pedidos por Kong y consultar reservas v2. El escenario de pago fallido usa el servicio interno con `buyerId: null` porque el override de pago no está disponible en el POST público. Usa `CATALOG_URL=http://localhost:3007` solo para productos/stock y `GATEWAY_URL=http://localhost:8000` para Identity, Orders e Inventory. Observa eventos antes de crear pedidos.
 
 El CLI elige el primer producto con stock suficiente si no defines `DEMO_PRODUCT_ID`. Usa un producto dedicado y evita compras simultáneas durante la prueba, porque compara stock antes y después. Crea un usuario local y tres pedidos persistentes; el caso exitoso consume una unidad. No elimina pedidos ni repone esa unidad.
 

@@ -70,6 +70,7 @@ const descriptions = {
   401: 'Falta una sesión o credencial válida.',
   403: 'Se requiere rol admin.',
   404: 'No encontrado.',
+  413: 'El formulario supera 3145728 bytes.',
   500: 'Falló la operación.',
   502: 'El servicio remoto no está disponible.',
   503: 'Token interno no configurado.',
@@ -290,12 +291,26 @@ documents.set(
   ),
 );
 
-const productResponses = { ...errors(400, 401, 403, 500) };
+const catalogDirect = {
+  url: 'http://localhost:3007',
+  description: 'Catalog/Media directo; mutaciones solo Bearer JWT, stock solo token interno.',
+};
+const productResponses = {
+  ...errors(400, 401, 403, 500),
+  413: {
+    description:
+      'El formulario supera 3145728 bytes. Kong puede devolver HTML; Catalog devuelve JSON.',
+    content: {
+      'application/json': { schema: ref('Error') },
+      'text/html': { schema: { type: 'string' } },
+    },
+  },
+};
 documents.set(
-  'apps/api/openapi/catalog.yaml',
+  'apps/catalog-service/openapi/catalog.yaml',
   doc(
     'Catalog',
-    '1.0.0',
+    '1.1.0',
     {
       '/api/catalog/health': {
         get: op('catalogHealth', 'Estado de Catalog', { 200: health('catalog') }),
@@ -342,6 +357,7 @@ documents.set(
         ),
       },
       '/api/internal/catalog/products/{id}/stock': {
+        servers: [catalogDirect],
         get: op(
           'getStock',
           'Consultar stock para Inventory',
@@ -353,6 +369,7 @@ documents.set(
         ),
       },
       '/api/internal/catalog/products/{id}/adjust-stock': {
+        servers: [catalogDirect],
         post: op(
           'adjustStock',
           'Ajustar stock atómicamente',
@@ -371,7 +388,8 @@ documents.set(
         ),
       },
     },
-    'Catalog sigue dentro del BFF. Multipart conserva strings para price/stock; los refinements numéricos se ejecutan después de convertirlos. Las rutas internas son un borde HTTP real, no URLs de infraestructura en DTOs.',
+    'Catalog y Media comparten proceso en :3007; Kong publica el CRUD en :8000. Stock interno solo usa http://catalog:3007 en Compose. Multipart conserva strings para price/stock; los refinements numéricos se ejecutan después de convertirlos. Las rutas internas conservan x-catalog-internal-token; Kong responde 404 para ellas. Directo al servicio solo Bearer JWT, vía Kong también cookie de sesión. Límite de formulario 3 MiB e imagen 2 MiB.',
+    [bff, catalogDirect],
   ),
 );
 
@@ -490,9 +508,9 @@ const media = doc(
       ),
     },
   },
-  'La ruta estática /uploads/* la monta Catalog. La entrada de Media es image en multipart de Catalog; no hay upload HTTP autónomo. Kong proxifica Catalog y Media; Polar queda para decisiones futuras.',
+  'Catalog/Media en :3007 monta /uploads/* y conserva el directorio histórico apps/api/uploads en Compose. La entrada de Media es image en multipart de Catalog; no hay upload HTTP autónomo. Kong proxifica Catalog y Media; Polar queda para decisiones futuras.',
 );
-documents.set('apps/api/openapi/media.yaml', media);
+documents.set('apps/catalog-service/openapi/media.yaml', media);
 const eventSchemas = Object.fromEntries(
   [
     [contracts.eventSubjects.ordersPlaced, contracts.orderPlacedEventSchema],

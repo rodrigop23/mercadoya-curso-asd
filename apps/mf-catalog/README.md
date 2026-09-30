@@ -5,7 +5,7 @@ Este proceso Vite sirve el CRUD de productos en `http://localhost:5174`. El host
 ```text
 Navegador :5173 (host)
   └─ /admin/products → iframe :5174 (CRUD)
-                          └─ Kong :8000 → API Catalog :3001
+                          └─ Kong :8000 → Catalog/Media :3007
 ```
 
 Para ejecutarlo solo, inicia la API y luego usa `pnpm --filter @mercadoya/mf-catalog dev`. Abre `http://localhost:5174` tras iniciar sesión como admin en el host. Para levantarlo junto al resto, ejecuta `pnpm demo:infra` y `pnpm dev` desde la raíz.

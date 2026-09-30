@@ -29,6 +29,31 @@ importers:
       '@hono/node-server':
         specifier: ^2.1.1
         version: 2.1.1(hono@4.13.8)
+      '@mercadoya/jwt-verifier':
+        specifier: workspace:*
+        version: link:../../packages/jwt-verifier
+      dotenv:
+        specifier: ^18.0.2
+        version: 18.0.2
+      hono:
+        specifier: ^4.13.8
+        version: 4.13.8
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.6
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
+
+  apps/catalog-service:
+    dependencies:
+      '@hono/node-server':
+        specifier: ^2.1.1
+        version: 2.1.1(hono@4.13.8)
       '@hono/zod-validator':
         specifier: ^0.9.1
         version: 0.9.1(hono@4.13.8)(zod@4.6.5)

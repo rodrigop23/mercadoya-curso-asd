@@ -10,8 +10,8 @@ import { closeDb } from './db/index.js';
 import { createOrdersService } from './orders/service.js';
 
 // CLI interno de clase: usa la persistencia de Orders y observa NATS antes de publicar.
-const origin = process.env.CATALOG_URL || 'http://localhost:3001';
-const ordersOrigin = process.env.ORDERS_SERVICE_URL || 'http://localhost:3002';
+const origin = process.env.CATALOG_URL || 'http://localhost:3007';
+const gatewayOrigin = process.env.GATEWAY_URL || 'http://localhost:8000';
 const token = process.env.CATALOG_INTERNAL_TOKEN;
 assert(token, 'Configura CATALOG_INTERNAL_TOKEN en .env.');
 async function read(path: string, base = origin) {
@@ -23,9 +23,9 @@ async function read(path: string, base = origin) {
   return response.json();
 }
 // Una sesión de demo permite verificar el borde HTTP público y las reservas v2.
-const signup = await fetch(new URL('/api/auth/sign-up/email', origin), {
+const signup = await fetch(new URL('/api/auth/sign-up/email', gatewayOrigin), {
   method: 'POST',
-  headers: { 'content-type': 'application/json', origin },
+  headers: { 'content-type': 'application/json', origin: 'http://localhost:5173' },
   body: JSON.stringify({
     name: 'Demo saga',
     email: `demo-saga-${crypto.randomUUID()}@example.com`,
@@ -39,7 +39,7 @@ const cookie = signup.headers
   .join('; ');
 assert(cookie, 'Signup no devolvió cookie de sesión.');
 for (const version of ['v1', 'v2']) {
-  const response = await fetch(new URL(`/api/inventory/${version}/health`, origin));
+  const response = await fetch(new URL(`/api/inventory/${version}/health`, gatewayOrigin));
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('x-service-version'), version);
 }
@@ -72,9 +72,9 @@ try {
     const input = { productId: productId!, quantity };
     let order: { id: string };
     if (mode === 'succeed') {
-      const response = await fetch(new URL('/api/orders', origin), {
+      const response = await fetch(new URL('/api/orders', gatewayOrigin), {
         method: 'POST',
-        headers: { 'content-type': 'application/json', cookie },
+        headers: { 'content-type': 'application/json', cookie, origin: 'http://localhost:5173' },
         body: JSON.stringify(input),
       });
       assert.equal(response.status, 202);
@@ -86,7 +86,9 @@ try {
     const deadline = Date.now() + 15000;
     let finished = false;
     while (Date.now() < deadline) {
-      const result = await read(`/api/orders/${order.id}`, ordersOrigin);
+      const result = await (
+        await fetch(new URL(`/api/orders/${order.id}`, gatewayOrigin), { headers: { cookie } })
+      ).json();
       const subjects = (trace.get(order.id) ?? []).map((e) => e.subject);
       if (
         result.order.status === status &&
@@ -112,7 +114,7 @@ try {
       `${name}: stock incorrecto`,
     );
     for (const prefix of ['/api/inventory/v2', '/api/inventory']) {
-      const response = await fetch(new URL(`${prefix}/reservations/${order.id}`, origin), {
+      const response = await fetch(new URL(`${prefix}/reservations/${order.id}`, gatewayOrigin), {
         headers: { cookie },
       });
       assert.equal(response.headers.get('x-service-version'), 'v2');

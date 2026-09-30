@@ -2,7 +2,7 @@ import { stockResponseSchema, stockAdjustmentResponseSchema } from '@mercadoya/c
 import type { CatalogStockContract } from '@mercadoya/contracts';
 
 export function createCatalogHttpClient(): CatalogStockContract {
-  const origin = process.env.CATALOG_URL || 'http://localhost:3001';
+  const origin = process.env.CATALOG_URL || 'http://localhost:3007';
   const token = process.env.CATALOG_INTERNAL_TOKEN || '';
   if (!token) throw new Error('CATALOG_INTERNAL_TOKEN is required.');
 

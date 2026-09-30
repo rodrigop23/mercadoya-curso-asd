@@ -5,11 +5,11 @@ import { timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { productFormSchema, stockAdjustmentSchema } from '@mercadoya/contracts';
 
-import type { IdentityContract } from '../identity/contract.js';
+import type { AdminAuthorizer } from '../../auth.js';
 import { InvalidMediaError } from '../media/contract.js';
 import type { CatalogContract } from './contract.js';
 
-export function createCatalogRoutes(identity: IdentityContract, catalogContract: CatalogContract) {
+export function createCatalogRoutes(identity: AdminAuthorizer, catalogContract: CatalogContract) {
   const routes = new Hono();
 
   // Inventory supplies a shared secret. These routes are never used by the browser UI.
@@ -45,7 +45,10 @@ export function createCatalogRoutes(identity: IdentityContract, catalogContract:
 
   routes.get(
     '/uploads/*',
-    serveStatic({ root: fileURLToPath(new URL('../../../', import.meta.url)) }),
+    serveStatic({
+      root: process.env.UPLOADS_DIR ?? fileURLToPath(new URL('../../../uploads/', import.meta.url)),
+      rewriteRequestPath: (path) => path.replace(/^\/uploads\//, ''),
+    }),
   );
 
   routes.get('/api/products', async (c) => {

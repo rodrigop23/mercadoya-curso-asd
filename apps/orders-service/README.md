@@ -2,7 +2,7 @@
 
 Proceso Node/Hono para crear y consultar pedidos. Escucha en `http://localhost:3002` y conserva el ciclo `pending` → `confirmed` o `rejected`. Publica `orders.placed` y consume los resultados de Inventory y Payment por NATS.
 
-Usa el mismo `DATABASE_URL` PostgreSQL que `@mercadoya/api` y la tabla existente `orders_order`. Por ahora, las migraciones de esa tabla siguen en `apps/api/drizzle`; `pnpm --filter @mercadoya/api db:migrate` aplica el esquema. La separación de bases queda para una fase posterior.
+Usa el mismo `DATABASE_URL` PostgreSQL que `@mercadoya/catalog-service` y la tabla existente `orders_order`. Por ahora, las migraciones de esa tabla siguen en `apps/catalog-service/drizzle`; `pnpm --filter @mercadoya/catalog-service db:migrate` aplica el esquema. La separación de bases queda para una fase posterior.
 
 Variables en el `.env` de la raíz:
 

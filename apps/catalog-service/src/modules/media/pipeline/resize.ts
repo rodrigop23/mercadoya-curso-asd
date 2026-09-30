@@ -30,15 +30,13 @@ export const resizeImage: MediaFilter = async (context) => {
         contentType,
       ).toBuffer(),
       encode(
-        source
-          .clone()
-          .resize({
-            width: 320,
-            height: 320,
-            fit: 'cover',
-            position: 'attention',
-            withoutEnlargement: true,
-          }),
+        source.clone().resize({
+          width: 320,
+          height: 320,
+          fit: 'cover',
+          position: 'attention',
+          withoutEnlargement: true,
+        }),
         contentType,
       ).toBuffer(),
     ]);

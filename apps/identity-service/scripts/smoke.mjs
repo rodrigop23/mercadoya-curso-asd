@@ -4,6 +4,9 @@ import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { createTokenVerifier } from '@mercadoya/jwt-verifier';
 
+const catalogBase = process.env.CATALOG_URL ?? 'http://localhost:3007';
+const internalToken = process.env.CATALOG_INTERNAL_TOKEN;
+assert.ok(internalToken, 'Smoke requiere CATALOG_INTERNAL_TOKEN.');
 const base = process.env.GATEWAY_URL ?? 'http://localhost:8000';
 if (!process.env.DATABASE_URL)
   throw new Error('Smoke requiere DATABASE_URL de una base de prueba.');
@@ -11,7 +14,7 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const email = `smoke-${randomUUID()}@mercadoya.local`;
 const password = randomUUID() + 'Ab1!';
 let cookie = '';
-let userId, productId;
+let userId, productId, applicationToken;
 const request = (path, options = {}) =>
   fetch(`${base}${path}`, {
     ...options,
@@ -26,6 +29,9 @@ const jsonPost = (path, body, headers = {}) =>
   });
 try {
   for (const path of [
+    '/api/catalog/health',
+    '/api/media/health',
+    '/api/events/health',
     '/api/identity/health',
     '/api/orders/health',
     '/api/inventory/health',
@@ -73,6 +79,21 @@ try {
   const signup = await jsonPost('/api/auth/sign-up/email', { email, password, name: 'Smoke' });
   assert.equal(signup.status, 200);
   userId = (await signup.json()).user.id;
+  cookie = signup.headers
+    .getSetCookie()
+    .map((value) => value.split(';')[0])
+    .join('; ');
+  assert.equal((await request('/api/products', { method: 'POST' })).status, 403);
+  const buyerToken = (await (await request('/api/auth/token')).json()).token;
+  assert.equal(
+    (
+      await request('/api/products', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${buyerToken}` },
+      })
+    ).status,
+    403,
+  );
   await pool.query('UPDATE "user" SET role=$1 WHERE id=$2', ['admin', userId]);
   const login = await jsonPost('/api/auth/sign-in/email', { email, password });
   assert.equal(login.status, 200);
@@ -100,6 +121,7 @@ try {
   const tokenResponse = await request('/api/auth/token');
   assert.equal(tokenResponse.status, 200);
   const { token } = await tokenResponse.json();
+  applicationToken = token;
   const verify = createTokenVerifier({ jwksURL: `${base}/api/auth/jwks` });
   assert.deepEqual(await verify(`Bearer ${token}`), { sub: userId, role: 'admin' });
   const form = new FormData();
@@ -125,7 +147,147 @@ try {
   );
   const product = await request('/api/products', { method: 'POST', body: form });
   assert.equal(product.status, 201, product.status === 201 ? undefined : await product.text());
-  productId = (await product.json()).product.id;
+  const productData = (await product.json()).product;
+  productId = productData.id;
+  for (const path of [productData.imagePath, productData.imagePath.replace('-full.', '-thumb.')]) {
+    const image = await request(`/uploads/${path}`);
+    assert.equal(image.status, 200);
+    assert.equal(image.headers.get('content-type'), 'image/png');
+    assert.ok((await image.arrayBuffer()).byteLength > 0);
+  }
+  for (const origin of ['http://localhost:5173', 'http://localhost:5174']) {
+    const cors = await request('/api/products', {
+      method: 'OPTIONS',
+      headers: {
+        origin,
+        'access-control-request-method': 'PUT',
+        'access-control-request-headers': 'Content-Type,Authorization',
+      },
+    });
+    assert.equal(cors.status, 200);
+    assert.equal(cors.headers.get('access-control-allow-origin'), origin);
+    assert.equal(cors.headers.get('access-control-allow-credentials'), 'true');
+  }
+  const blockedOrigin = await request('/api/products', {
+    method: 'POST',
+    headers: { origin: 'https://untrusted.example' },
+    body: form,
+  });
+  assert.equal(blockedOrigin.status, 403);
+  const noCors = await request('/api/products', {
+    headers: { origin: 'https://untrusted.example' },
+  });
+  assert.equal(noCors.headers.get('access-control-allow-origin'), null);
+  assert.equal(
+    (await fetch(`${catalogBase}/api/products`, { method: 'POST', headers: { cookie } })).status,
+    401,
+  );
+  assert.equal(
+    (await fetch(`${catalogBase}/api/internal/catalog/products/${productId}/stock`)).status,
+    401,
+  );
+  const stockRequest = (path, options = {}) =>
+    fetch(`${catalogBase}/api/internal/catalog/products/${productId}/${path}`, {
+      ...options,
+      headers: { 'x-catalog-internal-token': internalToken, 'content-type': 'application/json' },
+    });
+  assert.deepEqual(
+    await (
+      await stockRequest('adjust-stock', { method: 'POST', body: JSON.stringify({ delta: -1 }) })
+    ).json(),
+    { adjusted: true, availableStock: 4 },
+  );
+  assert.deepEqual(
+    await (
+      await stockRequest('adjust-stock', { method: 'POST', body: JSON.stringify({ delta: 1 }) })
+    ).json(),
+    { adjusted: true, availableStock: 5 },
+  );
+  assert.deepEqual(
+    await (
+      await stockRequest('adjust-stock', { method: 'POST', body: JSON.stringify({ delta: -6 }) })
+    ).json(),
+    { adjusted: false, reason: 'insufficient_stock' },
+  );
+  assert.equal(
+    (await stockRequest('adjust-stock', { method: 'POST', body: JSON.stringify({ delta: 0 }) }))
+      .status,
+    400,
+  );
+  assert.equal(
+    (
+      await request(`/api/internal/catalog/products/${productId}/stock`, {
+        headers: { 'x-catalog-internal-token': internalToken },
+      })
+    ).status,
+    404,
+  );
+  const update = new FormData();
+  for (const [key, value] of Object.entries({
+    title: 'Smoke actualizado',
+    description: 'CRUD',
+    price: '11',
+    stock: '5',
+  }))
+    update.set(key, value);
+  const updated = await request(`/api/products/${productId}`, {
+    method: 'PUT',
+    headers: { authorization: `Bearer ${token}` },
+    body: update,
+  });
+  assert.equal(updated.status, 200);
+  assert.equal((await updated.json()).product.imagePath, productData.imagePath);
+  // A multipart above Kong's former 1 MiB default must still reach Media.
+  const replacement = new FormData();
+  for (const [key, value] of Object.entries({
+    title: 'Smoke reemplazado',
+    description: 'Imagen grande válida',
+    price: '11',
+    stock: '5',
+  }))
+    replacement.set(key, value);
+  replacement.set(
+    'image',
+    new Blob([await form.get('image').arrayBuffer(), Buffer.alloc(1100000)], { type: 'image/png' }),
+    'replacement.png',
+  );
+  const replaced = await request(`/api/products/${productId}`, {
+    method: 'PUT',
+    body: replacement,
+  });
+  assert.equal(replaced.status, 200, replaced.status === 200 ? undefined : await replaced.text());
+  const oldImagePath = productData.imagePath;
+  productData.imagePath = (await replaced.json()).product.imagePath;
+  assert.notEqual(productData.imagePath, oldImagePath);
+  assert.equal((await request(`/uploads/${oldImagePath}`)).status, 404);
+  assert.equal((await request(`/uploads/${productData.imagePath}`)).status, 200);
+  const tooLargeImage = new FormData();
+  for (const [key, value] of Object.entries({
+    title: 'Smoke',
+    description: 'Imagen excedida',
+    price: '11',
+    stock: '5',
+  }))
+    tooLargeImage.set(key, value);
+  tooLargeImage.set(
+    'image',
+    new Blob([Buffer.alloc(2 * 1024 * 1024 + 1)], { type: 'image/png' }),
+    'too-large.png',
+  );
+  assert.equal(
+    (await request('/api/products', { method: 'POST', body: tooLargeImage })).status,
+    400,
+  );
+  const oversized = new FormData();
+  oversized.set(
+    'image',
+    new Blob([Buffer.alloc(3 * 1024 * 1024)], { type: 'image/png' }),
+    'large.png',
+  );
+  assert.equal((await request('/api/products', { method: 'POST', body: oversized })).status, 413);
+  const publicProducts = await fetch(`${base}/api/products`);
+  assert.equal(publicProducts.status, 200);
+  assert.ok((await publicProducts.json()).products.some((p) => p.id === productId));
   const created = await jsonPost('/api/orders', { productId, quantity: 1 });
   assert.equal(created.status, 202);
   const { order } = await created.json();
@@ -167,6 +329,10 @@ try {
   assert.equal(reservation.status, 200);
   assert.equal(reservation.headers.get('x-service-version'), 'v2');
   assert.equal((await reservation.json()).reservation.status, 'reserved');
+  const stock = await fetch(`${catalogBase}/api/internal/catalog/products/${productId}/stock`, {
+    headers: { 'x-catalog-internal-token': internalToken },
+  });
+  assert.ok((await stock.json()).availableStock <= 4, 'Inventory no descontó stock en Catalog.');
   for (let attempt = 0; attempt < 40; attempt++) {
     const timeline = await request(`/api/events?orderId=${order.id}`, {
       headers: { authorization: `Bearer ${token}` },
@@ -198,12 +364,26 @@ try {
       .status,
     200,
   );
+  const deletion = await request(`/api/products/${productId}`, {
+    method: 'DELETE',
+    headers: { authorization: `Bearer ${token}` },
+  });
+  assert.equal(deletion.status, 204);
+  assert.equal((await request(`/uploads/${productData.imagePath}`)).status, 404);
+  productId = undefined;
   console.log(
-    'Smoke OK: login/sesión, JWKS, JWT, Kong 401, health público, pedido browser/Bearer y saga Inventory v2.',
+    'Smoke OK: login/sesión, JWKS, JWT, Kong 401, health público, CRUD Catalog, uploads, CORS, límites, stock interno y saga Inventory v2.',
   );
 } finally {
   // Keep order/reservation records for diagnosis, but delete the temporary identity and product.
-  if (productId) await pool.query('DELETE FROM product WHERE id=$1', [productId]);
+  if (productId) {
+    if (applicationToken)
+      await request(`/api/products/${productId}`, {
+        method: 'DELETE',
+        headers: { authorization: `Bearer ${applicationToken}` },
+      }).catch(() => undefined);
+    await pool.query('DELETE FROM product WHERE id=$1', [productId]);
+  }
   if (userId) await pool.query('DELETE FROM "user" WHERE id=$1', [userId]);
   await pool.end();
 }

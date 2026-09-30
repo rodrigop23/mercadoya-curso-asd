@@ -43,7 +43,7 @@ jobs:
         run: pnpm test
 
   identity-gateway-smoke:
-    name: Identity and Kong smoke
+    name: Identity, Catalog and Kong smoke
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -69,17 +69,28 @@ jobs:
       - name: Initialize infrastructure and migrations
         run: |
           docker compose up -d --wait postgres nats
-          pnpm --filter @mercadoya/api db:migrate
+          pnpm --filter @mercadoya/catalog-service db:migrate
           pnpm --filter @mercadoya/identity-service db:migrate
           pnpm --filter @mercadoya/jwt-verifier build
       - name: Build and start Kong OSS and services
         run: |
           mkdir -p apps/api/uploads
           LOCAL_UID=$(id -u) LOCAL_GID=$(id -g) docker compose up -d --build
-      - name: Login, JWKS and create order smoke
+      - name: Login, JWKS, Catalog CRUD and saga smoke
         env:
           DATABASE_URL: postgresql://mercadoya:mercadoya_local@localhost:5432/mercadoya
-        run: pnpm --filter @mercadoya/identity-service smoke
+        run: |
+          set -a
+          . ./.env
+          set +a
+          pnpm --filter @mercadoya/identity-service smoke
+      - name: Saga compensation and duplicate events
+        run: |
+          set -a
+          . ./.env
+          set +a
+          docker compose exec -T postgres psql -U mercadoya -d mercadoya -c "INSERT INTO product (title, description, price, stock, image_path) VALUES ('Saga CI', 'Producto de prueba', 10, 5, 'media/saga-ci.png')"
+          docker compose run --rm --no-deps -e CATALOG_URL=http://catalog:3007 -e GATEWAY_URL=http://kong:8000 -e CATALOG_INTERNAL_TOKEN orders node dist/demo-saga.js
       - name: Diagnostics on failure
         if: failure()
         run: docker compose logs --tail=100

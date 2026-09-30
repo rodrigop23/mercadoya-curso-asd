@@ -14,3 +14,5 @@ if (!connectionString) {
 
 const pool = new Pool({ connectionString });
 export const db = drizzle(pool, { schema });
+
+export const closeDb = () => pool.end();

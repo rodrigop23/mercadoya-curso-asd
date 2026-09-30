@@ -18,9 +18,11 @@ La rama [`v2-integration`](https://github.com/rodrigop23/mercadoya-curso-asd/tre
 
 En `v3-services`, Orders corre como proceso Node, Inventory como contenedor y Notifications usa un handler AWS Lambda. Un bridge NATS invoca ese handler directamente durante la clase local o mediante Function URL en AWS. Consulta [la guía de Notifications](apps/notifications-lambda/README.md).
 
-El [paquete `@mercadoya/contracts`](packages/contracts/README.md) centraliza schemas HTTP/eventos y documenta ownership, generación reproducible y versionado. Specs OpenAPI: [Inventory v1/v2](apps/inventory-service/openapi.yaml), [Orders](apps/orders-service/openapi.yaml), [Identity](apps/identity-service/openapi.yaml), [Catalog](apps/api/openapi/catalog.yaml) y [Media](apps/api/openapi/media.yaml). Inventory usa [Swagger UI v2](http://localhost:3005/docs) por defecto y retiene [v1](http://localhost:3003/docs) para compatibilidad. La estrategia generate-from-code y sus límites constan en [ADR 0016](docs/adr/0016-http-event-contracts.md).
+El [paquete `@mercadoya/contracts`](packages/contracts/README.md) centraliza schemas HTTP/eventos y documenta ownership, generación reproducible y versionado. Specs OpenAPI: [Inventory v1/v2](apps/inventory-service/openapi.yaml), [Orders](apps/orders-service/openapi.yaml), [Identity](apps/identity-service/openapi.yaml), [Catalog](apps/catalog-service/openapi/catalog.yaml) y [Media](apps/catalog-service/openapi/media.yaml). Inventory usa [Swagger UI v2](http://localhost:3005/docs) por defecto y retiene [v1](http://localhost:3003/docs) para compatibilidad. La estrategia generate-from-code y sus límites constan en [ADR 0016](docs/adr/0016-http-event-contracts.md).
 
 ## Arquitectura y decisiones
+
+La arquitectura actual está descrita en [ADR 0017, Identity y Kong](docs/adr/0017-identity-kong-jwks.md) y [ADR 0018, Catalog/Media](docs/adr/0018-catalog-media-kong.md). Los materiales siguientes documentan las etapas de clase.
 
 Material para el walkthrough:
 
@@ -56,7 +58,7 @@ pnpm openapi:check
 pnpm test
 ```
 
-Turbo ejecuta los scripts de todos los workspaces que los declaran. `build` incluye `@mercadoya/contracts`, API, Orders, Inventory, Notifications, web, MF catálogo y el demo cloud. `typecheck` construye primero las dependencias de cada consumidor para resolver los exports de `contracts` desde un checkout limpio. `test` construye el paquete y sus dependencias antes de ejecutar su suite. El nuevo script raíz `test` delega en Turbo; los scripts existentes se conservan.
+Turbo ejecuta los scripts de todos los workspaces que los declaran. `build` incluye `@mercadoya/contracts`, Catalog/Media, API, Orders, Inventory, Notifications, web, MF catálogo y el demo cloud. `typecheck` construye primero las dependencias de cada consumidor para resolver los exports de `contracts` desde un checkout limpio. `test` construye el paquete y sus dependencias antes de ejecutar su suite. El nuevo script raíz `test` delega en Turbo; los scripts existentes se conservan.
 
 La suite usa `node:test` de Node 24.14.1. Los nuevos tests comprueban DTOs de Orders, Identity y Catalog, multipart, stock interno y auth/servers de las specs. `pnpm openapi:check` compara specs y schemas generados byte a byte y ejecuta Redocly; `pnpm openapi:generate` los regenera. Los tests de `contracts` importan el export público compilado y verifican los subjects NATS v1, eventos válidos, versiones, UUIDs, cantidades, fechas, causas de rechazo, override de pago y compatibilidad de las respuestas HTTP de Inventory v1/v2. Notifications conserva sus tests del handler con `fetch` simulado para envío e ingest. No se inicia ningún servidor ni se requiere Postgres, NATS, Docker, `.env`, credenciales AWS o secretos de producción. Esto no cubre persistencia, transporte NATS, browser ni el flujo completo de compra.
 
@@ -90,10 +92,10 @@ El host React en `:5173` conserva autenticación, menú y guard de `/admin/produ
 ```text
 Host web :5173 ── /admin/products ──► MF catálogo admin :5174
       │                                     │
-      └──────── catálogo buyer /catalog     └──► Kong :8000 → API Catalog :3001
+      └──────── catálogo buyer /catalog     └──► Kong :8000 → Catalog/Media :3007
 ```
 
-El navegador en `:5173` y el MF en `:5174` llaman a Kong OSS 3.9.1 en `:8000` con `credentials: include`. Kong enruta `/api/auth/*` y `/api/me` a Identity `:3006`, Orders a `:3002`, Inventory a v2 `:3003` dentro de Compose y Notifications a `:3004`. `/api/inventory/v1` conserva el despliegue v1 explícito. Catalog, Media y la timeline permanecen en API `:3001`. Kong permite ambos orígenes por CORS con credenciales.
+El navegador en `:5173` y el MF en `:5174` llaman a Kong OSS 3.9.1 en `:8000` con `credentials: include`. Kong enruta `/api/auth/*` y `/api/me` a Identity `:3006`, Orders a `:3002`, Inventory a v2 `:3003` dentro de Compose y Notifications a `:3004`. `/api/inventory/v1` conserva el despliegue v1 explícito. Catalog y Media comparten proceso en `:3007`. API `:3001` conserva solo la timeline. Kong permite ambos orígenes por CORS con credenciales.
 
 ```mermaid
 flowchart LR
@@ -102,7 +104,8 @@ flowchart LR
   Kong -->|JWT firmado| Orders[Orders 3002]
   Kong -->|JWT firmado| Inventory[Inventory v2]
   Kong -->|Solicitud autorizada| Notifications[Notifications 3004]
-  Kong --> API[API 3001: Catalog y Media]
+  Kong --> Catalog[Catalog y Media 3007]
+  Kong --> API[API 3001: timeline]
 ```
 
 La sesión browser persiste en Identity. El plugin oficial JWT emite tokens RS256 de cinco minutos con `kid`, `sub`, `role`, `iss`, `aud`, `iat` y `exp`. Kong usa un plugin propio que verifica la cookie o JWT con Identity y reenvía Bearer. Orders e Inventory verifican firma y claims localmente con JWKS. `iss=http://localhost:8000` y `aud=mercadoya-services` coinciden en emisor y verificadores. El plugin JWT OSS no consume JWKS remoto; OIDC requiere Enterprise. Consulta [la decisión y compatibilidad](docs/adr/0017-identity-kong-jwks.md) y [Identity](apps/identity-service/README.md).
@@ -117,13 +120,15 @@ pnpm demo:infra
 pnpm dev
 ```
 
-`demo:infra` inicia Postgres y NATS, aplica las migraciones de API e Identity y construye todos los servicios en Compose. En una actualización, pausa la creación de pedidos durante el cambio de consumidores y espera health antes de reanudar. `pnpm dev` inicia web y MF.
+`demo:infra` inicia Postgres y NATS, aplica las migraciones de Catalog e Identity y construye todos los servicios en Compose. En una actualización, pausa la creación de pedidos durante el cambio de consumidores y espera health antes de reanudar. `pnpm dev` inicia web y MF.
 
 | Componente           | Puerto | Comprobación                                     |
 | -------------------- | ------ | ------------------------------------------------ |
 | Web                  | 5173   | `http://localhost:5173`                          |
 | MF catálogo admin    | 5174   | `http://localhost:5174`                          |
 | Kong OSS             | 8000   | `http://localhost:8000/api/identity/health`      |
+| Catalog y Media      | 3007   | `http://localhost:8000/api/catalog/health`       |
+| Timeline API         | 3001   | `http://localhost:8000/api/events/health`        |
 | Identity             | 3006   | `http://localhost:8000/api/identity/health`      |
 | Orders               | 3002   | `http://localhost:8000/api/orders/health`        |
 | Inventory v1         | 3003   | `http://localhost:8000/api/inventory/v1/health`  |
@@ -136,7 +141,7 @@ pnpm dev
 | --------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | Sesión browser | Cookie Better Auth, persistida y validada por Identity | Browser mediante Kong |
 | JWT de aplicación | RS256 verificado por JWKS y claims | Kong mediante Identity; Orders, Inventory y Catalog admin |
-| Servicio a Catalog    | `x-catalog-internal-token` y `CATALOG_INTERNAL_TOKEN`                         | Inventory hacia rutas internas del API                                     |
+| Servicio a Catalog    | `x-catalog-internal-token` y `CATALOG_INTERNAL_TOKEN`                         | Inventory hacia http://catalog:3007, sin publicar stock en Kong                                     |
 | Lambda y bridge a API | `x-invoke-token` y `x-ingest-token`, con secretos distintos                   | Notifications                                                              |
 
 La autenticación de usuario y los secretos entre servicios cumplen fines distintos. Esta demo no incluye service mesh. GET de pedidos y reservas requieren JWT dentro de los servicios. Kong admite también cookie browser y emite el JWT upstream. La lectura de reservas conserva el acceso de clase sin verificar la propiedad del pedido.
@@ -188,7 +193,7 @@ La timeline registra `notification.stub` o `notification.email`, con `emailStatu
 
 ## Base de datos local
 
-La API usa Drizzle ORM con el driver `node-postgres` (`pg`). Copia la configuración de ejemplo, asigna valores aleatorios a `CATALOG_INTERNAL_TOKEN`, `NOTIFICATIONS_INGEST_TOKEN` y `NOTIFICATIONS_INVOKE_TOKEN`, inicia PostgreSQL y NATS, y aplica el esquema antes de iniciar Inventory:
+Catalog usa Drizzle ORM con el driver `node-postgres` (`pg`). Copia la configuración de ejemplo, asigna valores aleatorios a `CATALOG_INTERNAL_TOKEN`, `NOTIFICATIONS_INGEST_TOKEN` y `NOTIFICATIONS_INVOKE_TOKEN`, inicia PostgreSQL y NATS, y aplica el esquema antes de iniciar Inventory:
 
 ```sh
 cp .env.example .env
@@ -197,9 +202,9 @@ pnpm demo:infra
 
 `BETTER_AUTH_SECRET` debe ser una clave aleatoria de al menos 32 caracteres. Puedes generarla con `openssl rand -base64 48` y guardarla en `.env`; `BETTER_AUTH_URL` apunta a `http://localhost:8000`. Configura `EVENT_BUS=nats` y `NATS_URL=nats://localhost:4222` para Orders y el bridge de Notifications. Ambos fallan al arrancar si no pueden conectar a NATS. La API ya no consume esos eventos.
 
-Compose inicia PostgreSQL, NATS, Identity, API, Orders, ambos despliegues Inventory, Notifications y Kong. Conserva las imágenes de Media con un bind mount de `apps/api/uploads`; `demo:infra` usa el UID/GID del host para escribirlas. `pnpm demo:infra` aplica primero la migración histórica de API y luego la migración propia de Identity. Adopta instalaciones creadas con `db:push` sin borrar datos. Identity añade JWKS y conserva los usuarios y sesiones. API mantiene Catalog/Media y las migraciones históricas de las demás tablas. Los comandos `db:push` y `db:generate` de API se retiraron para evitar eliminaciones sobre la base compartida.
+Compose inicia PostgreSQL, NATS, Identity, Catalog/Media, API, Orders, ambos despliegues Inventory, Notifications y Kong. Conserva las imágenes de Media con un bind mount de `apps/api/uploads`; `demo:infra` usa el UID/GID del host para escribirlas. `pnpm demo:infra` aplica primero la migración histórica ahora alojada en Catalog y luego la migración propia de Identity. Adopta instalaciones creadas con `db:push` sin borrar datos. Identity añade JWKS y conserva los usuarios y sesiones. Catalog conserva las migraciones históricas de las tablas compartidas, sin modificar su SQL ni el journal Drizzle. API ya no tiene tablas, módulos de dominio ni cliente HTTP Identity. No se habilitan `db:push` ni `db:generate` sobre esta base compartida. Consulta [ADR 0018](docs/adr/0018-catalog-media-kong.md).
 
-`BETTER_AUTH_URL` y `JWT_ISSUER` usan `http://localhost:8000`. En Compose, `IDENTITY_URL=http://identity:3006` sirve para transporte interno y no modifica el issuer. El puerto `:3006` de Identity y `:3001` de API quedan ligados a loopback para diagnóstico. Kong es el borde público en `:8000`; su Admin API está desactivada.
+`BETTER_AUTH_URL` y `JWT_ISSUER` usan `http://localhost:8000`. En Compose, `IDENTITY_URL=http://identity:3006` sirve para transporte interno y no modifica el issuer. Los puertos `:3006` de Identity, `:3007` de Catalog y `:3001` de API quedan ligados a loopback para diagnóstico. Kong es el borde público en `:8000`; su Admin API está desactivada.
 
 ## Desarrollo
 
@@ -213,6 +218,9 @@ pnpm dev
 - MF catálogo admin: <http://localhost:5174>
 - Kong: <http://localhost:8000>
 - Identity: <http://localhost:8000/api/identity/health>
+- Catalog: <http://localhost:8000/api/catalog/health>
+- Media: <http://localhost:8000/api/media/health>
+- Timeline: <http://localhost:8000/api/events/health>
 - JWKS: <http://localhost:8000/api/auth/jwks>
 - Orders: <http://localhost:8000/api/orders/health>
 - Inventory v2: <http://localhost:8000/api/inventory/v2/health>
@@ -223,10 +231,13 @@ Para desarrollar un backend fuera de Compose, detén su contenedor y usa `pnpm -
 El smoke requiere una base de prueba y crea datos temporales:
 
 ```sh
-DATABASE_URL=postgresql://mercadoya:mercadoya_local@localhost:5432/mercadoya pnpm --filter @mercadoya/identity-service smoke
+set -a
+. ./.env
+set +a
+pnpm --filter @mercadoya/identity-service smoke
 ```
 
-CI ejecuta login/sesión, JWKS, acceso con cookie y Bearer, rechazo de JWT inválido, health público y creación/confirmación de pedido con Inventory v2. Las pruebas del verificador cubren issuer/audience incorrectos, firma, expiración, algoritmo, kid y solapamiento de rotación.
+CI ejecuta login/sesión, JWKS, CRUD con cookie y Bearer, buyer 403, uploads/full/thumb, CORS, límites, stock interno y creación/confirmación de pedido con Inventory v2. La demo saga comprueba también rechazo, compensación y eventos duplicados. Las pruebas del verificador cubren issuer/audience incorrectos, firma, expiración, algoritmo, kid y solapamiento de rotación.
 
 ## Autenticación local
 
@@ -287,7 +298,8 @@ pnpm format     # Aplica oxfmt en los paquetes y la configuración de raíz
 
 ```text
 apps/
-  api/             Hono + TypeScript + Drizzle ORM
+  api/             Timeline Hono :3001, sin módulos de dominio
+  catalog-service/ Catalog y Media Hono + Drizzle + imágenes locales :3007
   orders-service/  Proceso Hono para pedidos y consumo NATS
   inventory-service/ Dos despliegues Hono para lectura de reservas; v2 consume NATS
   notifications-lambda/ Handler Lambda, bridge NATS y stack CDK

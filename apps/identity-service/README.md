@@ -1,6 +1,6 @@
 # Identity
 
-Identity corre en `:3006`. Better Auth `1.7.5` y su adapter Drizzle están fijados en el lockfile. Es propietario de `user`, `session`, `account`, `verification` y `jwks`. Catalog y Media siguen en `apps/api`.
+Identity corre en `:3006`. Better Auth `1.7.5` y su adapter Drizzle están fijados en el lockfile. Es propietario de `user`, `session`, `account`, `verification` y `jwks`. Catalog y Media corren juntos en `apps/catalog-service` :3007.
 
 ```sh
 pnpm --filter @mercadoya/identity-service db:migrate

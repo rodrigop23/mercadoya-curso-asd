@@ -2,11 +2,13 @@
 openapi: 3.1.0
 info:
   title: MercadoYa Catalog
-  version: 1.0.0
-  description: Catalog sigue dentro del BFF. Multipart conserva strings para price/stock; los refinements numéricos se ejecutan después de convertirlos. Las rutas internas son un borde HTTP real, no URLs de infraestructura en DTOs.
+  version: 1.1.0
+  description: Catalog y Media comparten proceso en :3007; Kong publica el CRUD en :8000. Stock interno solo usa http://catalog:3007 en Compose. Multipart conserva strings para price/stock; los refinements numéricos se ejecutan después de convertirlos. Las rutas internas conservan x-catalog-internal-token; Kong responde 404 para ellas. Directo al servicio solo Bearer JWT, vía Kong también cookie de sesión. Límite de formulario 3 MiB e imagen 2 MiB.
 servers:
   - url: http://localhost:8000
     description: Kong OSS local; los paths incluyen /api.
+  - url: http://localhost:3007
+    description: Catalog/Media directo; mutaciones solo Bearer JWT, stock solo token interno.
 paths:
   /api/catalog/health:
     get:
@@ -73,6 +75,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "413":
+          description: El formulario supera 3145728 bytes. Kong puede devolver HTML; Catalog devuelve JSON.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+            text/html:
+              schema:
+                type: string
         "500":
           description: Falló la operación.
           content:
@@ -124,6 +135,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "413":
+          description: El formulario supera 3145728 bytes. Kong puede devolver HTML; Catalog devuelve JSON.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+            text/html:
+              schema:
+                type: string
         "500":
           description: Falló la operación.
           content:
@@ -192,6 +212,9 @@ paths:
             format: uuid
             pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
   /api/internal/catalog/products/{id}/stock:
+    servers:
+      - url: http://localhost:3007
+        description: Catalog/Media directo; mutaciones solo Bearer JWT, stock solo token interno.
     get:
       operationId: getStock
       summary: Consultar stock para Inventory
@@ -231,6 +254,9 @@ paths:
             format: uuid
             pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
   /api/internal/catalog/products/{id}/adjust-stock:
+    servers:
+      - url: http://localhost:3007
+        description: Catalog/Media directo; mutaciones solo Bearer JWT, stock solo token interno.
     post:
       operationId: adjustStock
       summary: Ajustar stock atómicamente

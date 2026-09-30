@@ -9,11 +9,11 @@
 | Inventory HTTP v1/v2 y alias | [Inventory](../../apps/inventory-service/openapi.yaml) | `apps/inventory-service` |
 | Orders HTTP | [Orders](../../apps/orders-service/openapi.yaml) | `apps/orders-service` |
 | Identity, login y sesión | [Identity](../../apps/identity-service/openapi.yaml) | `apps/identity-service` |
-| Catalog público y stock interno | [Catalog](../../apps/api/openapi/catalog.yaml) | `apps/api/src/modules/catalog` |
-| Media, health y lectura de imágenes | [Media](../../apps/api/openapi/media.yaml) | Media procesa imágenes; Catalog monta `/uploads/*` |
+| Catalog público y stock interno | [Catalog](../../apps/catalog-service/openapi/catalog.yaml) | `apps/catalog-service/src/modules/catalog` |
+| Media, health y lectura de imágenes | [Media](../../apps/catalog-service/openapi/media.yaml) | Media procesa imágenes; Catalog monta `/uploads/*` |
 | NATS saga v1 | [JSON Schemas por subject](events.schema.json) | Orders publica pedidos y resultados del simulador Payment; Inventory publica reserva, rechazo y liberación |
 
-El owner del módulo revisa su spec y los schemas en cada cambio de handler. Los owners de consumidores afectados deben revisar cambios incompatibles. Identity corre en su servicio propio; Catalog y Media siguen en API. Media recibe `image` mediante multipart de Catalog, no tiene una ruta independiente de upload. Identity documenta los endpoints que usan la web y los servicios; el catch-all GET/POST `/api/auth/*` también delega endpoints del proveedor Better Auth y su plugin admin. No declaramos esos endpoints adicionales como contratos propios de MercadoYa.
+El owner del módulo revisa su spec y los schemas en cada cambio de handler. Los owners de consumidores afectados deben revisar cambios incompatibles. Identity corre en su servicio propio; Catalog y Media comparten `apps/catalog-service` en :3007; API conserva solo la timeline. Media recibe `image` mediante multipart de Catalog, no tiene una ruta independiente de upload. Identity documenta los endpoints que usan la web y los servicios; el catch-all GET/POST `/api/auth/*` también delega endpoints del proveedor Better Auth y su plugin admin. No declaramos esos endpoints adicionales como contratos propios de MercadoYa.
 
 El server principal es Kong local `http://localhost:8000`. Orders también anuncia `3002`; Inventory declara `3003` o `3005` en cada path según la versión que realmente sirve ese proceso. Estos servers son ejemplos locales en las specs, no forman parte de los DTO. No hay URLs internas ni tablas en el paquete publicado.
 
@@ -39,7 +39,7 @@ Zod transforma `price`/`stock` de multipart a números después de validar strin
 
 ## Auth actual
 
-La web envía la cookie Better Auth con `credentials: include`. En localhost se llama `better-auth.session_token`; HTTPS puede añadir `__Secure-`. El token en las respuestas del proveedor es opaco, no implica Bearer JWT. `POST /api/orders` requiere sesión; `GET /api/orders/{orderId}` y health son públicos. Inventory requiere sesión para leer reservas y hoy no compara el comprador. Catalog exige rol `admin` para escritura; el stock interno usa `x-catalog-internal-token`, no la cookie del navegador.
+La web envía la cookie Better Auth con `credentials: include`. En localhost se llama `better-auth.session_token`; HTTPS puede añadir `__Secure-`. El token en las respuestas del proveedor es opaco, no implica Bearer JWT. Kong admite sesión browser o Bearer JWT para crear y leer pedidos, consultar reservas y mutar productos. Orders, Inventory y Catalog verifican el JWT upstream mediante JWKS; health y lectura de catálogo/imágenes son públicos. Inventory no compara el comprador. Catalog exige rol `admin` para escritura; el stock interno usa `x-catalog-internal-token` solo en la URL directa :3007, y Kong lo bloquea con 404. Los formularios admiten hasta 3 MiB en Kong y Hono; una imagen admite hasta 2 MiB.
 
 `/api/me` devuelve sesión/usuario o 401; `/api/auth/get-session` puede devolver `null` con 200. Los schemas de respuestas del proveedor admiten campos adicionales de plugins. El schema `sessionBuyerSchema` permanece como adapter de sesión. Orders e Inventory obtienen sub de un JWT verificado por JWKS. `applicationJwtClaimsSchema`, `applicationTokenResponseSchema` y `publicJwksSchema` describen el nuevo contrato; el schema de claims no sustituye la comprobación criptográfica. Los tipos de puertos que usan `Date` o `File` siguen siendo adapters del módulo, no DTO HTTP.
 

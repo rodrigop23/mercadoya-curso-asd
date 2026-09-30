@@ -54,8 +54,8 @@ services:
         plugins:
           - name: identity-auth
             config: { verify_url: 'http://identity:3006/api/identity/verify' }
-  - name: api-remaining
-    url: http://api:3001
+  - name: catalog-media
+    url: http://catalog:3007
     routes:
       - name: catalog-mutations
         paths: ['/api/products']
@@ -66,6 +66,19 @@ services:
             config: { verify_url: 'http://identity:3006/api/identity/verify' }
       - name: catalog-public
         paths: ['/api/products', '/api/catalog/health', '/api/media/health', '/uploads']
+        methods: ['GET', 'HEAD', 'OPTIONS']
+        strip_path: false
+      - name: catalog-stock-internal-only
+        paths: ['/api/internal/catalog']
+        strip_path: false
+        plugins:
+          - name: request-termination
+            config: { status_code: 404, message: 'Not found' }
+  - name: timeline
+    url: http://api:3001
+    routes:
+      - name: events-health
+        paths: ['~/api/events/health$']
         strip_path: false
       - name: events-ingest-internal-only
         paths: ['~/api/events/ingest$']

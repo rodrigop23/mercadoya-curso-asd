@@ -13,6 +13,6 @@ apis:
   identity:
     root: ../../apps/identity-service/openapi.yaml
   catalog:
-    root: ../../apps/api/openapi/catalog.yaml
+    root: ../../apps/catalog-service/openapi/catalog.yaml
   media:
-    root: ../../apps/api/openapi/media.yaml
+    root: ../../apps/catalog-service/openapi/media.yaml

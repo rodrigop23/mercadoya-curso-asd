@@ -1,11 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
 import type { MediaFilter, SupportedImageMime } from './types.js';
 import { getRequired } from './types.js';
 
-const uploadsDirectory = fileURLToPath(new URL('../../../../uploads/media/', import.meta.url));
+const uploadsRoot =
+  process.env.UPLOADS_DIR ?? fileURLToPath(new URL('../../../../uploads/', import.meta.url));
+const uploadsDirectory = join(uploadsRoot, 'media');
 
 const extensionByMimeType: Record<SupportedImageMime, string> = {
   'image/jpeg': 'jpg',
@@ -21,8 +24,8 @@ export const persistImage: MediaFilter = async (context) => {
   const extension = extensionByMimeType[contentType];
   const imagePath = `media/${assetId}-full.${extension}`;
   const thumbPath = `media/${assetId}-thumb.${extension}`;
-  const fullImageFile = new URL(`../../../../uploads/${imagePath}`, import.meta.url);
-  const thumbImageFile = new URL(`../../../../uploads/${thumbPath}`, import.meta.url);
+  const fullImageFile = join(uploadsRoot, imagePath);
+  const thumbImageFile = join(uploadsRoot, thumbPath);
   let fullImageWasSaved = false;
 
   await mkdir(uploadsDirectory, { recursive: true });
@@ -44,8 +47,8 @@ export const persistImage: MediaFilter = async (context) => {
 };
 
 export async function removePersistedImage(imagePath: string, thumbPath: string) {
-  const fullImageFile = new URL(`../../../../uploads/${imagePath}`, import.meta.url);
-  const thumbImageFile = new URL(`../../../../uploads/${thumbPath}`, import.meta.url);
+  const fullImageFile = join(uploadsRoot, imagePath);
+  const thumbImageFile = join(uploadsRoot, thumbPath);
 
   await Promise.all([
     unlink(fullImageFile).catch(() => undefined),

@@ -5,7 +5,7 @@ import { generatedDocuments } from '../scripts/openapi.mjs';
 const inventory = generatedDocuments.get('apps/inventory-service/openapi.yaml');
 const orders = generatedDocuments.get('apps/orders-service/openapi.yaml');
 const identity = generatedDocuments.get('apps/identity-service/openapi.yaml');
-const catalog = generatedDocuments.get('apps/api/openapi/catalog.yaml');
+const catalog = generatedDocuments.get('apps/catalog-service/openapi/catalog.yaml');
 
 test('Inventory anuncia el despliegue correcto para cada versión y usa el alias v2', () => {
   for (const prefix of ['/api/inventory', '/api/inventory/v1', '/api/inventory/v2']) {
@@ -59,4 +59,22 @@ test('los bordes documentados distinguen sesión browser, JWT y token interno de
   );
   assert.equal(catalog.components.schemas.CreateProduct.required.includes('image'), true);
   assert.equal(catalog.components.schemas.UpdateProduct.required.includes('image'), false);
+});
+
+test('Catalog documenta origen interno y límites reales de Kong y Hono', () => {
+  for (const suffix of ['stock', 'adjust-stock']) {
+    assert.deepEqual(
+      catalog.paths[`/api/internal/catalog/products/{id}/${suffix}`].servers.map(
+        (server) => server.url,
+      ),
+      ['http://localhost:3007'],
+    );
+  }
+  for (const operation of [
+    catalog.paths['/api/products'].post,
+    catalog.paths['/api/products/{id}'].put,
+  ]) {
+    assert.ok(operation.responses[413].content['application/json']);
+    assert.ok(operation.responses[413].content['text/html']);
+  }
 });

@@ -3,7 +3,7 @@ openapi: 3.1.0
 info:
   title: MercadoYa Media
   version: 1.0.0
-  description: La ruta estática /uploads/* la monta Catalog. La entrada de Media es image en multipart de Catalog; no hay upload HTTP autónomo. Kong proxifica Catalog y Media; Polar queda para decisiones futuras.
+  description: Catalog/Media en :3007 monta /uploads/* y conserva el directorio histórico apps/api/uploads en Compose. La entrada de Media es image en multipart de Catalog; no hay upload HTTP autónomo. Kong proxifica Catalog y Media; Polar queda para decisiones futuras.
 servers:
   - url: http://localhost:8000
     description: Kong OSS local; los paths incluyen /api.

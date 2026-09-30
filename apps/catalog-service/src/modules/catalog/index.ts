@@ -1,5 +1,5 @@
 import { createCatalogRoutes } from './routes.js';
-import type { IdentityContract } from '../identity/contract.js';
+import type { AdminAuthorizer } from '../../auth.js';
 import type { MediaContract } from '../media/contract.js';
 import { createCatalogContract } from './service.js';
 
@@ -11,7 +11,7 @@ export {
   type StockAdjustmentResult,
 } from './contract.js';
 
-export function createCatalogModule(identity: IdentityContract, media: MediaContract) {
+export function createCatalogModule(identity: AdminAuthorizer, media: MediaContract) {
   const contract = createCatalogContract(media);
 
   return {
