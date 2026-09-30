@@ -1,6 +1,6 @@
 # Secuencia S5: saga de pedido, compensación y email
 
-Esta es la secuencia canónica de `v3-services` tras los prompts 09 y 10. Solo Inventory v1 procesa los eventos de reserva y compensación; v2 ofrece lectura HTTP. El participante de pago es un componente del mismo proceso Orders `:3002`.
+Esta es la secuencia canónica de `v3-services` tras los prompts 09 y 10. Solo Inventory v2 procesa los eventos de reserva y compensación; v1 conserva HTTP explícito y health. El participante de pago es un componente del mismo proceso Orders `:3002`.
 
 ```mermaid
 sequenceDiagram
@@ -11,7 +11,7 @@ sequenceDiagram
   participant Payment as Simulador dentro de Orders :3002
   participant DB as PostgreSQL :5432
   participant NATS as NATS :4222
-  participant Inv as Inventory v1 :3003
+  participant Inv as Inventory v2 :3005
   participant Catalog as Catalog interno :3001
   participant Bridge as Bridge :3004
   participant Handler as Handler local o Lambda

@@ -72,8 +72,8 @@ export function createApiLayer() {
   app.all('/api/inventory/v1/*', proxyInventoryV1);
   app.all('/api/inventory/v2', proxyInventoryV2);
   app.all('/api/inventory/v2/*', proxyInventoryV2);
-  app.all('/api/inventory', proxyInventoryV1);
-  app.all('/api/inventory/*', proxyInventoryV1);
+  app.all('/api/inventory', proxyInventoryV2);
+  app.all('/api/inventory/*', proxyInventoryV2);
   app.all('/api/notifications', proxyNotifications);
   app.all('/api/notifications/*', proxyNotifications);
 

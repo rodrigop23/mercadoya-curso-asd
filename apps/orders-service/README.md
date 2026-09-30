@@ -19,7 +19,7 @@ Variables en el `.env` de la raíz:
 
 ## Saga por coreografía y compensación
 
-Orders conserva `pending` después de `inventory.reserved`. Solo `payment.succeeded` lo cambia a `confirmed`. `inventory.rejected` o `payment.failed` lo cambian a `rejected`. Inventory v1 escucha `payment.failed`, restaura el stock y publica `inventory.released`; Orders también consume ese evento como cierre de la compensación. El rechazo puede verse antes de que termine la liberación, por eso la demo espera ambos resultados. Las actualizaciones solo afectan pedidos `pending`, de modo que los eventos duplicados no reescriben estados finales.
+Orders conserva `pending` después de `inventory.reserved`. Solo `payment.succeeded` lo cambia a `confirmed`. `inventory.rejected` o `payment.failed` lo cambian a `rejected`. Inventory v2 escucha `payment.failed`, restaura el stock y publica `inventory.released`; Orders también consume ese evento como cierre de la compensación. El rechazo puede verse antes de que termine la liberación, por eso la demo espera ambos resultados. Las actualizaciones solo afectan pedidos `pending`, de modo que los eventos duplicados no reescriben estados finales.
 
 El módulo `src/payment/simulator.ts` escucha `inventory.reserved` y publica el resultado simulado. Vive en el proceso de Orders por comodidad de clase, pero participa como otro consumidor NATS: no llama a Inventory, no coordina pasos y no es un bounded context de pagos. No hay cobro real. `PAYMENT_MODE=succeed` es el valor por defecto; configura `PAYMENT_MODE=fail` en `.env` y reinicia Orders para fallar compras desde la UI. El CLI puede elegir el resultado por pedido sin cambiar esa variable.
 

@@ -87,7 +87,7 @@ Estos healthchecks comprueban que los procesos responden; el recorrido de compra
   Usa una de las dos variantes. El CLI comprueba pago OK, stock insuficiente y pago fallido, y publica fallos duplicados para comprobar idempotencia de la liberación. Debe terminar con código `0`. Crea tres pedidos persistentes y consume una unidad en el caso exitoso; no borra pedidos ni repone esa unidad. Muestra los IDs y abre sus timelines. El CLI verifica saga y stock; comprueba las notificaciones aparte.
 
 - [ ] Para mostrar el fallo desde la UI, como alternativa cambia `PAYMENT_MODE=fail` en `.env` y reinicia Orders. Puedes detener `pnpm dev` con Ctrl+C y volver a ejecutarlo para reiniciar los procesos locales. Compra con stock suficiente y espera `rejected`; verifica la restauración del stock, que puede terminar después del rechazo y del correo. Devuelve `PAYMENT_MODE=succeed` y reinicia de nuevo.
-- [ ] Comprueba `notification.stub` o `notification.email` del fallo de pago y, si hay Resend, "El pago no se completó". La compensación se observa también en `docker compose logs inventory-v1` por `inventory.released`.
+- [ ] Comprueba `notification.stub` o `notification.email` del fallo de pago y, si hay Resend, "El pago no se completó". La compensación se observa también en `docker compose logs inventory-v2` por `inventory.released`.
 
 ## 7. Rechazo por stock
 
@@ -125,22 +125,21 @@ Estos healthchecks comprueban que los procesos responden; el recorrido de compra
 
   El JSON contiene `serviceVersion: "v1"` o `"v2"`, y `X-Service-Version` coincide con la versión.
 
-- [ ] Con la cookie del paso 7 y el UUID de un pedido confirmado del paso 5, compara la misma reserva:
+- [ ] Con la cookie del paso 7 y el UUID de un pedido confirmado del paso 5, consulta la reserva v2 por defecto:
 
   ```sh
   ORDER_ID=UUID_DEL_PEDIDO_CONFIRMADO
-  curl -i -b /tmp/mercadoya-v3-cookies.txt "http://localhost:3001/api/inventory/v1/reservations/$ORDER_ID"
   curl -i -b /tmp/mercadoya-v3-cookies.txt "http://localhost:3001/api/inventory/v2/reservations/$ORDER_ID"
   ```
 
-  Ambas versiones leen la misma tabla. V2 añade `reservation.status: "reserved"`; V1 no incluye ese campo. Solo V1 consume eventos para reservar y compensar. Usa un pedido confirmado: tras compensar, la reserva se elimina y su consulta responde `404`. Sin sesión, ambas lecturas responden `401`.
+  Para comparar compatibilidad, consulta explícitamente `/api/inventory/v1/reservations/$ORDER_ID` con la misma cookie. Ambas versiones leen la misma tabla. V2 añade `reservation.status: "reserved"`; V1 no incluye ese campo. Solo V2 consume eventos para reservar y compensar. Usa un pedido confirmado: tras compensar, la reserva se elimina y su consulta responde `404`. Sin sesión, ambas lecturas responden `401`.
 
 ## 8bis. Explorar Inventory OpenAPI con Swagger
 
-- [ ] Abre [Swagger UI de Inventory](http://localhost:3003/docs). Requiere internet para cargar los recursos de Swagger desde el CDN. Comprueba también el [YAML servido](http://localhost:3003/openapi.yaml), que corresponde a `apps/inventory-service/openapi.yaml`.
-- [ ] Localiza `health` y `reservations` v1/v2 en el mismo documento. V1 y los alias sin versión están marcados como deprecated. Expande ambas lecturas de reservas y compara los schemas de respuesta: solo v2 exige `reservation.status: "reserved"`.
-- [ ] Expande `GET /api/inventory/v1/health` y pulsa **Try it out**. En el selector general **Servers**, elige el server directo `http://localhost:3003` y pulsa **Execute**. Debe responder `200` con `serviceVersion: "v1"` y `X-Service-Version: v1`.
-- [ ] Opcional: abre [Swagger UI del segundo despliegue](http://localhost:3005/docs), expande `/api/inventory/v2/health`, pulsa **Try it out**, selecciona en **Servers** el server directo `http://localhost:3005` y ejecuta la solicitud. Responde `200` con la versión v2. El contrato es el mismo en ambos procesos; el deploy decide qué paths atiende cada uno.
+- [ ] Abre [Swagger UI de Inventory](http://localhost:3005/docs). Requiere internet para cargar los recursos de Swagger desde el CDN. Comprueba también el [YAML servido](http://localhost:3005/openapi.yaml), que corresponde a `apps/inventory-service/openapi.yaml`.
+- [ ] Localiza `health` y `reservations` v1/v2 en el mismo documento. V1 está marcado como deprecated; el alias sin versión usa v2. Expande ambas lecturas de reservas y compara los schemas de respuesta: solo v2 exige `reservation.status: "reserved"`.
+- [ ] Expande `GET /api/inventory/v2/health` y pulsa **Try it out**. En el selector general **Servers**, elige el server directo `http://localhost:3005` y pulsa **Execute**. Debe responder `200` con `serviceVersion: "v2"` y `X-Service-Version: v2`.
+- [ ] Opcional: abre [Swagger UI v1 retenido](http://localhost:3003/docs), expande `/api/inventory/v1/health`, pulsa **Try it out**, selecciona en **Servers** el server directo `http://localhost:3003` y ejecuta la solicitud. Responde `200` con la versión v1. El contrato es el mismo en ambos procesos; el deploy decide qué paths atiende cada uno.
 - [ ] Para probar reservations con sesión, usa los comandos vía gateway y cookie del paso 8. Swagger permite explorar schemas sin iniciar sesión; Execute puede responder `401` sin cookie. Seleccionar otro origen puede causar un bloqueo CORS. Para health, conserva el server del mismo origen que la UI.
 
 ## 9. Apagado y notas

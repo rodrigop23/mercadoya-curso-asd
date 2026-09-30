@@ -96,7 +96,7 @@ pnpm destroy
 
 ## Comportamiento y límites
 
-Orders corre como proceso Node en `:3002`. Inventory corre como contenedor en `:3003`. Notifications ejecuta la lógica en Lambda cuando el bridge usa Function URL; en local invoca exactamente el mismo handler sin cuenta AWS. Los tres comparten los subjects NATS existentes.
+Orders corre como proceso Node en `:3002`. Inventory v2 corre como contenedor en `:3005` por defecto; v1 queda retenido en `:3003`. Notifications ejecuta la lógica en Lambda cuando el bridge usa Function URL; en local invoca exactamente el mismo handler sin cuenta AWS. Los tres comparten los subjects NATS existentes.
 
 El bridge usa NATS Core, con entrega como máximo una vez y sin persistencia ni reintento duradero. Si el handler o ingest falla, el bridge registra `event.handler_error`; el evento no se reproduce automáticamente. La timeline también es un buffer en memoria del API y se vacía al reiniciarlo. Este comportamiento basta para el recorrido de clase y no constituye entrega fiable de notificaciones.
 

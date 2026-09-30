@@ -1,10 +1,7 @@
 import { Hono, type Context } from 'hono';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
-import {
-  reservationResponseV1Schema,
-  reservationResponseV2Schema,
-} from '@mercadoya/contracts';
+import { reservationResponseV1Schema, reservationResponseV2Schema } from '@mercadoya/contracts';
 
 import { db } from '../db/index.js';
 import type { IdentityContract } from '../identity/contract.js';
@@ -16,13 +13,19 @@ export function createInventoryRoutes(identity: IdentityContract, serviceVersion
   routes.use('*', async (c, next) => {
     await next();
     c.header('X-Service-Version', serviceVersion);
+    if (serviceVersion === 'v1') {
+      c.header('Deprecation', '@1790726400'); // 2026-09-30 UTC, RFC 9745.
+      c.header(
+        'Link',
+        `<${c.req.path.replace('/api/inventory/v1', '/api/inventory/v2')}>; rel="successor-version"`,
+      );
+    }
   });
 
-  const health = (c: Context) =>
-    c.json({ module: 'inventory', ok: true, serviceVersion });
+  const health = (c: Context) => c.json({ module: 'inventory', ok: true, serviceVersion });
 
   routes.get(`/${serviceVersion}/health`, health);
-  if (serviceVersion === 'v1') routes.get('/health', health);
+  if (serviceVersion === 'v2') routes.get('/health', health);
 
   const getReservation = async (c: Context) => {
     try {
@@ -54,7 +57,9 @@ export function createInventoryRoutes(identity: IdentityContract, serviceVersion
         createdAt: reservation.createdAt.toISOString(),
       };
       return serviceVersion === 'v2'
-        ? c.json(reservationResponseV2Schema.parse({ reservation: { ...base, status: 'reserved' } }))
+        ? c.json(
+            reservationResponseV2Schema.parse({ reservation: { ...base, status: 'reserved' } }),
+          )
         : c.json(reservationResponseV1Schema.parse({ reservation: base }));
     } catch (error) {
       console.error('No se pudo consultar la reserva:', error);
@@ -63,7 +68,7 @@ export function createInventoryRoutes(identity: IdentityContract, serviceVersion
   };
 
   routes.get(`/${serviceVersion}/reservations/:orderId`, getReservation);
-  if (serviceVersion === 'v1') routes.get('/reservations/:orderId', getReservation);
+  if (serviceVersion === 'v2') routes.get('/reservations/:orderId', getReservation);
 
   return routes;
 }

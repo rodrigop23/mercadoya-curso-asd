@@ -4,7 +4,7 @@ import { Hono } from 'hono';
 import { config } from 'dotenv';
 import { fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
-import { eventSubjects } from '@mercadoya/contracts';
+import { subscribeInventoryEvents } from './events/subscriptions.js';
 import { createCatalogHttpClient } from './catalog/http.js';
 import { closeDb } from './db/index.js';
 import { createEventBus } from './events/event-bus.js';
@@ -13,7 +13,7 @@ import { createInventoryModule } from './inventory/index.js';
 
 config({ path: fileURLToPath(new URL('../../../.env', import.meta.url)) });
 
-const serviceVersion = process.env.SERVICE_VERSION ?? 'v1';
+const serviceVersion = process.env.SERVICE_VERSION ?? 'v2';
 if (serviceVersion !== 'v1' && serviceVersion !== 'v2') {
   throw new Error('SERVICE_VERSION debe ser v1 o v2.');
 }
@@ -26,24 +26,15 @@ const inventory = createInventoryModule(
   createIdentityContract(),
   serviceVersion,
 );
-if (serviceVersion === 'v1') {
-  await eventBus.subscribe(
-    eventSubjects.ordersPlaced,
-    'inventory.reserve',
-    inventory.onOrderPlaced,
-  );
-  await eventBus.subscribe(
-    eventSubjects.paymentFailed,
-    'inventory.release',
-    inventory.onPaymentFailed,
-  );
-}
+await subscribeInventoryEvents(eventBus, inventory, serviceVersion);
 
 const app = new Hono();
 const openapi = await readFile(new URL('../openapi.yaml', import.meta.url), 'utf8');
-app.get('/openapi.yaml', (c) => c.body(openapi, 200, {
-  'Content-Type': 'application/yaml; charset=utf-8',
-}));
+app.get('/openapi.yaml', (c) =>
+  c.body(openapi, 200, {
+    'Content-Type': 'application/yaml; charset=utf-8',
+  }),
+);
 app.get('/docs', swaggerUI({ url: '/openapi.yaml' }));
 app.route('/api/inventory', inventory.routes);
 const port = Number(process.env.PORT ?? 3003);

@@ -7,10 +7,10 @@ const orders = generatedDocuments.get('apps/orders-service/openapi.yaml');
 const identity = generatedDocuments.get('apps/api/openapi/identity.yaml');
 const catalog = generatedDocuments.get('apps/api/openapi/catalog.yaml');
 
-test('Inventory anuncia el despliegue correcto para cada versión y mantiene el alias v1', () => {
+test('Inventory anuncia el despliegue correcto para cada versión y usa el alias v2', () => {
   for (const prefix of ['/api/inventory', '/api/inventory/v1', '/api/inventory/v2']) {
     const path = inventory.paths[`${prefix}/reservations/{orderId}`];
-    const v2 = prefix.endsWith('v2');
+    const v2 = !prefix.endsWith('v1');
     assert.deepEqual(
       path.servers.map((server) => server.url),
       ['http://localhost:3001', v2 ? 'http://localhost:3005' : 'http://localhost:3003'],
@@ -21,6 +21,18 @@ test('Inventory anuncia el despliegue correcto para cada versión y mantiene el 
       `#/components/schemas/ReservationResponseV${v2 ? 2 : 1}`,
     );
     assert.deepEqual(Object.keys(path).sort(), ['get', 'servers']);
+    const health = inventory.paths[`${prefix}/health`];
+    assert.equal(health.get.deprecated, v2 ? undefined : true);
+    if (!v2) {
+      assert.match(path.get.description, /Migra a \/api\/inventory\/v2/);
+      for (const operation of [path.get, health.get]) {
+        for (const response of Object.values(operation.responses)) {
+          assert.equal(response.headers.Deprecation.schema.const, '@1790726400');
+          assert.match(response.headers.Link.description, /successor-version/);
+          assert.equal(response.headers.Sunset, undefined);
+        }
+      }
+    }
   }
 });
 

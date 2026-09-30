@@ -1,6 +1,6 @@
 # Contratos HTTP y eventos
 
-`@mercadoya/contracts` contiene schemas Zod 4, tipos HTTP y puertos de Inventory/Catalog. No importa DB, Drizzle, módulos de apps, secretos ni URLs de infraestructura. Los servicios mantienen persistencia y transporte. El paquete empieza su versión estable en `1.0.0`; esto no cambia las versiones HTTP ni `version: 1` de los eventos.
+`@mercadoya/contracts` contiene schemas Zod 4, tipos HTTP y puertos de Inventory/Catalog. No importa DB, Drizzle, módulos de apps, secretos ni URLs de infraestructura. Los servicios mantienen persistencia y transporte. El paquete pasa de `1.0.0` a `2.0.0` por el cambio incompatible del alias Inventory. Los contratos HTTP explícitos v1/v2 y `version: 1` de los eventos se conservan.
 
 ## Specs y ownership
 
@@ -58,3 +58,5 @@ Inventory conserva su `info.version: 2.0.0`, HTTP v1/v2 y los alias v1 obsoletos
 ## Referencias verificadas
 
 Consultadas el 30 de septiembre de 2026: [OpenAPI 3 vigente](https://spec.openapis.org/oas/latest.html), [Zod 4, JSON Schema y límites de representación](https://zod.dev/json-schema), [Zod 4, validadores y transforms](https://zod.dev/api), [Redocly lint](https://redocly.com/docs/cli/commands/lint), [configuración de reglas](https://redocly.com/docs/cli/guides/configure-rules) y [cookies Better Auth](https://better-auth.com/docs/concepts/cookies). Las respuestas delegadas se contrastaron además con el código instalado de Better Auth `1.7.5`, fijado por el lockfile.
+
+Inventory usa v2 como contrato de aplicación por defecto, también en `/api/inventory/*`. Este cambio incompatible del alias fija contracts 2.0.0 y la spec Inventory 3.0.0. Los DTO v1 se conservan para rutas explícitas deprecated, con sucesor v2 y sin fecha de retirada. Solo inventory-v2 reserva y compensa; los subjects y schemas NATS siguen en version 1.

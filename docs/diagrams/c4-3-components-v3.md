@@ -48,8 +48,8 @@ flowchart LR
   identity --> db
   catalog --> db
   proxyOrders --> orders
-  proxyInventory --> inv1
-  proxyInventory --> inv2
+  proxyInventory -->|v1 explícito| inv1
+  proxyInventory -->|v2 y alias default| inv2
   proxyNotifications --> bridge
   events --> recent
   orders -->|SQL pedido| db
@@ -67,4 +67,4 @@ flowchart LR
   handler -->|notification.stub o notification.email, x-ingest-token| events
 ```
 
-Orders e Inventory consultan `GET /api/me` para validar la cookie recibida. Inventory v1 usa rutas internas de Catalog con `x-catalog-internal-token`. El handler de Notifications escribe en Events con `x-ingest-token` y `emailStatus` igual a `stub`, `sent` o `error`. Usa siempre `DEMO_NOTIFY_EMAIL`; no busca emails por `buyerId`. La compensación de Inventory y el correo por pago fallido son independientes. Consulta [ADR 0015](../adr/0015-saga-coreografia-compensacion.md) y [ADR 0011](../adr/0011-notifications-lambda-bridge.md).
+Orders e Inventory consultan `GET /api/me` para validar la cookie recibida. Inventory v2 usa rutas internas de Catalog con `x-catalog-internal-token`. El handler de Notifications escribe en Events con `x-ingest-token` y `emailStatus` igual a `stub`, `sent` o `error`. Usa siempre `DEMO_NOTIFY_EMAIL`; no busca emails por `buyerId`. La compensación de Inventory y el correo por pago fallido son independientes. Consulta [ADR 0015](../adr/0015-saga-coreografia-compensacion.md) y [ADR 0011](../adr/0011-notifications-lambda-bridge.md).

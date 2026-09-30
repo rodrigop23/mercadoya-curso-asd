@@ -12,7 +12,7 @@ Orders y Inventory ejecutan pasos distribuidos y ya intercambian eventos NATS. N
 
 La saga usa coreografía con NATS. Cada consumidor reacciona al evento correspondiente, sin orquestador central. El pago es un simulador dentro del proceso Orders `:3002`, sin PSP ni bounded context Payments independiente.
 
-1. Orders guarda el pedido `pending` y publica `orders.placed`. Solo Inventory v1 lo consume para reservar stock mediante Catalog.
+1. Orders guarda el pedido `pending` y publica `orders.placed`. Solo Inventory v2 lo consume para reservar stock mediante Catalog.
 2. Si Inventory publica `inventory.rejected`, Orders rechaza el pedido y Notifications prepara el correo de stock. No se simula pago.
 3. Si Inventory publica `inventory.reserved`, el simulador en Orders publica `payment.succeeded` o `payment.failed`. Reservar no confirma.
 4. Con `payment.succeeded`, Orders cambia a `confirmed` y Notifications prepara el correo de confirmación.
@@ -21,7 +21,7 @@ La saga usa coreografía con NATS. Cada consumidor reacciona al evento correspon
 
 `PAYMENT_MODE` selecciona `succeed` o `fail`, con `succeed` por defecto. El override opcional `paymentMode` en `orders.placed` se propaga a `inventory.reserved` y tiene prioridad sobre la variable de entorno. Solo el CLI interno lo usa; el POST público no lo acepta.
 
-La liberación usa un lock transaccional por pedido. Si ya no existe reserva, retorna sin ajustar stock ni publicar otra liberación. Así, fallos duplicados no reponen stock dos veces tras una liberación completada. Solo Inventory v1 consume NATS; v2 mantiene su lectura HTTP y el contrato HTTP versionado no cambia.
+La liberación usa un lock transaccional por pedido. Si ya no existe reserva, retorna sin ajustar stock ni publicar otra liberación. Así, fallos duplicados no reponen stock dos veces tras una liberación completada. Solo Inventory v2 consume NATS; v1 conserva lectura HTTP explícita y health; el alias sin versión usa ahora el contrato v2.
 
 ## Consecuencias
 

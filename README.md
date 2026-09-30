@@ -18,7 +18,7 @@ La rama [`v2-integration`](https://github.com/rodrigop23/mercadoya-curso-asd/tre
 
 En `v3-services`, Orders corre como proceso Node, Inventory como contenedor y Notifications usa un handler AWS Lambda. Un bridge NATS invoca ese handler directamente durante la clase local o mediante Function URL en AWS. Consulta [la guía de Notifications](apps/notifications-lambda/README.md).
 
-El [paquete `@mercadoya/contracts`](packages/contracts/README.md) centraliza schemas HTTP/eventos y documenta ownership, generación reproducible y versionado. Specs OpenAPI: [Inventory v1/v2](apps/inventory-service/openapi.yaml), [Orders](apps/orders-service/openapi.yaml), [Identity](apps/api/openapi/identity.yaml), [Catalog](apps/api/openapi/catalog.yaml) y [Media](apps/api/openapi/media.yaml). Inventory conserva [Swagger UI](http://localhost:3003/docs), también en [v2](http://localhost:3005/docs). La estrategia generate-from-code y sus límites constan en [ADR 0016](docs/adr/0016-http-event-contracts.md).
+El [paquete `@mercadoya/contracts`](packages/contracts/README.md) centraliza schemas HTTP/eventos y documenta ownership, generación reproducible y versionado. Specs OpenAPI: [Inventory v1/v2](apps/inventory-service/openapi.yaml), [Orders](apps/orders-service/openapi.yaml), [Identity](apps/api/openapi/identity.yaml), [Catalog](apps/api/openapi/catalog.yaml) y [Media](apps/api/openapi/media.yaml). Inventory usa [Swagger UI v2](http://localhost:3005/docs) por defecto y retiene [v1](http://localhost:3003/docs) para compatibilidad. La estrategia generate-from-code y sus límites constan en [ADR 0016](docs/adr/0016-http-event-contracts.md).
 
 ## Arquitectura y decisiones
 
@@ -93,7 +93,7 @@ Host web :5173 ── /admin/products ──► MF catálogo admin :5174
       └──────── catálogo buyer /catalog     └──► API Catalog :3001
 ```
 
-El API en `http://localhost:3001` es el gateway/BFF de la sesión 5 y el único origen de API que usa el navegador. Identity, Catalog y Media viven en ese proceso. El gateway proxifica `/api/orders` a Orders (`:3002`), `/api/inventory/v1` a Inventory v1 (`:3003`), `/api/inventory/v2` a Inventory v2 (`:3005`) y `/api/notifications` al bridge (`:3004`). Las rutas de Inventory sin versión siguen como alias v1. La web en `:5173` y el MF en `:5174` llaman directamente a `:3001` con `credentials: 'include'`; el API permite ambos orígenes mediante CORS con credenciales. Kong queda fuera del laboratorio y de Compose.
+El API en `http://localhost:3001` es el gateway/BFF de la sesión 5 y el único origen de API que usa el navegador. Identity, Catalog y Media viven en ese proceso. El gateway proxifica `/api/orders` a Orders (`:3002`), `/api/inventory/v1` a Inventory v1 (`:3003`), `/api/inventory/v2` a Inventory v2 (`:3005`) y `/api/notifications` al bridge (`:3004`). Las rutas de Inventory sin versión siguen como alias v2. La web en `:5173` y el MF en `:5174` llaman directamente a `:3001` con `credentials: 'include'`; el API permite ambos orígenes mediante CORS con credenciales. Kong queda fuera del laboratorio y de Compose.
 
 Para levantar la demo desde una copia nueva, configura `.env` a partir de `.env.example`, asigna claves aleatorias a `BETTER_AUTH_SECRET`, `CATALOG_INTERNAL_TOKEN`, `NOTIFICATIONS_INGEST_TOKEN` y `NOTIFICATIONS_INVOKE_TOKEN`, y ejecuta:
 
@@ -103,7 +103,7 @@ pnpm demo:infra
 pnpm dev
 ```
 
-`demo:infra` inicia Postgres y NATS, aplica el esquema con `db:push` y construye e inicia `inventory-v1` e `inventory-v2` en Compose. `pnpm dev` inicia web, MF catálogo admin, API, Orders y el bridge de Notifications. El API debe estar listo antes de crear pedidos. Inventory puede arrancar antes del API porque consulta Catalog e Identity al recibir solicitudes o eventos.
+`demo:infra` inicia Postgres y NATS, aplica el esquema con `db:push`, detiene ambos Inventory y los reconstruye e inicia en Compose. Al actualizar un laboratorio existente, pausa la creación de pedidos hasta que ambos healthchecks respondan para evitar eventos perdidos durante el cambio de consumidor. `pnpm dev` inicia web, MF catálogo admin, API, Orders y el bridge de Notifications. El API debe estar listo antes de crear pedidos. Inventory puede arrancar antes del API porque consulta Catalog e Identity al recibir solicitudes o eventos.
 
 | Componente           | Puerto | Comprobación                                     |
 | -------------------- | ------ | ------------------------------------------------ |
@@ -128,7 +128,7 @@ La autenticación de usuario y los secretos entre servicios cumplen fines distin
 | Versión  | Cambio observable                                                                                                                                                                                                                        |
 | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | API HTTP | `/api/inventory/v1/reservations/:orderId` conserva el JSON anterior; `/v2/` exige además `reservation.status: "reserved"`.                                                                                                               |
-| Servicio | Compose ejecuta `inventory-v1` e `inventory-v2` con `SERVICE_VERSION` distinto. Cada respuesta lleva `X-Service-Version`. Solo v1 consume `orders.placed` y `payment.failed`, para reservar y compensar sin duplicar consumidores en v2. |
+| Servicio | Compose ejecuta `inventory-v1` e `inventory-v2` con `SERVICE_VERSION` distinto. Cada respuesta lleva `X-Service-Version`. Solo v2 consume `orders.placed` y `payment.failed`, para reservar y compensar sin consumidores en v1. |
 
 Consulta el [guion de Inventory](apps/inventory-service/README.md) para comparar ambas respuestas con el mismo pedido y la misma cookie. La decisión está resumida en el [ADR 0008](docs/adr/0008-versionado-inventory.md).
 
@@ -136,7 +136,7 @@ Comprobación rápida sin sesión. Sustituye el UUID de ejemplo por uno real si 
 
 ```sh
 curl -i -X POST http://localhost:3001/api/orders -H 'Content-Type: application/json' -d '{"productId":"00000000-0000-4000-8000-000000000000","quantity":1}'
-curl -i http://localhost:3001/api/inventory/reservations/00000000-0000-4000-8000-000000000000
+curl -i http://localhost:3001/api/inventory/v2/reservations/00000000-0000-4000-8000-000000000000
 curl -i http://localhost:3001/api/orders/health
 curl -i http://localhost:3001/api/inventory/health
 curl -i http://localhost:3001/api/inventory/v1/health
@@ -144,11 +144,11 @@ curl -i http://localhost:3001/api/inventory/v2/health
 curl -i http://localhost:3001/api/notifications/health
 ```
 
-Las dos primeras solicitudes responden `401` y las rutas de health responden `200`. Para comprobar el camino con sesión, inicia sesión con el cookie jar de [autenticación local](#autenticación-local), crea un producto con stock y envía el pedido con `-b /tmp/mercadoya-cookies.txt`. El `POST` responde `202` con `buyerId`; Inventory v1 consume `orders.placed`, reserva stock mediante el token interno de Catalog y publica el resultado. Consulta las rutas `/api/inventory/v1/reservations/:orderId` y `/api/inventory/v2/reservations/:orderId` con el mismo cookie jar y revisa `GET /api/events` para la entrada `notification.stub` o `notification.email` del handler y su `emailStatus`. La reserva dispara el simulador; el pedido se confirma solo con `payment.succeeded`.
+Las dos primeras solicitudes responden `401` y las rutas de health responden `200`. Para comprobar el camino con sesión, inicia sesión con el cookie jar de [autenticación local](#autenticación-local), crea un producto con stock y envía el pedido con `-b /tmp/mercadoya-cookies.txt`. El `POST` responde `202` con `buyerId`; Inventory v2 consume `orders.placed`, reserva stock mediante el token interno de Catalog y publica el resultado. Consulta `/api/inventory/v2/reservations/:orderId` con el mismo cookie jar y revisa `GET /api/events` para la entrada `notification.stub` o `notification.email` del handler y su `emailStatus`. La reserva dispara el simulador; el pedido se confirma solo con `payment.succeeded`.
 
 ### Saga, compensación y correos
 
-Orders `:3002` aloja el simulador de pago. `inventory.reserved` inicia el pago simulado y `payment.succeeded` confirma el pedido. `inventory.rejected` rechaza sin pago. `payment.failed` rechaza el pedido y dispara la liberación en Inventory v1, que restaura stock y publica `inventory.released`. El rechazo y el correo de pago fallido pueden aparecer antes de completar la liberación. Consulta [ADR 0015](docs/adr/0015-saga-coreografia-compensacion.md) y [la secuencia canónica](docs/diagrams/seq-order-placed-fanout-v3.md).
+Orders `:3002` aloja el simulador de pago. `inventory.reserved` inicia el pago simulado y `payment.succeeded` confirma el pedido. `inventory.rejected` rechaza sin pago. `payment.failed` rechaza el pedido y dispara la liberación en Inventory v2, que restaura stock y publica `inventory.released`. El rechazo y el correo de pago fallido pueden aparecer antes de completar la liberación. Consulta [ADR 0015](docs/adr/0015-saga-coreografia-compensacion.md) y [la secuencia canónica](docs/diagrams/seq-order-placed-fanout-v3.md).
 
 Con la demo activa y un producto dedicado con al menos dos unidades, ejecuta:
 
@@ -266,7 +266,7 @@ pnpm format     # Aplica oxfmt en los paquetes y la configuración de raíz
 apps/
   api/             Hono + TypeScript + Drizzle ORM
   orders-service/  Proceso Hono para pedidos y consumo NATS
-  inventory-service/ Dos despliegues Hono para lectura de reservas; v1 consume NATS
+  inventory-service/ Dos despliegues Hono para lectura de reservas; v2 consume NATS
   notifications-lambda/ Handler Lambda, bridge NATS y stack CDK
   mf-catalog/      MF de productos admin en iframe, Vite :5174
   web/             React + Vite + TanStack Router + TypeScript
@@ -286,6 +286,6 @@ Se conservan las versiones instaladas en la máquina: Node `v24.14.1` y pnpm `11
 
 ## Saga de compra por coreografía
 
-En `v3-services`, Inventory reserva stock al recibir `orders.placed`. El pedido sigue `pending` tras `inventory.reserved`; un simulador didáctico dentro de Orders publica `payment.succeeded` para confirmarlo o `payment.failed` para rechazarlo. El fallo activa la compensación en Inventory v1, que restaura stock y publica `inventory.released`. El rechazo por stock no inicia Payment ni libera reservas. No hay orquestador ni PSP real.
+En `v3-services`, Inventory reserva stock al recibir `orders.placed`. El pedido sigue `pending` tras `inventory.reserved`; un simulador didáctico dentro de Orders publica `payment.succeeded` para confirmarlo o `payment.failed` para rechazarlo. El fallo activa la compensación en Inventory v2, que restaura stock y publica `inventory.released`. El rechazo por stock no inicia Payment ni libera reservas. No hay orquestador ni PSP real.
 
 Ejecuta `pnpm demo:saga` para comprobar los tres caminos y fallos duplicados. Los requisitos y efectos sobre los datos están en el [README del CLI](scripts/README.md). Notifications envía con Resend y React Email un correo por desenlace: confirmación, rechazo por stock o fallo de pago. También admite modo stub. Sigue el [checklist V3](docs/demo-v3.md) para preparar la clase y consultar los ADRs y diagramas de saga y correo.

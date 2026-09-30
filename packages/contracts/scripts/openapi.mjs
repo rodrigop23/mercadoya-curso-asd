@@ -350,7 +350,7 @@ documents.set(
 
 const inventoryPaths = {};
 for (const [prefix, version, legacy] of [
-  ['/api/inventory', 'v1', true],
+  ['/api/inventory', 'v2', true],
   ['/api/inventory/v1', 'v1', false],
   ['/api/inventory/v2', 'v2', false],
 ]) {
@@ -361,14 +361,21 @@ for (const [prefix, version, legacy] of [
       description: `Inventory ${version} directo.`,
     },
   ];
-  const suffix = legacy ? 'Legacy' : version.toUpperCase();
+  const suffix = legacy ? 'Default' : version.toUpperCase();
   inventoryPaths[`${prefix}/health`] = {
     servers,
     get: op(
       `inventoryHealth${suffix}`,
       `Estado Inventory ${version}`,
       { 200: health('inventory', version) },
-      { ...(version === 'v1' ? { deprecated: true } : {}) },
+      {
+        ...(version === 'v1'
+          ? {
+              deprecated: true,
+              description: 'Retenido para compatibilidad. Usa /api/inventory/v2/health.',
+            }
+          : {}),
+      },
     ),
   };
   inventoryPaths[`${prefix}/reservations/{orderId}`] = {
@@ -396,18 +403,38 @@ for (const [prefix, version, legacy] of [
         parameters: [id('orderId')],
         ...(version === 'v1' ? { deprecated: true } : {}),
         description:
-          'Valida sesión con Identity; no verifica que el usuario sea comprador. La reserva entra por NATS. La deprecación documentada no cambia el tráfico.',
+          'Valida sesión con Identity; no verifica que el usuario sea comprador. La reserva entra por NATS. ' +
+          (version === 'v1'
+            ? 'Retenido para compatibilidad. Migra a /api/inventory/v2/reservations/{orderId}, que añade reservation.status. Sin fecha de retirada.'
+            : 'Contrato de aplicación por defecto; reservation.status es obligatorio.'),
       },
     ),
   };
+  if (version === 'v1') {
+    for (const path of [`${prefix}/health`, `${prefix}/reservations/{orderId}`]) {
+      for (const result of Object.values(inventoryPaths[path].get.responses)) {
+        result.headers = {
+          ...result.headers,
+          Deprecation: {
+            schema: { type: 'string', const: '@1790726400' },
+            description: 'Fecha de deprecación según RFC 9745. Sin fecha de retirada.',
+          },
+          Link: {
+            schema: { type: 'string' },
+            description: 'Ruta v2 equivalente con rel="successor-version".',
+          },
+        };
+      }
+    }
+  }
 }
 documents.set(
   'apps/inventory-service/openapi.yaml',
   doc(
     'Inventory HTTP API',
-    '2.0.0',
+    '3.0.0',
     inventoryPaths,
-    'Borde de lectura v1/v2. El alias sigue en v1; solo v1 consume la saga. No existe POST de reserva.',
+    'V2 es el default de aplicación y del alias sin versión. Solo el despliegue v2 consume la saga. V1 se retiene explícito y deprecated, sin fecha de retirada. No existe POST de reserva.',
   ),
 );
 

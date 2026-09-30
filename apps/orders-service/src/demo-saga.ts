@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
-import { eventSubjects, paymentFailedEventSchema } from '@mercadoya/contracts';
+import {
+  eventSubjects,
+  paymentFailedEventSchema,
+  reservationResponseV2Schema,
+} from '@mercadoya/contracts';
 import { createEventBus } from './events/event-bus.js';
 import { closeDb } from './db/index.js';
 import { createOrdersService } from './orders/service.js';
@@ -17,6 +21,27 @@ async function read(path: string, base = origin) {
   });
   assert(response.ok, `HTTP ${response.status} al consultar ${path}`);
   return response.json();
+}
+// Una sesión de demo permite verificar el borde HTTP público y las reservas v2.
+const signup = await fetch(new URL('/api/auth/sign-up/email', origin), {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', origin },
+  body: JSON.stringify({
+    name: 'Demo saga',
+    email: `demo-saga-${crypto.randomUUID()}@example.com`,
+    password: crypto.randomUUID(),
+  }),
+});
+assert(signup.ok, `Signup de demo: HTTP ${signup.status}`);
+const cookie = signup.headers
+  .getSetCookie()
+  .map((value) => value.split(';')[0])
+  .join('; ');
+assert(cookie, 'Signup no devolvió cookie de sesión.');
+for (const version of ['v1', 'v2']) {
+  const response = await fetch(new URL(`/api/inventory/${version}/health`, origin));
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('x-service-version'), version);
 }
 const bus = await createEventBus();
 const trace = new Map<string, { subject: string; payload: unknown }[]>();
@@ -44,12 +69,20 @@ try {
     expected: string[],
   ) {
     const before = await stock();
-    const { order } = await service.createOrder({
-      productId: productId!,
-      quantity,
-      buyerId: null,
-      paymentMode: mode,
-    });
+    const input = { productId: productId!, quantity };
+    let order: { id: string };
+    if (mode === 'succeed') {
+      const response = await fetch(new URL('/api/orders', origin), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie },
+        body: JSON.stringify(input),
+      });
+      assert.equal(response.status, 202);
+      ({ order } = await response.json());
+    } else {
+      // El override de pago sigue siendo exclusivo del CLI interno.
+      ({ order } = await service.createOrder({ ...input, buyerId: null, paymentMode: mode }));
+    }
     const deadline = Date.now() + 15000;
     let finished = false;
     while (Date.now() < deadline) {
@@ -78,6 +111,21 @@ try {
       status === 'confirmed' ? before - quantity : before,
       `${name}: stock incorrecto`,
     );
+    for (const prefix of ['/api/inventory/v2', '/api/inventory']) {
+      const response = await fetch(new URL(`${prefix}/reservations/${order.id}`, origin), {
+        headers: { cookie },
+      });
+      assert.equal(response.headers.get('x-service-version'), 'v2');
+      assert.equal(response.headers.get('deprecation'), null);
+      if (status === 'confirmed') {
+        assert.equal(response.status, 200);
+        const { reservation } = reservationResponseV2Schema.parse(await response.json());
+        assert.equal(reservation.orderId, order.id);
+        assert.equal(reservation.status, 'reserved');
+      } else {
+        assert.equal(response.status, 404);
+      }
+    }
     console.log(`${name}: ${order.id}, ${status}, stock ${before} -> ${await stock()}`);
     console.log(expected.join(' -> '));
     return { order, events };

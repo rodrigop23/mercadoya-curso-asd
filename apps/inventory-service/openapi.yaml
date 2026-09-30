@@ -2,8 +2,8 @@
 openapi: 3.1.0
 info:
   title: MercadoYa Inventory HTTP API
-  version: 2.0.0
-  description: Borde de lectura v1/v2. El alias sigue en v1; solo v1 consume la saga. No existe POST de reserva.
+  version: 3.0.0
+  description: V2 es el default de aplicación y del alias sin versión. Solo el despliegue v2 consume la saga. V1 se retiene explícito y deprecated, sin fecha de retirada. No existe POST de reserva.
 servers:
   - url: http://localhost:3001
     description: BFF local; los paths incluyen /api.
@@ -12,11 +12,11 @@ paths:
     servers:
       - url: http://localhost:3001
         description: BFF local; los paths incluyen /api.
-      - url: http://localhost:3003
-        description: Inventory v1 directo.
+      - url: http://localhost:3005
+        description: Inventory v2 directo.
     get:
-      operationId: inventoryHealthLegacy
-      summary: Estado Inventory v1
+      operationId: inventoryHealthDefault
+      summary: Estado Inventory v2
       security: []
       responses:
         "200":
@@ -38,17 +38,16 @@ paths:
                     const: true
                   serviceVersion:
                     type: string
-                    const: v1
-      deprecated: true
+                    const: v2
   /api/inventory/reservations/{orderId}:
     servers:
       - url: http://localhost:3001
         description: BFF local; los paths incluyen /api.
-      - url: http://localhost:3003
-        description: Inventory v1 directo.
+      - url: http://localhost:3005
+        description: Inventory v2 directo.
     get:
-      operationId: getReservationLegacy
-      summary: Consultar reserva v1
+      operationId: getReservationDefault
+      summary: Consultar reserva v2
       security:
         - betterAuthSession: []
       responses:
@@ -57,12 +56,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ReservationResponseV1"
+                $ref: "#/components/schemas/ReservationResponseV2"
           headers:
             X-Service-Version:
               schema:
                 type: string
-                const: v1
+                const: v2
               description: Versión del proceso.
         "400":
           description: Solicitud inválida.
@@ -102,8 +101,7 @@ paths:
             type: string
             format: uuid
             pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
-      deprecated: true
-      description: Valida sesión con Identity; no verifica que el usuario sea comprador. La reserva entra por NATS. La deprecación documentada no cambia el tráfico.
+      description: Valida sesión con Identity; no verifica que el usuario sea comprador. La reserva entra por NATS. Contrato de aplicación por defecto; reservation.status es obligatorio.
   /api/inventory/v1/health:
     servers:
       - url: http://localhost:3001
@@ -135,7 +133,18 @@ paths:
                   serviceVersion:
                     type: string
                     const: v1
+          headers:
+            Deprecation:
+              schema:
+                type: string
+                const: "@1790726400"
+              description: Fecha de deprecación según RFC 9745. Sin fecha de retirada.
+            Link:
+              schema:
+                type: string
+              description: Ruta v2 equivalente con rel="successor-version".
       deprecated: true
+      description: Retenido para compatibilidad. Usa /api/inventory/v2/health.
   /api/inventory/v1/reservations/{orderId}:
     servers:
       - url: http://localhost:3001
@@ -160,36 +169,95 @@ paths:
                 type: string
                 const: v1
               description: Versión del proceso.
+            Deprecation:
+              schema:
+                type: string
+                const: "@1790726400"
+              description: Fecha de deprecación según RFC 9745. Sin fecha de retirada.
+            Link:
+              schema:
+                type: string
+              description: Ruta v2 equivalente con rel="successor-version".
         "400":
           description: Solicitud inválida.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+          headers:
+            Deprecation:
+              schema:
+                type: string
+                const: "@1790726400"
+              description: Fecha de deprecación según RFC 9745. Sin fecha de retirada.
+            Link:
+              schema:
+                type: string
+              description: Ruta v2 equivalente con rel="successor-version".
         "401":
           description: Falta una sesión o credencial válida.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+          headers:
+            Deprecation:
+              schema:
+                type: string
+                const: "@1790726400"
+              description: Fecha de deprecación según RFC 9745. Sin fecha de retirada.
+            Link:
+              schema:
+                type: string
+              description: Ruta v2 equivalente con rel="successor-version".
         "404":
           description: No encontrado.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+          headers:
+            Deprecation:
+              schema:
+                type: string
+                const: "@1790726400"
+              description: Fecha de deprecación según RFC 9745. Sin fecha de retirada.
+            Link:
+              schema:
+                type: string
+              description: Ruta v2 equivalente con rel="successor-version".
         "500":
           description: Falló la operación.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+          headers:
+            Deprecation:
+              schema:
+                type: string
+                const: "@1790726400"
+              description: Fecha de deprecación según RFC 9745. Sin fecha de retirada.
+            Link:
+              schema:
+                type: string
+              description: Ruta v2 equivalente con rel="successor-version".
         "502":
           description: El servicio remoto no está disponible.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+          headers:
+            Deprecation:
+              schema:
+                type: string
+                const: "@1790726400"
+              description: Fecha de deprecación según RFC 9745. Sin fecha de retirada.
+            Link:
+              schema:
+                type: string
+              description: Ruta v2 equivalente con rel="successor-version".
       parameters:
         - name: orderId
           in: path
@@ -199,7 +267,7 @@ paths:
             format: uuid
             pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
       deprecated: true
-      description: Valida sesión con Identity; no verifica que el usuario sea comprador. La reserva entra por NATS. La deprecación documentada no cambia el tráfico.
+      description: Valida sesión con Identity; no verifica que el usuario sea comprador. La reserva entra por NATS. Retenido para compatibilidad. Migra a /api/inventory/v2/reservations/{orderId}, que añade reservation.status. Sin fecha de retirada.
   /api/inventory/v2/health:
     servers:
       - url: http://localhost:3001
@@ -293,7 +361,7 @@ paths:
             type: string
             format: uuid
             pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
-      description: Valida sesión con Identity; no verifica que el usuario sea comprador. La reserva entra por NATS. La deprecación documentada no cambia el tráfico.
+      description: Valida sesión con Identity; no verifica que el usuario sea comprador. La reserva entra por NATS. Contrato de aplicación por defecto; reservation.status es obligatorio.
 components:
   securitySchemes:
     betterAuthSession:
@@ -302,55 +370,6 @@ components:
       name: better-auth.session_token
       description: Cookie Better Auth local. En HTTPS puede usar el prefijo __Secure-. No es Bearer JWT.
   schemas:
-    ReservationResponseV1:
-      type: object
-      properties:
-        reservation:
-          type: object
-          properties:
-            id:
-              type: string
-              format: uuid
-              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
-            orderId:
-              type: string
-              format: uuid
-              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
-            productId:
-              type: string
-              format: uuid
-              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
-            quantity:
-              type: integer
-              minimum: -9007199254740991
-              maximum: 9007199254740991
-            createdAt:
-              type: string
-              format: date-time
-              pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$
-          required:
-            - id
-            - orderId
-            - productId
-            - quantity
-            - createdAt
-      required:
-        - reservation
-    Error:
-      type: object
-      properties:
-        error:
-          type: string
-        details:
-          type: object
-          propertyNames:
-            type: string
-          additionalProperties:
-            type: array
-            items:
-              type: string
-      required:
-        - error
     ReservationResponseV2:
       type: object
       properties:
@@ -387,5 +406,54 @@ components:
             - quantity
             - createdAt
             - status
+      required:
+        - reservation
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        details:
+          type: object
+          propertyNames:
+            type: string
+          additionalProperties:
+            type: array
+            items:
+              type: string
+      required:
+        - error
+    ReservationResponseV1:
+      type: object
+      properties:
+        reservation:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+            orderId:
+              type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+            productId:
+              type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+            quantity:
+              type: integer
+              minimum: -9007199254740991
+              maximum: 9007199254740991
+            createdAt:
+              type: string
+              format: date-time
+              pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$
+          required:
+            - id
+            - orderId
+            - productId
+            - quantity
+            - createdAt
       required:
         - reservation
