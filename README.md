@@ -40,8 +40,45 @@ El campo `engines` documenta el mínimo de Node, `.node-version` fija la versió
 ## Instalar
 
 ```sh
-pnpm install
+pnpm install --frozen-lockfile
 ```
+
+## Validación local y CI
+
+El workflow [CI](.github/workflows/ci.yml) corre en cada `push` y `pull_request`, con Node de `.node-version` y pnpm de `packageManager`. Para reproducir sus pasos desde la raíz:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm lint
+pnpm build
+pnpm test
+```
+
+Turbo ejecuta los scripts de todos los workspaces que los declaran. `build` incluye `@mercadoya/contracts`, API, Orders, Inventory, Notifications, web, MF catálogo y el demo cloud. `typecheck` construye primero las dependencias de cada consumidor para resolver los exports de `contracts` desde un checkout limpio. `test` construye el paquete y sus dependencias antes de ejecutar su suite. El nuevo script raíz `test` delega en Turbo; los scripts existentes se conservan.
+
+La suite usa `node:test` de Node 24.14.1. Los tests de `contracts` importan el export público compilado y verifican los subjects NATS v1, eventos válidos, versiones, UUIDs, cantidades, fechas, causas de rechazo, override de pago y compatibilidad de las respuestas HTTP de Inventory v1/v2. Notifications conserva sus tests del handler con `fetch` simulado para envío e ingest. No se inicia ningún servidor ni se requiere Postgres, NATS, Docker, `.env`, credenciales AWS o secretos de producción. Esto no cubre persistencia, transporte NATS, browser ni el flujo completo de compra.
+
+Para ejecutar solo una suite con sus builds previos:
+
+```sh
+pnpm exec turbo run test --filter=@mercadoya/contracts
+pnpm exec turbo run test --filter=@mercadoya/notifications-lambda
+# Reejecutar las suites aunque Turbo tenga resultados en cache:
+pnpm test --force
+```
+
+El setup de CI usa `pnpm/setup@v3`, compatible con pnpm 11, con `cache: true` y `pnpm-lock.yaml` como clave de la cache del store. La instalación automática está desactivada para ejecutar explícitamente `pnpm install --frozen-lockfile`. No se guarda `node_modules` ni una cache remota de Turbo. El job tiene permiso `contents: read` y los PR no necesitan secretos del proyecto.
+
+Causas de fallo y diagnóstico:
+
+- La instalación congelada falla si los manifests y `pnpm-lock.yaml` no coinciden, falta el lockfile o cambia su compatibilidad con el major de pnpm. No quitar `--frozen-lockfile` del workflow para ocultarlo. Si cambias dependencias, actualiza el lockfile de forma deliberada con la versión declarada, revisa el diff y verifica otra vez la instalación congelada.
+- `typecheck` falla ante errores de tipos, incluidos los consumidores de contratos. Si ejecutas `tsc` directamente en un consumidor desde un checkout nuevo, construye antes `contracts` o usa el comando raíz.
+- `lint` conserva las reglas y severidades existentes de Oxlint; sus errores hacen fallar el paso.
+- `build` falla ante errores de compilación o bundling. Compilar el demo cloud no despliega recursos ni necesita una cuenta AWS.
+- `test` falla con código distinto de cero ante una aserción rota. Por ejemplo, cambiar `orderPlacedEventSchema.version` a `z.literal(2)` rompe el fixture v1 y hace fallar `pnpm test`. Turbo invalida la cache al cambiar el schema o el test; `--force` permite verificarlo sin cache.
+
+Documentación oficial consultada para esta configuración: [pnpm CI](https://pnpm.io/continuous-integration), [inputs de pnpm/setup v3](https://github.com/pnpm/setup/tree/v3), [GitHub Actions](https://docs.github.com/en/actions/using-workflows), [sintaxis de workflows](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax) y [runner node:test en Node 24.14.1](https://github.com/nodejs/node/blob/v24.14.1/doc/api/test.md).
 
 ## Demo V3: API Gateway y servicios
 

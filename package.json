@@ -10,7 +10,8 @@
     "format": "turbo run format format:root",
     "format:root": "oxfmt package.json turbo.json .oxlintrc.json .oxfmtrc.json",
     "typecheck": "turbo run typecheck",
-    "demo:saga": "turbo run demo:saga --filter @mercadoya/orders-service"
+    "demo:saga": "turbo run demo:saga --filter @mercadoya/orders-service",
+    "test": "turbo run test"
   },
   "devDependencies": {
     "esbuild": "0.28.2",

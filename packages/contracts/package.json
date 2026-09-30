@@ -13,7 +13,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "oxlint .",
-    "format": "oxfmt ."
+    "format": "oxfmt .",
+    "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
     "zod": "^4.6.5"
