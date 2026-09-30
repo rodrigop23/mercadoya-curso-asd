@@ -1,0 +1,101 @@
+import { z } from 'zod';
+
+export const eventSubjects = {
+  ordersPlaced: 'orders.placed',
+  inventoryReserved: 'inventory.reserved',
+  inventoryRejected: 'inventory.rejected',
+  inventoryReleased: 'inventory.released',
+  paymentSucceeded: 'payment.succeeded',
+  paymentFailed: 'payment.failed',
+} as const;
+
+export type EventSubject = (typeof eventSubjects)[keyof typeof eventSubjects];
+
+export const paymentModeSchema = z.enum(['succeed', 'fail']);
+
+export const orderPlacedEventSchema = z.object({
+  // Solo el CLI interno usa este override didáctico; el POST público no lo acepta.
+  paymentMode: paymentModeSchema.optional(),
+  version: z.literal(1),
+  orderId: z.string().uuid(),
+  productId: z.string().uuid(),
+  quantity: z.number().int().positive(),
+  buyerId: z.string().nullable(),
+  occurredAt: z.string().datetime(),
+});
+
+export type OrderPlacedEvent = z.infer<typeof orderPlacedEventSchema>;
+
+const inventoryReservationResult = {
+  version: z.literal(1),
+  orderId: z.string().uuid(),
+  productId: z.string().uuid(),
+  quantity: z.number().int().positive(),
+  buyerId: z.string().nullable(),
+  occurredAt: z.string().datetime(),
+};
+
+export const inventoryReservedEventSchema = z.object({
+  ...inventoryReservationResult,
+  paymentMode: paymentModeSchema.optional(),
+});
+export const inventoryReleasedEventSchema = z.object(inventoryReservationResult);
+export const paymentSucceededEventSchema = z.object(inventoryReservationResult);
+export const paymentFailedEventSchema = z.object({
+  ...inventoryReservationResult,
+  reason: z.string().min(1).max(160),
+});
+export type InventoryReleasedEvent = z.infer<typeof inventoryReleasedEventSchema>;
+export type PaymentSucceededEvent = z.infer<typeof paymentSucceededEventSchema>;
+export type PaymentFailedEvent = z.infer<typeof paymentFailedEventSchema>;
+export const inventoryRejectedEventSchema = z.object({
+  ...inventoryReservationResult,
+  reason: z.enum(['invalid_quantity', 'product_not_found', 'insufficient_stock', 'stock_limit']),
+});
+
+export type InventoryReservedEvent = z.infer<typeof inventoryReservedEventSchema>;
+export type InventoryRejectedEvent = z.infer<typeof inventoryRejectedEventSchema>;
+
+const reservationHttpSchema = z.object({
+  id: z.string().uuid(),
+  orderId: z.string().uuid(),
+  productId: z.string().uuid(),
+  quantity: z.number().int(),
+  createdAt: z.string().datetime(),
+});
+
+export const reservationResponseV1Schema = z.object({
+  reservation: reservationHttpSchema,
+});
+
+export const reservationResponseV2Schema = z.object({
+  reservation: reservationHttpSchema.extend({ status: z.literal('reserved') }),
+});
+
+export type ReservationResponseV1 = z.infer<typeof reservationResponseV1Schema>;
+export type ReservationResponseV2 = z.infer<typeof reservationResponseV2Schema>;
+
+export type ReservationReason =
+  | 'invalid_quantity'
+  | 'product_not_found'
+  | 'insufficient_stock'
+  | 'stock_limit';
+
+export type ReservationResult = { reserved: true } | { reserved: false; reason: ReservationReason };
+
+export interface InventoryPort {
+  reserve(input: {
+    orderId: string;
+    productId: string;
+    quantity: number;
+  }): Promise<ReservationResult>;
+}
+
+export type StockAdjustmentResult =
+  | { adjusted: true; availableStock: number }
+  | { adjusted: false; reason: 'product_not_found' | 'insufficient_stock' | 'stock_limit' };
+
+export interface CatalogStockContract {
+  getAvailableStock(productId: string): Promise<number | null>;
+  adjustStock(productId: string, delta: number): Promise<StockAdjustmentResult>;
+}

@@ -3,60 +3,79 @@ import { cors } from 'hono/cors';
 
 import { createCatalogModule } from './modules/catalog/index.js';
 import { createIdentityModule } from './modules/identity/index.js';
-import { createInventoryModule } from './modules/inventory/index.js';
 import { createMediaModule } from './modules/media/index.js';
-import { createNotificationsModule } from './modules/notifications/index.js';
-import { createOrdersModule } from './modules/orders/index.js';
-import type { EventBus } from './events/event-bus.js';
 import { createEventsRoutes } from './events/routes.js';
-import {
-  inventoryRejectedEventSchema,
-  inventoryReservedEventSchema,
-} from './modules/inventory/events.js';
 
-export async function createApiLayer(eventBus: EventBus) {
+export function createApiLayer() {
   const identity = createIdentityModule();
   const media = createMediaModule();
   const catalog = createCatalogModule(identity.contract, media.contract);
-  const inventory = createInventoryModule(catalog.contract, eventBus);
-  const orders = createOrdersModule(eventBus, identity.contract);
-  const notifications = createNotificationsModule(eventBus.transport);
   const app = new Hono();
 
-  await eventBus.subscribe('orders.placed', 'inventory.reserve', inventory.onOrderPlaced);
-  await eventBus.subscribe(
-    'orders.placed',
-    'notifications.order-placed',
-    notifications.onOrderPlaced,
+  app.use(
+    '/api/*',
+    cors({ origin: ['http://localhost:5173', 'http://localhost:5174'], credentials: true }),
   );
-  await eventBus.subscribe('inventory.reserved', 'orders.confirm', (payload: unknown) =>
-    orders.onInventoryReserved(inventoryReservedEventSchema.parse(payload)),
-  );
-  await eventBus.subscribe(
-    'inventory.reserved',
-    'notifications.order-confirmed',
-    notifications.onInventoryReserved,
-  );
-  await eventBus.subscribe('inventory.rejected', 'orders.reject', (payload: unknown) =>
-    orders.onInventoryRejected(inventoryRejectedEventSchema.parse(payload)),
-  );
-  await eventBus.subscribe(
-    'inventory.rejected',
-    'notifications.order-rejected',
-    notifications.onInventoryRejected,
-  );
-
-  app.use('/api/*', cors({ origin: 'http://localhost:5173', credentials: true }));
   app.get('/', (c) => c.text('MercadoYa API está lista.'));
 
   // Identity and Catalog keep their V1 URLs. New modules mount below their API prefixes.
   app.route('/', identity.routes);
   app.route('/', catalog.routes);
   app.route('/api/media', media.routes);
-  app.route('/api/orders', orders.routes);
+  const proxyService =
+    (baseUrl: string, serviceName: string) => async (c: { req: { raw: Request } }) => {
+      const upstream = new URL(baseUrl);
+      const source = new URL(c.req.raw.url);
+      upstream.pathname = source.pathname;
+      upstream.search = source.search;
+      const headers = new Headers(c.req.raw.headers);
+      headers.delete('host');
+      headers.delete('content-length');
+      try {
+        const body = ['GET', 'HEAD'].includes(c.req.raw.method)
+          ? undefined
+          : await c.req.raw.arrayBuffer();
+        const response = await fetch(upstream, {
+          method: c.req.raw.method,
+          headers,
+          body,
+        });
+        return response;
+      } catch (error) {
+        console.error(`No se pudo contactar ${serviceName}:`, error);
+        return new Response(JSON.stringify({ error: `${serviceName} no está disponible.` }), {
+          status: 502,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+    };
+  const proxyOrders = proxyService(
+    process.env.ORDERS_SERVICE_URL || 'http://localhost:3002',
+    'Orders',
+  );
+  const proxyInventoryV1 = proxyService(
+    process.env.INVENTORY_V1_URL || 'http://localhost:3003',
+    'Inventory v1',
+  );
+  const proxyInventoryV2 = proxyService(
+    process.env.INVENTORY_V2_URL || 'http://localhost:3005',
+    'Inventory v2',
+  );
+  const proxyNotifications = proxyService(
+    process.env.NOTIFICATIONS_BRIDGE_URL || 'http://localhost:3004',
+    'Notifications bridge',
+  );
+  app.all('/api/orders', proxyOrders);
+  app.all('/api/orders/*', proxyOrders);
   app.route('/api/events', createEventsRoutes());
-  app.route('/api/inventory', inventory.routes);
-  app.route('/api/notifications', notifications.routes);
+  app.all('/api/inventory/v1', proxyInventoryV1);
+  app.all('/api/inventory/v1/*', proxyInventoryV1);
+  app.all('/api/inventory/v2', proxyInventoryV2);
+  app.all('/api/inventory/v2/*', proxyInventoryV2);
+  app.all('/api/inventory', proxyInventoryV1);
+  app.all('/api/inventory/*', proxyInventoryV1);
+  app.all('/api/notifications', proxyNotifications);
+  app.all('/api/notifications/*', proxyNotifications);
 
   return app;
 }

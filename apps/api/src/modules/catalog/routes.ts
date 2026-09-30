@@ -1,6 +1,7 @@
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
 import { fileURLToPath } from 'node:url';
+import { timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 
 import type { IdentityContract } from '../identity/contract.js';
@@ -26,6 +27,43 @@ const productFormSchema = z.object({
 
 export function createCatalogRoutes(identity: IdentityContract, catalogContract: CatalogContract) {
   const routes = new Hono();
+
+  // Inventory supplies a shared secret. These routes are never used by the browser UI.
+  routes.use('/api/internal/catalog/*', async (c, next) => {
+    const token = process.env.CATALOG_INTERNAL_TOKEN;
+    if (!token) return c.json({ error: 'Catalog internal token is not configured.' }, 503);
+    const supplied = Buffer.from(c.req.header('x-catalog-internal-token') ?? '');
+    const expected = Buffer.from(token);
+    if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+    await next();
+  });
+
+  routes.get('/api/internal/catalog/products/:id/stock', async (c) => {
+    const id = z.uuid().safeParse(c.req.param('id'));
+    if (!id.success) return c.json({ error: 'Identificador de producto inválido.' }, 400);
+    const availableStock = await catalogContract.getAvailableStock(id.data);
+    return c.json({ availableStock });
+  });
+
+  routes.post('/api/internal/catalog/products/:id/adjust-stock', async (c) => {
+    const id = z.uuid().safeParse(c.req.param('id'));
+    if (!id.success) return c.json({ error: 'Identificador de producto inválido.' }, 400);
+    const body = await c.req.json().catch(() => null);
+    const parsed = z
+      .object({
+        delta: z
+          .number()
+          .int()
+          .safe()
+          .refine((value) => value !== 0),
+      })
+      .safeParse(body);
+    if (!parsed.success)
+      return c.json({ error: 'El ajuste debe ser un entero distinto de cero.' }, 400);
+    return c.json(await catalogContract.adjustStock(id.data, parsed.data.delta));
+  });
 
   routes.get('/api/catalog/health', (c) => c.json({ module: 'catalog', ok: true }));
 

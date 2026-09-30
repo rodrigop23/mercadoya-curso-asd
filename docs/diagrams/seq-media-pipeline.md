@@ -1,4 +1,6 @@
-# Secuencia: pipeline local de imágenes
+# Secuencia S4 / V2: pipeline local de imágenes (histórico)
+
+El pipeline Media sigue en el API, pero en S5 el formulario admin vive en el [MF catálogo](seq-admin-mf-catalog.md). Esta secuencia conserva la UI de V2.
 
 El alta de producto entra por Catalog. Catalog pide a Media procesar la imagen y conserva la ruta que devuelve el pipeline.
 

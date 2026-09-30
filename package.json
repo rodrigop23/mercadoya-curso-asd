@@ -3,14 +3,17 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "dev": "turbo run dev",
+    "dev": "turbo run build --filter @mercadoya/contracts && turbo run dev",
+    "demo:infra": "docker compose up -d postgres nats && pnpm --filter @mercadoya/api db:push && docker compose up -d --build --remove-orphans inventory-v1 inventory-v2",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "format": "turbo run format format:root",
     "format:root": "oxfmt package.json turbo.json .oxlintrc.json .oxfmtrc.json",
-    "typecheck": "turbo run typecheck"
+    "typecheck": "turbo run typecheck",
+    "demo:saga": "turbo run demo:saga --filter @mercadoya/orders-service"
   },
   "devDependencies": {
+    "esbuild": "0.28.2",
     "oxfmt": "^0.70.0",
     "oxlint": "^1.85.0",
     "turbo": "^2.11.3",

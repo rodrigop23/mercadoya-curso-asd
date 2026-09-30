@@ -3,6 +3,9 @@
 export * from '../modules/identity/schema.js';
 export * from '../modules/catalog/schema.js';
 export * from '../modules/media/schema.js';
-export * from '../modules/orders/schema.js';
-export * from '../modules/inventory/schema.js';
-export * from '../modules/notifications/schema.js';
+// Keep this table in API migrations while Orders runs in its own process.
+export * from './orders-schema.js';
+// API migrations still own Inventory's table while the service runs separately.
+export * from './inventory-schema.js';
+// Keep the historical stub table in API migrations; Lambda does not write to it.
+export * from './notifications-schema.js';
