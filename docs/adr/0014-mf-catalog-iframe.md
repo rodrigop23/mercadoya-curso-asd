@@ -1,5 +1,7 @@
 # ADR 0014: Montar el catálogo admin mediante iframe
 
+> Decisión histórica, reemplazada por [ADR 0019](0019-catalog-module-federation.md).
+
 ## Estado
 
 Aceptada en S5 (`v3-services`).

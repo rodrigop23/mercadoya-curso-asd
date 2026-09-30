@@ -15,11 +15,13 @@ import {
 import { Button } from '@mercadoya/ui/components/button';
 import { Card, CardContent } from '@mercadoya/ui/components/card';
 import { AdminProductForm } from '@/features/catalog/admin-product-form';
-import { deleteProduct, productImageUrl, productsQueryOptions, type Product } from '@/lib/products';
+import type { Product } from '@/lib/products';
+import { useCatalogApi } from './catalog-slice';
 
 const priceFormatter = new Intl.NumberFormat('es-PE', { style: 'currency', currency: 'PEN' });
 
 export function AdminProductsContent() {
+  const { deleteProduct, productImageUrl, productsQueryOptions } = useCatalogApi();
   const { data: products, isPending, error } = useQuery(productsQueryOptions);
   const [editor, setEditor] = useState<{ product: Product | null; key: string } | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);

@@ -1,6 +1,6 @@
 # Secuencia actual: administración de productos en el MF
 
-El host controla la ruta y el guard; el iframe sirve el formulario y ejecuta el CRUD. Kong valida la sesión con Identity y Catalog verifica el JWT y rol en cada escritura.
+El host controla la ruta y el guard; el módulo federado renderiza el formulario en el árbol React del host. Kong valida la sesión con Identity y Catalog verifica el JWT y rol en cada escritura.
 
 ```mermaid
 sequenceDiagram
@@ -9,25 +9,21 @@ sequenceDiagram
   participant MF as MF catálogo :5174
   participant API as Kong :8000
   participant Identity as Identity :3006
-  participant Catalog as Catalog en API :3001
+  participant Catalog as Catalog/Media :3007
   participant DB as PostgreSQL
 
   Admin->>Host: abre /admin/products
-  Host->>API: GET /api/me con cookie
+  Host->>API: GET /api/auth/get-session con cookie
   API->>Identity: consultar sesión
   Identity-->>API: sesión
   API-->>Host: sesión admin
-  Host->>MF: monta iframe :5174
-  MF->>API: GET /api/me con cookie
-  API->>Identity: consultar sesión
-  Identity-->>API: sesión
-  API-->>MF: rol admin
+  Host->>MF: import async remoteEntry.js y ./AdminProducts
+  MF-->>Host: componente React con shared del host
+  Host->>Host: renderizar slice con QueryClient y CSS del host
   MF->>API: GET /api/products
   API->>Catalog: listar productos
   Catalog-->>API: productos
   API-->>MF: productos
-  MF-->>Host: postMessage con altura
-  Host->>Host: valida origen :5174 y ajusta iframe
   opt crear producto
     Admin->>MF: envía formulario
     MF->>API: POST /api/products con cookie
@@ -59,3 +55,5 @@ sequenceDiagram
 ```
 
 El catálogo buyer `/catalog` sigue en el host. La composición tiene un host y un MF admin, no un MF buyer y otro admin.
+
+Las llamadas del slice se ejecutan en el documento del host; el remoto no consulta una segunda sesión.

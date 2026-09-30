@@ -1,1 +1,4 @@
 @import '@mercadoya/ui/globals.css';
+
+/* El host genera las clases del slice y carga los tokens una sola vez. */
+@source '../../mf-catalog/src';

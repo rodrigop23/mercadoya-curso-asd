@@ -42,6 +42,37 @@ jobs:
       - name: Test
         run: pnpm test
 
+  federation-smoke:
+    name: Federation dev and preview smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/setup@v3
+        with:
+          node-version-file: .node-version
+          cache: true
+          cache-dependency-path: pnpm-lock.yaml
+          install: false
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @mercadoya/web exec playwright install --with-deps chromium
+      - name: Build host and remote
+        run: pnpm exec turbo run build --filter=@mercadoya/web --filter=@mercadoya/mf-catalog
+      - name: Preview federation, singleton identity, CRUD, guards and remote failure
+        run: pnpm --filter @mercadoya/web smoke:federation
+      - name: Dev federation, singleton identity, CRUD, guards and remote failure
+        env:
+          MF_SMOKE_MODE: dev
+        run: pnpm --filter @mercadoya/web smoke:federation
+      - name: Build host consuming the remote manifest
+        env:
+          VITE_MF_CATALOG_ENTRY: http://localhost:5174/mf-manifest.json
+        run: pnpm exec turbo run build --filter=@mercadoya/web
+      - name: Preview manifest federation
+        run: pnpm --filter @mercadoya/web smoke:federation
+
   identity-gateway-smoke:
     name: Identity, Catalog and Kong smoke
     runs-on: ubuntu-24.04

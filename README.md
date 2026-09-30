@@ -1,6 +1,6 @@
 # MercadoYa
 
-Monorepo de MercadoYa con pnpm workspaces y Turborepo. Incluye una app React con Vite y TanStack Router y una API Hono. V0 implementa productos naive; V1 separa Identity y Catalog por contrato; V2 agrega Media, Orders, Inventory, Notifications y procesamiento de pedidos por eventos. S5 (`v3-services`) extrae Orders, Inventory y Notifications, y monta el catálogo admin como MF en iframe.
+Monorepo de MercadoYa con pnpm workspaces y Turborepo. Incluye una app React con Vite y TanStack Router y una API Hono. V0 implementa productos naive; V1 separa Identity y Catalog por contrato; V2 agrega Media, Orders, Inventory, Notifications y procesamiento de pedidos por eventos. S5 (`v3-services`) extrae Orders, Inventory y Notifications, y separa el catálogo admin. La composición actual usa Module Federation Vite.
 
 ## Demo V0 naive
 
@@ -87,7 +87,7 @@ Documentación oficial consultada para esta configuración: [pnpm CI](https://pn
 
 ### Microfrontend de administración
 
-El host React en `:5173` conserva autenticación, menú y guard de `/admin/products`. Esa ruta monta el CRUD de `apps/mf-catalog`, una app Vite independiente en `:5174`, mediante iframe. El remoto consume Catalog mediante Kong en `:8000` con cookie de sesión. [La guía del remoto](apps/mf-catalog/README.md) explica el arranque individual, los orígenes y el límite de aislamiento del iframe. Buyer + admin no son dos MF; la composición es host + pieza remota.
+El host React en `:5173` conserva autenticación, menú y guard de `/admin/products`. Esa ruta carga async el slice de `apps/mf-catalog` desde `:5174/remoteEntry.js` mediante Module Federation Vite. React/ReactDOM y los subpaths de UI tienen un proveedor singleton en el host. El slice llama a Kong `:8000` desde el documento del host. [La guía del remoto](apps/mf-catalog/README.md) documenta dev, build/preview, orígenes y seguridad; [ADR 0019](docs/adr/0019-catalog-module-federation.md) reemplaza la decisión de iframe. Buyer + admin no son dos MF; la composición es host + pieza remota.
 
 ```text
 Host web :5173 ── /admin/products ──► MF catálogo admin :5174
@@ -303,7 +303,7 @@ apps/
   orders-service/  Proceso Hono para pedidos y consumo NATS
   inventory-service/ Dos despliegues Hono para lectura de reservas; v2 consume NATS
   notifications-lambda/ Handler Lambda, bridge NATS y stack CDK
-  mf-catalog/      MF de productos admin en iframe, Vite :5174
+  mf-catalog/      Remote federado de catálogo admin, Vite :5174
   web/             React + Vite + TanStack Router + TypeScript
   cloud-pipeline-demo/ CDK + Lambda, demo aislada de S3
 packages/

@@ -4,12 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite dev --port 5173",
+    "dev": "vite dev --port 5173 --strictPort",
     "build": "vite build",
-    "preview": "vite preview",
+    "preview": "vite preview --port 5173 --strictPort",
     "lint": "oxlint .",
     "format": "oxfmt .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "smoke:federation": "playwright test"
   },
   "dependencies": {
     "@mercadoya/ui": "workspace:*",
@@ -24,6 +25,8 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@module-federation/vite": "1.23.0",
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/router-plugin": "^1.168.40",
     "@types/node": "^24.0.0",

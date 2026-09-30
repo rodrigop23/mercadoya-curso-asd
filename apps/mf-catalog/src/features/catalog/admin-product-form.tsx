@@ -12,7 +12,8 @@ import {
 } from '@mercadoya/ui/components/dialog';
 import { FieldGroup } from '@mercadoya/ui/components/field';
 import { useAppForm } from '@/hooks/use-app-form';
-import { createProduct, productsQueryOptions, updateProduct, type Product } from '@/lib/products';
+import type { Product } from '@/lib/products';
+import { useCatalogApi } from '@/catalog-slice';
 
 const MAX_IMAGE_SIZE = 2 * 1024 * 1024;
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -59,6 +60,7 @@ export function AdminProductForm({
   onClose: () => void;
   onClosed: () => void;
 }) {
+  const { createProduct, productsQueryOptions, updateProduct } = useCatalogApi();
   const queryClient = useQueryClient();
   const mutation = useMutation({
     mutationFn: (formData: FormData) =>
