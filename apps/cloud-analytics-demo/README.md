@@ -9,7 +9,9 @@ seed/raw/*.csv -> S3 raw -> Glue crawler -> catálogo raw
                                                                                                 -> athena-results/
 ```
 
-El stack incluye S3, los dos roles IAM existentes, dos bases de Glue Data Catalog, los crawlers raw y curated, el job ETL Glue 5.0, logs y un workgroup de Athena. El job lee las seis CSV directamente desde S3 y escribe Parquet. El crawler curated registra las tablas, el job no modifica el catálogo. QuickSight se configura desde la consola en el prompt 04.
+El stack incluye S3, los dos roles IAM existentes, dos bases de Glue Data Catalog, los crawlers raw y curated, el job ETL Glue 5.0, logs y un workgroup de Athena. El job lee las seis CSV directamente desde S3 y escribe Parquet. El crawler curated registra las tablas, el job no modifica el catálogo. QuickSight se configura desde la consola según el [runbook de demostración](./RUNBOOK.md#quicksight-en-consola).
+
+Para preparar y recorrer la clase, sigue el [runbook de despliegue y demostración](./RUNBOOK.md): ruta A para el stack docente ya desplegado, ruta B para deploy fresco, seis pasos operativos, QuickSight en consola, checklist de fallos y teardown. El orden de los scripts es `demo:glue` y luego `demo:athena`.
 
 ## Sintetizar sin desplegar
 
@@ -58,21 +60,15 @@ CloudFormation genera los nombres de buckets y roles para evitar colisiones. Los
 
 Los tres buckets bloquean acceso público, usan cifrado SSE-S3 y exigen HTTPS. Los prefijos son rutas de objetos, no recursos que S3 deba crear como carpetas. Los resultados y temporales están fuera del bucket curated para que el crawler curated no los catalogue.
 
-## Despliegue opcional del docente
+## Despliegue del docente
 
-Para comprobar crawlers, catálogo y Athena en AWS, selecciona una sesión del docente, por ejemplo con `AWS_PROFILE` y `aws sso login --profile <perfil>`. Desde `apps/cloud-analytics-demo`:
+El [runbook](./RUNBOOK.md#preparar-la-sesión-docente) incluye prerrequisitos, selección de cuenta y región, bootstrap si falta y dos rutas. Si `CloudAnalyticsDemoStack` ya está en `CREATE_COMPLETE`, parte de `cdk.out/outputs.json` o regenera ese archivo desde CloudFormation. Para un deploy fresco, desde `apps/cloud-analytics-demo`:
 
 ```bash
-export CDK_DEFAULT_ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
-export CDK_DEFAULT_REGION="us-east-1"
-aws sts get-caller-identity
-
-pnpm bootstrap "aws://${CDK_DEFAULT_ACCOUNT}/${CDK_DEFAULT_REGION}"
-pnpm cdk diff
 pnpm run deploy --outputs-file cdk.out/outputs.json
 ```
 
-Bootstrap se ejecuta una vez por cuenta y región y crea recursos del toolkit compartidos. `deploy` publica el asset Python en el bucket del toolkit y crea la infraestructura. El comando `demo:glue` copia ese asset a `GlueScriptLocation` en el bucket de artefactos existente antes de arrancar el job. La copia usa la identidad del docente y conserva los dos roles de ejecución del scaffold. `deploy` no carga las CSV ni ejecuta Glue o Athena. Revisa los cambios IAM que muestre CDK. Estos comandos no hacen commit ni push.
+Usa `pnpm run deploy`, no `pnpm deploy`. El [mapa de recursos](#mapa-de-recursos) describe lo que crea el stack. El deploy publica el asset Python; `demo:glue` lo copia a `GlueScriptLocation` antes de iniciar el ETL. La carga de la semilla y las ejecuciones de Glue y Athena ocurren después del deploy.
 
 ## Cargar la semilla existente
 
@@ -179,7 +175,7 @@ La relación entre `orders` y `customers` es N:1 en la semilla. Por eso la consu
 4. Ejecuta por separado las tres consultas analíticas. Puedes guardarlas en el editor; los archivos del repositorio son la fuente versionada.
 5. En los detalles de cada consulta comprueba `SUCCEEDED` y una salida bajo `AthenaResultsLocation`, `s3://<ArtifactsBucketName>/athena-results/`. Descarga el CSV para revisar las métricas antes del prompt 04.
 
-El workgroup impone ubicación, propietario y cifrado SSE-S3. No configures otro bucket ni habilites resultados administrados por Athena para este demo. QuickSight se configura desde consola en el prompt 04; este cambio solo prepara el SQL y su explicación.
+El workgroup impone ubicación, propietario y cifrado SSE-S3. No configures otro bucket ni habilites resultados administrados por Athena para este demo. El flujo de [QuickSight desde consola](./RUNBOOK.md#quicksight-en-consola) quedó completado el 1 de octubre de 2026: tres datasets Athena en Direct Query, tres gráficos y tabla auxiliar, analysis guardado y [dashboard publicado para clase](https://us-east-1.quicksight.aws.amazon.com/sn/account/rodrigoperez/dashboards/6e54098a-34ed-4cfe-92f8-0d968cff2822). Ventas considera confirmed/shipped; selección inicial PEN y ranking filtrado por PEN antes de LIMIT. El runbook registra enlaces/IDs, mapa de campos, filtros, actualización tras ETL y comprobaciones. Los [pasos manuales del docente](./RUNBOOK.md#pasos-manuales-del-docente) se conservan para repetir las acciones de cuenta; esta sesión se ejecutó con Helium y permisos S3 confirmados por Rodrigo.
 
 ### Ejecutar y guardar evidencia desde CLI
 
@@ -262,20 +258,13 @@ El docente necesita `iam:PassRole` sobre los dos ARNs de roles, con `iam:PassedT
 
 ## Eliminar el demo
 
-Todos los recursos del stack se eliminan al destruirlo. Los buckets usan `RemovalPolicy.DESTROY` y requieren vaciarse antes; no hay un rol auxiliar de borrado automático. El workgroup permite eliminación recursiva de su historial y consultas guardadas. Desde `apps/cloud-analytics-demo`, copia los nombres de los outputs antes de destruir:
+Sigue el [teardown del runbook](./RUNBOOK.md#teardown). Incluye terminar ejecuciones, desadjuntar la política Athena de identidades externas, retirar los recursos de QuickSight creados para la clase, vaciar `athena-results/`, raw, curated, temporales y scripts, y luego ejecutar `pnpm destroy` desde este app.
 
-```bash
-aws s3 rm "s3://<RawBucketName>" --recursive --region "$CDK_DEFAULT_REGION"
-aws s3 rm "s3://<CuratedBucketName>" --recursive --region "$CDK_DEFAULT_REGION"
-aws s3 rm "s3://<ArtifactsBucketName>" --recursive --region "$CDK_DEFAULT_REGION"
-pnpm destroy
-```
-
-Si hubo uploads multipart interrumpidos, abórtalos antes de eliminar el bucket. Detén los crawlers y el job del demo antes de destruir el stack. Desadjunta la política Athena de identidades externas antes de destruirla. Conserva `/aws-glue/crawlers`, que puede contener logs de otros demos. El toolkit de bootstrap no se elimina con este stack.
+Los buckets usan `RemovalPolicy.DESTROY` y deben estar vacíos. El workgroup, su historial y las dos DB salen con el stack. Conserva el toolkit de bootstrap y el grupo compartido `/aws-glue/crawlers`.
 
 ## Documentación AWS consultada
 
-Referencias oficiales consultadas para el scaffold y este cambio, el 1 de octubre de 2026. Se contrastaron las propiedades de crawlers, job y asset con CDK 2.270.0 instalado:
+Referencias oficiales consultadas para el scaffold y este cambio, el 1 de octubre de 2026. El [runbook](./RUNBOOK.md) incluye las referencias de CDK deploy, bootstrap, ejecución de Glue y configuración actual de QuickSight. Se contrastaron las propiedades de crawlers, job y asset con CDK 2.270.0 instalado:
 
 - [CDK synth](https://docs.aws.amazon.com/cdk/v2/guide/ref-cli-cmd-synth.html) y [S3 Bucket en CDK v2](https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.aws_s3.Bucket.html), síntesis, cifrado, HTTPS y eliminación.
 - [Ejemplos IAM de Glue](https://docs.aws.amazon.com/glue/latest/dg/security_iam_id-based-policy-examples.html) y [prerrequisitos del crawler](https://docs.aws.amazon.com/glue/latest/dg/crawler-prereqs.html), confianza del servicio, permisos S3 y ARNs de catálogo, base y tabla.
