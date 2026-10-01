@@ -73,6 +73,28 @@ importers:
         specifier: ^4.23.15
         version: 4.23.15
 
+  apps/cloud-analytics-demo:
+    dependencies:
+      aws-cdk-lib:
+        specifier: 2.270.0
+        version: 2.270.0(constructs@10.8.1)
+      constructs:
+        specifier: 10.8.1
+        version: 10.8.1
+    devDependencies:
+      '@types/node':
+        specifier: 24.13.6
+        version: 24.13.6
+      aws-cdk:
+        specifier: 2.1143.0
+        version: 2.1143.0
+      tsx:
+        specifier: 4.23.15
+        version: 4.23.15
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+
   apps/cloud-pipeline-demo:
     dependencies:
       '@aws-sdk/client-s3':

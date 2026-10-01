@@ -1,0 +1,3 @@
+{
+  "app": "tsx cdk/bin/cloud-analytics-demo.ts"
+}
