@@ -69,7 +69,7 @@ aws sts get-caller-identity
 
 pnpm bootstrap "aws://${CDK_DEFAULT_ACCOUNT}/${CDK_DEFAULT_REGION}"
 pnpm cdk diff
-pnpm deploy --outputs-file cdk.out/outputs.json
+pnpm run deploy --outputs-file cdk.out/outputs.json
 ```
 
 Bootstrap se ejecuta una vez por cuenta y región y crea recursos del toolkit compartidos. `deploy` publica el asset Python en el bucket del toolkit y crea la infraestructura. El comando `demo:glue` copia ese asset a `GlueScriptLocation` en el bucket de artefactos existente antes de arrancar el job. La copia usa la identidad del docente y conserva los dos roles de ejecución del scaffold. `deploy` no carga las CSV ni ejecuta Glue o Athena. Revisa los cambios IAM que muestre CDK. Estos comandos no hacen commit ni push.
@@ -96,7 +96,7 @@ El generador existente es opcional. Desde la raíz del monorepo, `node apps/clou
 
 ## Ejecutar el recorrido completo
 
-Desde `apps/cloud-analytics-demo`, después de `pnpm deploy --outputs-file cdk.out/outputs.json`:
+Desde `apps/cloud-analytics-demo`, después de `pnpm run deploy --outputs-file cdk.out/outputs.json`:
 
 ```bash
 pnpm demo:glue
@@ -127,7 +127,7 @@ aws glue get-table --database-name mercadoya_analytics_demo_curated --name order
 aws s3 ls <CuratedLocation>orders/ --recursive --region <Region>
 ```
 
-Ambos crawlers tienen seis targets por tabla y `TableLevelConfiguration=2`, correspondiente a `raw/<tabla>` o `curated/<tabla>`. El raw apunta a cada archivo `raw/<tabla>/<tabla>.csv`. Un clasificador CSV fija coma, comillas y cabecera `PRESENT`. Ambos crawlers usan `UPDATE_IN_DATABASE` para actualizar esquemas y `LOG` para borrados. El crawler curated excluye archivos auxiliares cuyo nombre empieza con `_` o `.`.
+Ambos crawlers tienen seis targets de carpeta, uno por tabla, en `raw/<tabla>/` o `curated/<tabla>/`. `TableGroupingPolicy=CombineCompatibleSchemas` agrupa archivos compatibles dentro de cada target, sin fijar un nivel absoluto de tabla. Un clasificador CSV fija coma, comillas y cabecera `PRESENT`. Ambos crawlers usan `UPDATE_IN_DATABASE` para actualizar esquemas y `LOG` para borrados. El crawler curated excluye archivos auxiliares cuyo nombre empieza con `_` o `.`.
 
 El job usa `--TempDir=GlueTempLocation`, `--custom-logGroup-prefix=GlueJobLogGroupPrefix` y `--job-bookmark-option=job-bookmark-disable`. Su límite es una ejecución concurrente, 15 minutos y cero reintentos automáticos. No usa `Job.init/commit` ni sinks que actualicen el Data Catalog. La lectura directa de CSV conserva strings antes de tipar y permite inspeccionar las diferencias con los tipos inferidos por el crawler raw.
 
@@ -151,6 +151,53 @@ LIMIT 5;
 ```
 
 `$path` muestra el archivo S3 que respalda cada fila. El output de `get-table` contiene `StorageDescriptor.Location`, `Columns` y el input format Parquet. El comando `demo:glue` guarda esas rutas y esquemas junto con los conteos, por lo que la evidencia no depende de una captura de consola.
+
+## Athena y datamart mínimo, prompt 03
+
+Las consultas versionadas en [`athena/`](./athena/) usan nombres completos de la base `mercadoya_analytics_demo_curated`. El datamart consiste en estos resultados de lectura, sin nuevas tablas, vistas, bases ni capas en S3. Todas las consultas usan el workgroup `mercadoya-cloud-analytics-demo` del scaffold.
+
+| Consulta                                                                  | Métrica y tablas curated                                                                                                                                               | Visualización en QuickSight, prompt 04                                    |
+| ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| [`00_verify_curated.sql`](./athena/00_verify_curated.sql)                 | Filas y `$path` de `customers`, `products`, `orders`, `order_items`, `inventory_snapshots`, `payments`; detecta estados de pedidos sin normalizar                      | Tabla de control para explicar catálogo y Parquet                         |
+| [`01_orders_by_month_status.sql`](./athena/01_orders_by_month_status.sql) | Número e importe de pedidos por mes, `status`, `channel` y moneda en `orders`                                                                                          | Barras apiladas de pedidos por mes y estado; filtro de canal              |
+| [`02_revenue_by_segment.sql`](./athena/02_revenue_by_segment.sql)         | Suma de `orders.total_amount` por mes, `customers.segment`, `city` y moneda; join por `customer_id`                                                                    | Barras de ventas por segmento y filtro de ciudad                          |
+| [`03_top_products.sql`](./athena/03_top_products.sql)                     | Top 10 por suma de `order_items.line_total`, unidades y pedidos; joins con `orders` y `products` por `order_id` y `product_id`; muestra categoría y precio de catálogo | Barras horizontales por producto y tabla con categoría, unidades y precio |
+
+El mes usa el timestamp UTC del ETL. Las consultas abarcan todo el período disponible de la semilla, sin depender de la fecha de ejecución. Para acotar fechas, agrega un rango semiabierto, por ejemplo `order_date >= TIMESTAMP '2026-09-01 00:00:00' AND order_date < TIMESTAMP '2026-10-01 00:00:00'`, antes del `GROUP BY`. Usa `o.order_date` en las consultas con alias.
+
+La consulta de pedidos incluye `confirmed`, `pending`, `rejected`, `cancelled`, `shipped` y `unknown`. Las dos consultas de ventas incluyen solo `confirmed` y `shipped`. Aquí "ventas" es el importe de esos pedidos, no una conciliación de cobros con `payments`. Cada métrica monetaria conserva su moneda como dimensión. Compara importes dentro de una misma moneda.
+
+Los importes de origen usan `decimal(18,2)`. `SUM` y `AVG` operan sobre esos decimales, sin convertirlos a `double`. SQL ignora importes NULL en esas agregaciones y devuelve NULL si todo el grupo carece de importe. `orders_with_amount` e `items_with_amount` permiten explicar esa cobertura. Los grupos con mes NULL muestran fechas inválidas; ciudad, segmento y categoría ausentes llevan una etiqueta explícita.
+
+La relación entre `orders` y `customers` es N:1 en la semilla. Por eso la consulta de segmento suma cada pedido una sola vez. En el top de productos se suman los importes históricos de las líneas; sumar `orders.total_amount` después del join con `order_items` duplicaría ventas. `products.price` muestra el precio actual del catálogo y no sustituye a `unit_price` ni a `line_total`. El total del ranking puede diferir del total de pedidos por los NULL deliberados de la semilla. El top mezcla grupos de monedas si se agregan datos distintos de PEN; filtra `o.currency` antes de compararlos en clase.
+
+### Ejecutar desde la consola
+
+1. Abre [Athena](https://console.aws.amazon.com/athena/) en la región del stack y entra al editor SQL.
+2. Selecciona el workgroup `mercadoya-cloud-analytics-demo`, el catálogo `AwsDataCatalog` y la DB `mercadoya_analytics_demo_curated`.
+3. Ejecuta `00_verify_curated.sql`. Deben aparecer las seis tablas con filas positivas, rutas `<CuratedLocation><tabla>/*.parquet` y `invalid_status_rows = 0`.
+4. Ejecuta por separado las tres consultas analíticas. Puedes guardarlas en el editor; los archivos del repositorio son la fuente versionada.
+5. En los detalles de cada consulta comprueba `SUCCEEDED` y una salida bajo `AthenaResultsLocation`, `s3://<ArtifactsBucketName>/athena-results/`. Descarga el CSV para revisar las métricas antes del prompt 04.
+
+El workgroup impone ubicación, propietario y cifrado SSE-S3. No configures otro bucket ni habilites resultados administrados por Athena para este demo. QuickSight se configura desde consola en el prompt 04; este cambio solo prepara el SQL y su explicación.
+
+### Ejecutar y guardar evidencia desde CLI
+
+Después de desplegar y terminar `pnpm demo:glue`, desde `apps/cloud-analytics-demo`:
+
+```bash
+pnpm demo:athena cdk.out/outputs.json
+# Sin archivo, lee los outputs del stack ya desplegado en CloudFormation:
+CDK_DEFAULT_REGION=us-east-1 pnpm demo:athena
+```
+
+`demo:athena` usa `AWS_PROFILE` si está definido. Sin archivo de outputs, la región se obtiene de `CDK_DEFAULT_REGION`, `AWS_REGION`, `AWS_DEFAULT_REGION` o, por defecto, `us-east-1`. Con archivo, usa `Region` del despliegue. Comprueba la cuenta activa, la configuración del workgroup y las seis tablas del catálogo curated, incluidas sus ubicaciones, clasificación Parquet y tipos de las columnas consultadas. No lee el catálogo raw ni inicia Glue.
+
+El comando ejecuta las cuatro consultas sin reutilizar resultados anteriores. Exige `SUCCEEDED` y filas para cada una, valida las rutas `$path` y los estados normalizados, comprueba la ubicación de salida y confirma con `HeadObject` que el CSV existe en S3. Imprime una muestra de cada resultado y guarda IDs, SQL, filas, esquemas, rutas S3, estadísticas y fecha en `cdk.out/athena-demo-evidence.json`. El archivo está ignorado por Git y solo se escribe al completar todas las comprobaciones. Revisa `verifiedAt` para distinguir una ejecución anterior. Si una consulta falla o supera cinco minutos, el comando muestra su ID; inspecciona su estado en Athena antes de repetir.
+
+Opcionalmente adjunta el output `AthenaQueryPolicyArn` a la identidad existente del docente mediante IAM o su permission set de Identity Center. La política ya permite consultar este workgroup, leer las tablas y objetos curated y escribir/leer `athena-results/*`. Las consultas usan los permisos de esa identidad. La lectura opcional de outputs desde CloudFormation requiere `cloudformation:DescribeStacks`; puedes pasar `cdk.out/outputs.json` para evitar ese permiso. La consola puede necesitar permisos adicionales para listar workgroups o bases. La política no se adjunta automáticamente ni cambia con este prompt.
+
+Las pruebas `pnpm test` simulan las respuestas AWS para comprobar que el comando rechaza catálogo raw, importes no decimales, resultados fuera del prefijo, tablas vacías, estados inválidos y consultas fallidas. La evidencia de ejecución en AWS se obtiene con `demo:athena` y se resume en [`athena/validation.md`](./athena/validation.md).
 
 ## Criterios mínimos de calidad
 
@@ -234,13 +281,14 @@ Referencias oficiales consultadas para el scaffold y este cambio, el 1 de octubr
 - [Ejemplos IAM de Glue](https://docs.aws.amazon.com/glue/latest/dg/security_iam_id-based-policy-examples.html) y [prerrequisitos del crawler](https://docs.aws.amazon.com/glue/latest/dg/crawler-prereqs.html), confianza del servicio, permisos S3 y ARNs de catálogo, base y tabla.
 - [Acceso de Athena al Data Catalog](https://docs.aws.amazon.com/athena/latest/ug/fine-grained-access-to-glue-resources.html), permisos de tablas y sus recursos antecesores.
 - [Políticas del workgroup](https://docs.aws.amazon.com/athena/latest/ug/example-policies-workgroup.html) y [override de configuración](https://docs.aws.amazon.com/athena/latest/ug/workgroups-settings-override.html), consultas restringidas al workgroup y salida obligatoria.
+- [Gestión de workgroups](https://docs.aws.amazon.com/athena/latest/ug/workgroups-create-update-delete.html), selección del workgroup en consola; [resultados de consultas](https://docs.aws.amazon.com/athena/latest/ug/querying.html), salida S3 y permisos para leerla; [IAM de Athena](https://docs.aws.amazon.com/athena/latest/ug/security-iam-athena.html), acceso de la identidad a Athena, S3 y Glue. Verificadas para el prompt 03 el 1 de octubre de 2026.
 - [Acceso S3 desde Athena](https://docs.aws.amazon.com/athena/latest/ug/s3-permissions.html), permisos de la identidad que consulta; [permisos S3 de Athena](https://docs.aws.amazon.com/athena/latest/ug/cross-account-permissions.html) y [uploads multipart de S3](https://docs.aws.amazon.com/AmazonS3/latest/userguide/mpuoverview.html), acciones de bucket y objeto.
 - [Logs de Glue 5.0](https://docs.aws.amazon.com/glue/latest/dg/monitor-continuous-logging.html) y [logs del crawler](https://docs.aws.amazon.com/glue/latest/dg/troubleshooting-contact-support.html), ubicaciones y configuración del job.
-- [CfnCrawlerProps](https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.aws_glue.CfnCrawlerProps.html) y [nivel de tabla del crawler](https://docs.aws.amazon.com/glue/latest/dg/crawler-table-level.html), targets S3 y configuración JSON con nivel absoluto 2.
+- [CfnCrawlerProps](https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.aws_glue.CfnCrawlerProps.html) y [agrupación por target S3](https://docs.aws.amazon.com/glue/latest/dg/crawler-grouping-policy.html), carpetas por tabla y `CombineCompatibleSchemas`. El despliegue real rechazó el nivel absoluto 2 anterior; la configuración actual no fija `TableLevelConfiguration`.
 - [SchemaChangePolicy](https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.aws_glue.CfnCrawler.SchemaChangePolicyProperty.html), valores `UPDATE_IN_DATABASE` y `LOG`.
 - [Clasificador CSV en CDK](https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.aws_glue.CfnClassifier.CsvClassifierProperty.html) y [clasificadores CSV de Glue](https://docs.aws.amazon.com/glue/latest/dg/add-classifier.html), cabeceras y delimitadores.
 - [CfnJobProps](https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.aws_glue.CfnJobProps.html) y [versiones de Glue](https://docs.aws.amazon.com/glue/latest/dg/release-notes.html), Glue 5.0 con Spark 3.5.4, workers y argumentos.
 - [Bookmarks de Glue](https://docs.aws.amazon.com/glue/latest/dg/monitor-continuations.html), `job-bookmark-disable` para procesar siempre la semilla completa.
 - [Assets S3 de CDK](https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.aws_s3_assets.Asset.html), empaquetado y ubicación del script publicado.
 
-La validación de este cambio es local mediante typecheck, synth, pruebas de plantilla y pruebas Spark con las seis CSV. La ejecución real de Glue y Athena queda pendiente de un despliegue y `pnpm demo:glue` en la cuenta del docente.
+La validación local incluye typecheck, synth, pruebas de plantilla y pruebas Spark con las seis CSV. Para el prompt 03, consulta la evidencia de ejecución de Glue y Athena en [`athena/validation.md`](./athena/validation.md).

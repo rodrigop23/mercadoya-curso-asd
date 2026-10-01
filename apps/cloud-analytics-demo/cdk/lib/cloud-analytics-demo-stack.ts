@@ -252,7 +252,7 @@ export class CloudAnalyticsDemoStack extends Stack {
         targets: {
           s3Targets: SEED_TABLES.map((table) => ({
             path: (raw ? this.rawBucket : this.curatedBucket).s3UrlForObject(
-              `${PREFIXES[zone]}${table}/${raw ? `${table}.csv` : ''}`,
+              `${PREFIXES[zone]}${table}/`,
             ),
             exclusions: raw ? undefined : ['**/_*', '**/.*'],
           })),
@@ -261,7 +261,7 @@ export class CloudAnalyticsDemoStack extends Stack {
         recrawlPolicy: { recrawlBehavior: 'CRAWL_EVERYTHING' },
         configuration: JSON.stringify({
           Version: 1.0,
-          Grouping: { TableLevelConfiguration: 2 },
+          Grouping: { TableGroupingPolicy: 'CombineCompatibleSchemas' },
           CreatePartitionIndex: false,
         }),
       });

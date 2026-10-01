@@ -220,13 +220,15 @@ test('crawlers discover six separate tables with headers and safe schema changes
       UpdateBehavior: 'UPDATE_IN_DATABASE',
       DeleteBehavior: 'LOG',
     });
-    assert.equal(JSON.parse(properties.Configuration).Grouping.TableLevelConfiguration, 2);
+    assert.deepEqual(JSON.parse(properties.Configuration).Grouping, {
+      TableGroupingPolicy: 'CombineCompatibleSchemas',
+    });
     assert.deepEqual(
       properties.Targets.S3Targets,
       SEED_TABLES.map((table) => ({
         Path: stack.resolve(
           (raw ? stack.rawBucket : stack.curatedBucket).s3UrlForObject(
-            `${PREFIXES[zone]}${table}/${raw ? `${table}.csv` : ''}`,
+            `${PREFIXES[zone]}${table}/`,
           ),
         ),
         ...(raw ? {} : { Exclusions: ['**/_*', '**/.*'] }),

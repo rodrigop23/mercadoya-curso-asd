@@ -11,9 +11,10 @@
     "deploy": "cdk deploy",
     "destroy": "cdk destroy",
     "demo:glue": "node scripts/run-glue-demo.mjs",
+    "demo:athena": "node scripts/run-athena-demo.mjs",
     "format": "oxfmt .",
     "lint": "oxlint .",
-    "test": "node --import tsx --test test/*.test.ts",
+    "test": "node --import tsx --test test/*.test.ts test/*.test.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
