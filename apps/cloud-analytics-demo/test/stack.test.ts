@@ -6,7 +6,9 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import {
   CloudAnalyticsDemoStack,
   DEMO_NAME,
+  JOB_LOG_PREFIX,
   PREFIXES,
+  SEED_TABLES,
 } from '../cdk/lib/cloud-analytics-demo-stack.js';
 
 const stack = new CloudAnalyticsDemoStack(new App(), 'TestAnalyticsStack', {
@@ -168,7 +170,7 @@ test('execution policies scope resources, enumerate actions and restrict bucket 
   }
 });
 
-test('workgroup enforces output and encryption with separate databases ready for extension', () => {
+test('workgroup enforces output and encryption with separate databases', () => {
   template.hasResourceProperties('AWS::Athena::WorkGroup', {
     Name: DEMO_NAME,
     RecursiveDeleteOption: true,
@@ -188,10 +190,91 @@ test('workgroup enforces output and encryption with separate databases ready for
       DatabaseInput: Match.objectLike({ Name: `mercadoya_analytics_demo_${zone}` }),
     });
   }
-  template.resourceCountIs('AWS::Glue::Crawler', 0);
-  template.resourceCountIs('AWS::Glue::Job', 0);
   const outputs = template.toJSON().Outputs;
   assert.ok(outputs.RawLocation);
   assert.ok(outputs.CuratedLocation);
   assert.ok(outputs.AthenaResultsLocation);
+});
+
+test('crawlers discover six separate tables with headers and safe schema changes', () => {
+  template.resourceCountIs('AWS::Glue::Crawler', 2);
+  template.hasResourceProperties('AWS::Glue::Classifier', {
+    CsvClassifier: {
+      Name: `${DEMO_NAME}-csv`,
+      ContainsHeader: 'PRESENT',
+      Delimiter: ',',
+      QuoteSymbol: '"',
+    },
+  });
+  for (const zone of ['raw', 'curated'] as const) {
+    const raw = zone === 'raw';
+    const crawler = raw ? stack.rawCrawler : stack.curatedCrawler;
+    const properties = template.toJSON().Resources[stack.getLogicalId(crawler)].Properties;
+    assert.equal(properties.Name, `${DEMO_NAME}-${zone}`);
+    assert.deepEqual(properties.Role, stack.resolve(stack.crawlerRole.roleArn));
+    assert.deepEqual(
+      properties.DatabaseName,
+      stack.resolve((raw ? stack.rawDatabase : stack.curatedDatabase).ref),
+    );
+    assert.deepEqual(properties.SchemaChangePolicy, {
+      UpdateBehavior: 'UPDATE_IN_DATABASE',
+      DeleteBehavior: 'LOG',
+    });
+    assert.equal(JSON.parse(properties.Configuration).Grouping.TableLevelConfiguration, 2);
+    assert.deepEqual(
+      properties.Targets.S3Targets,
+      SEED_TABLES.map((table) => ({
+        Path: stack.resolve(
+          (raw ? stack.rawBucket : stack.curatedBucket).s3UrlForObject(
+            `${PREFIXES[zone]}${table}/${raw ? `${table}.csv` : ''}`,
+          ),
+        ),
+        ...(raw ? {} : { Exclusions: ['**/_*', '**/.*'] }),
+      })),
+    );
+    assert.equal(properties.Classifiers?.length ?? 0, raw ? 1 : 0);
+  }
+});
+
+test('Glue 5 ETL uses the existing role and paths with a versioned script asset', () => {
+  template.resourceCountIs('AWS::Glue::Job', 1);
+  template.hasResourceProperties('AWS::Glue::Job', {
+    Name: `${DEMO_NAME}-etl`,
+    Role: stack.resolve(stack.jobRole.roleArn),
+    GlueVersion: '5.0',
+    WorkerType: 'G.1X',
+    NumberOfWorkers: 2,
+    ExecutionProperty: { MaxConcurrentRuns: 1 },
+    MaxRetries: 0,
+    Timeout: 15,
+    Command: {
+      Name: 'glueetl',
+      PythonVersion: '3',
+      ScriptLocation: stack.resolve(
+        stack.artifactsBucket.s3UrlForObject(`${PREFIXES.scripts}${stack.etlScript.assetHash}.py`),
+      ),
+    },
+    DefaultArguments: {
+      '--job-language': 'python',
+      '--TempDir': stack.resolve(stack.artifactsBucket.s3UrlForObject(PREFIXES.temp)),
+      '--custom-logGroup-prefix': JOB_LOG_PREFIX,
+      '--job-bookmark-option': 'job-bookmark-disable',
+      '--RAW_LOCATION': stack.resolve(stack.rawBucket.s3UrlForObject(PREFIXES.raw)),
+      '--CURATED_LOCATION': stack.resolve(stack.curatedBucket.s3UrlForObject(PREFIXES.curated)),
+    },
+  });
+  const outputs = template.toJSON().Outputs;
+  assert.deepEqual(
+    outputs.GlueScriptAssetLocation.Value,
+    stack.resolve(stack.etlScript.s3ObjectUrl),
+  );
+  for (const name of [
+    'RawCrawlerName',
+    'CuratedCrawlerName',
+    'GlueJobName',
+    'GlueScriptLocation',
+  ]) {
+    assert.ok(outputs[name]);
+  }
+  assert.equal(Object.keys(template.findResources('AWS::Glue::Table')).length, 0);
 });

@@ -1,9 +1,11 @@
+import { fileURLToPath } from 'node:url';
 import { ArnFormat, CfnOutput, RemovalPolicy, Stack, Tags, type StackProps } from 'aws-cdk-lib';
 import * as athena from 'aws-cdk-lib/aws-athena';
 import * as glue from 'aws-cdk-lib/aws-glue';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as assets from 'aws-cdk-lib/aws-s3-assets';
 import { Construct } from 'constructs';
 
 export const DEMO_NAME = 'mercadoya-cloud-analytics-demo';
@@ -15,6 +17,14 @@ export const PREFIXES = {
   results: 'athena-results/',
 } as const;
 export const JOB_LOG_PREFIX = `/aws-glue/${DEMO_NAME}`;
+export const SEED_TABLES = [
+  'customers',
+  'products',
+  'orders',
+  'order_items',
+  'inventory_snapshots',
+  'payments',
+] as const;
 
 const CATALOG_READ_ACTIONS = [
   'glue:GetDatabase',
@@ -35,6 +45,10 @@ export class CloudAnalyticsDemoStack extends Stack {
   readonly jobRole: iam.Role;
   readonly workGroup: athena.CfnWorkGroup;
   readonly athenaQueryPolicy: iam.ManagedPolicy;
+  readonly rawCrawler: glue.CfnCrawler;
+  readonly curatedCrawler: glue.CfnCrawler;
+  readonly etlJob: glue.CfnJob;
+  readonly etlScript: assets.Asset;
 
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
@@ -218,6 +232,75 @@ export class CloudAnalyticsDemoStack extends Stack {
       ],
     });
 
+    const csvClassifier = new glue.CfnClassifier(this, 'SeedCsvClassifier', {
+      csvClassifier: {
+        name: `${DEMO_NAME}-csv`,
+        containsHeader: 'PRESENT',
+        delimiter: ',',
+        quoteSymbol: '"',
+        disableValueTrimming: false,
+        allowSingleColumn: false,
+      },
+    });
+    const crawler = (id: string, zone: 'raw' | 'curated') => {
+      const raw = zone === 'raw';
+      const resource = new glue.CfnCrawler(this, id, {
+        name: `${DEMO_NAME}-${zone}`,
+        role: this.crawlerRole.roleArn,
+        databaseName: (raw ? this.rawDatabase : this.curatedDatabase).ref,
+        classifiers: raw ? [csvClassifier.ref] : undefined,
+        targets: {
+          s3Targets: SEED_TABLES.map((table) => ({
+            path: (raw ? this.rawBucket : this.curatedBucket).s3UrlForObject(
+              `${PREFIXES[zone]}${table}/${raw ? `${table}.csv` : ''}`,
+            ),
+            exclusions: raw ? undefined : ['**/_*', '**/.*'],
+          })),
+        },
+        schemaChangePolicy: { updateBehavior: 'UPDATE_IN_DATABASE', deleteBehavior: 'LOG' },
+        recrawlPolicy: { recrawlBehavior: 'CRAWL_EVERYTHING' },
+        configuration: JSON.stringify({
+          Version: 1.0,
+          Grouping: { TableLevelConfiguration: 2 },
+          CreatePartitionIndex: false,
+        }),
+      });
+      resource.node.addDependency(this.crawlerRole);
+      return resource;
+    };
+    this.rawCrawler = crawler('RawCrawler', 'raw');
+    this.curatedCrawler = crawler('CuratedCrawler', 'curated');
+
+    this.etlScript = new assets.Asset(this, 'EtlScript', {
+      path: fileURLToPath(new URL('../../glue/scripts/etl.py', import.meta.url)),
+    });
+    // CDK publishes the asset to bootstrap. The demo runner copies it into the existing
+    // artifacts bucket, without adding deployment roles or widening the Glue roles.
+    const scriptLocation = this.artifactsBucket.s3UrlForObject(
+      `${PREFIXES.scripts}${this.etlScript.assetHash}.py`,
+    );
+    this.etlJob = new glue.CfnJob(this, 'EtlJob', {
+      name: `${DEMO_NAME}-etl`,
+      description: 'Sesion 6: transforma las seis CSV raw a Parquet sin modificar el catalogo.',
+      role: this.jobRole.roleArn,
+      glueVersion: '5.0',
+      command: { name: 'glueetl', pythonVersion: '3', scriptLocation },
+      workerType: 'G.1X',
+      numberOfWorkers: 2,
+      executionProperty: { maxConcurrentRuns: 1 },
+      maxRetries: 0,
+      timeout: 15,
+      defaultArguments: {
+        '--job-language': 'python',
+        '--TempDir': this.artifactsBucket.s3UrlForObject(PREFIXES.temp),
+        '--custom-logGroup-prefix': JOB_LOG_PREFIX,
+        '--job-bookmark-option': 'job-bookmark-disable',
+        '--RAW_LOCATION': this.rawBucket.s3UrlForObject(PREFIXES.raw),
+        '--CURATED_LOCATION': this.curatedBucket.s3UrlForObject(PREFIXES.curated),
+      },
+    });
+    this.etlJob.node.addDependency(this.jobRole);
+
     const outputs: Record<string, string> = {
       AccountId: this.account,
       Region: this.region,
@@ -236,6 +319,11 @@ export class CloudAnalyticsDemoStack extends Stack {
       GlueJobLogGroupPrefix: JOB_LOG_PREFIX,
       AthenaWorkGroupName: this.workGroup.ref,
       AthenaQueryPolicyArn: this.athenaQueryPolicy.managedPolicyArn,
+      RawCrawlerName: this.rawCrawler.ref,
+      CuratedCrawlerName: this.curatedCrawler.ref,
+      GlueJobName: this.etlJob.ref,
+      GlueScriptAssetLocation: this.etlScript.s3ObjectUrl,
+      GlueScriptLocation: scriptLocation,
     };
     for (const [name, value] of Object.entries(outputs)) {
       new CfnOutput(this, name, { value });

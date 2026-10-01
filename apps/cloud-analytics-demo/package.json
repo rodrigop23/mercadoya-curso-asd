@@ -10,6 +10,7 @@
     "synth": "cdk synth",
     "deploy": "cdk deploy",
     "destroy": "cdk destroy",
+    "demo:glue": "node scripts/run-glue-demo.mjs",
     "format": "oxfmt .",
     "lint": "oxlint .",
     "test": "node --import tsx --test test/*.test.ts",
