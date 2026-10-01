@@ -12,8 +12,7 @@ flowchart LR
     payments["Worker Polar<br/>checkout e inbox durable"]
     webhook["Webhook Polar<br/>firma Standard Webhooks"]
   end
-  inv1["Inventory v1 :3003"]
-  inv2["Inventory v2 :3005"]
+  inventory["Inventory :3003"]
   subgraph notifications["Notifications, bridge local y handler local o Lambda"]
     bridge["Bridge :3004<br/>tres suscripciones de desenlace"]
     handler["Handler<br/>valida evento y registra resultado"]
@@ -38,19 +37,21 @@ flowchart LR
   mf -->|cookie| kong
   kong -->|verificar sesión o JWT| identity
   kong -->|Bearer| orders
-  kong -->|Bearer, v1 explícito| inv1
-  kong -->|Bearer, v2 y alias| inv2
+  kong -->|Bearer| inventory
   kong -->|HTTP autorizado| bridge
   kong -->|CRUD con Bearer| catalog
   catalog -->|JWKS para rol admin| identity
   orders -->|JWKS| identity
-  inv1 -->|JWKS| identity
-  inv2 -->|JWKS| identity
+  inventory -->|JWKS| identity
   catalog -->|procesar imagen| media
   media --> files
   identity --> db
   catalog --> db
   orders -->|SQL pedido| db
+  inventory -->|SQL reservas| db
+  inventory -->|stock con token S2S| catalog
+  nats -->|orders.placed, payment.failed| inventory
+  inventory -->|inventory.reserved, inventory.rejected, inventory.released| nats
   orders -->|orders.placed| nats
   nats -->|inventory.reserved| payments
   payments -->|crear checkout| polar
@@ -68,4 +69,4 @@ flowchart LR
   mail -->|envío si modo resend| resend
 ```
 
-Kong verifica la cookie o JWT con Identity; Orders e Inventory verifican firma y claims JWT mediante JWKS. Inventory v2 usa rutas internas de Catalog con `x-catalog-internal-token`. El handler de Notifications registra en logs `emailStatus` igual a `stub`, `sent` o `error`. Usa siempre `DEMO_NOTIFY_EMAIL`; no busca emails por `buyerId`. La compensación de Inventory y el correo por pago fallido son independientes. Consulta [ADR 0017](../adr/0017-identity-kong-jwks.md), [ADR 0015](../adr/0015-saga-coreografia-compensacion.md) y [ADR 0011](../adr/0011-notifications-lambda-bridge.md).
+Kong verifica la cookie o JWT con Identity; Orders e Inventory verifican firma y claims JWT mediante JWKS. Inventory usa rutas internas de Catalog con `x-catalog-internal-token`. El handler de Notifications registra en logs `emailStatus` igual a `stub`, `sent` o `error`. Usa siempre `DEMO_NOTIFY_EMAIL`; no busca emails por `buyerId`. La compensación de Inventory y el correo por pago fallido son independientes. Consulta [ADR 0017](../adr/0017-identity-kong-jwks.md), [ADR 0015](../adr/0015-saga-coreografia-compensacion.md) y [ADR 0011](../adr/0011-notifications-lambda-bridge.md).

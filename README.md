@@ -18,7 +18,7 @@ La rama [`v2-integration`](https://github.com/rodrigop23/mercadoya-curso-asd/tre
 
 En `v3-services`, Orders corre como proceso Node, Inventory como contenedor y Notifications usa un handler AWS Lambda. Un bridge NATS invoca ese handler directamente durante la clase local o mediante Function URL en AWS. Consulta [la guía de Notifications](apps/notifications-lambda/README.md).
 
-El [paquete `@mercadoya/contracts`](packages/contracts/README.md) centraliza schemas HTTP/eventos y documenta ownership, generación reproducible y versionado. Specs OpenAPI: [Inventory v1/v2](apps/inventory-service/openapi.yaml), [Orders](apps/orders-service/openapi.yaml), [Identity](apps/identity-service/openapi.yaml), [Catalog](apps/catalog-service/openapi/catalog.yaml) y [Media](apps/catalog-service/openapi/media.yaml). Inventory usa [Swagger UI v2](http://localhost:3005/docs) por defecto y retiene [v1](http://localhost:3003/docs) para compatibilidad. La estrategia generate-from-code y sus límites constan en [ADR 0016](docs/adr/0016-http-event-contracts.md).
+El [paquete `@mercadoya/contracts`](packages/contracts/README.md) centraliza schemas HTTP/eventos y documenta ownership, generación reproducible y versionado. Specs OpenAPI: [Inventory](apps/inventory-service/openapi.yaml), [Orders](apps/orders-service/openapi.yaml), [Identity](apps/identity-service/openapi.yaml), [Catalog](apps/catalog-service/openapi/catalog.yaml) y [Media](apps/catalog-service/openapi/media.yaml). Inventory usa [Swagger UI](http://localhost:3003/docs) en su único despliegue. La estrategia generate-from-code y sus límites constan en [ADR 0016](docs/adr/0016-http-event-contracts.md).
 
 ## Arquitectura y decisiones
 
@@ -97,14 +97,14 @@ Host web :5173 ── /admin/products ──► MF catálogo admin :5174
       └──────── catálogo buyer /catalog     └──► Kong :8000 → Catalog/Media :3007
 ```
 
-El navegador en `:5173` y el MF en `:5174` llaman a Kong OSS 3.9.1 en `:8000` con `credentials: include`. Kong enruta `/api/auth/*` y `/api/me` a Identity `:3006`, Orders a `:3002`, Inventory a v2 `:3003` dentro de Compose y Notifications a `:3004`. `/api/inventory/v1` conserva el despliegue v1 explícito. Catalog y Media comparten proceso en `:3007`. Kong permite ambos orígenes por CORS con credenciales.
+El navegador en `:5173` y el MF en `:5174` llaman a Kong OSS 3.9.1 en `:8000` con `credentials: include`. Kong enruta `/api/auth/*` y `/api/me` a Identity `:3006`, Orders a `:3002`, Inventory a `:3003` dentro de Compose y Notifications a `:3004`. Catalog y Media comparten proceso en `:3007`. Kong permite ambos orígenes por CORS con credenciales.
 
 ```mermaid
 flowchart LR
   Browser[Browser web 5173 y MF 5174] -->|Cookie de sesión| Kong[Kong OSS 8000]
   Kong -->|Login, sesión, JWKS y verificación| Identity[Identity 3006]
   Kong -->|JWT firmado| Orders[Orders 3002]
-  Kong -->|JWT firmado| Inventory[Inventory v2]
+  Kong -->|JWT firmado| Inventory[Inventory]
   Kong -->|Solicitud autorizada| Notifications[Notifications 3004]
   Kong --> Catalog[Catalog y Media 3007]
 ```
@@ -131,8 +131,7 @@ pnpm dev
 | Catalog y Media      | 3007   | `http://localhost:8000/api/catalog/health`       |
 | Identity             | 3006   | `http://localhost:8000/api/identity/health`      |
 | Orders               | 3002   | `http://localhost:8000/api/orders/health`        |
-| Inventory v1         | 3003   | `http://localhost:8000/api/inventory/v1/health`  |
-| Inventory v2         | 3005   | `http://localhost:8000/api/inventory/v2/health`  |
+| Inventory            | 3003   | `http://localhost:8000/api/inventory/health`     |
 | Notifications bridge | 3004   | `http://localhost:8000/api/notifications/health` |
 | Postgres             | 5432   | `docker compose ps postgres`                     |
 | NATS                 | 4222   | `http://localhost:8222` para monitoreo           |
@@ -146,30 +145,23 @@ pnpm dev
 
 La autenticación de usuario y los secretos entre servicios cumplen fines distintos. Esta demo no incluye service mesh. GET de pedidos y reservas requieren JWT dentro de los servicios. Kong admite también cookie browser y emite el JWT upstream. La lectura de reservas conserva el acceso de clase sin verificar la propiedad del pedido.
 
-| Versión  | Cambio observable                                                                                                                                                                                                               |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| API HTTP | `/api/inventory/v1/reservations/:orderId` conserva el JSON anterior; `/v2/` exige además `reservation.status: "reserved"`.                                                                                                      |
-| Servicio | Compose ejecuta `inventory-v1` e `inventory-v2` con `SERVICE_VERSION` distinto. Cada respuesta lleva `X-Service-Version`. Solo v2 consume `orders.placed` y `payment.failed`, para reservar y compensar sin consumidores en v1. |
-
-Consulta el [guion de Inventory](apps/inventory-service/README.md) para comparar ambas respuestas con el mismo pedido y la misma cookie. La decisión está resumida en el [ADR 0008](docs/adr/0008-versionado-inventory.md).
+Inventory usa un único contenedor y el contrato de reservas vigente, con `reservation.status: "reserved"`. Consulta [Inventory](apps/inventory-service/README.md) y [ADR 0008](docs/adr/0008-versionado-inventory.md). El ejercicio dual permanece en la rama `v3-services`.
 
 Comprobación rápida sin sesión. Sustituye el UUID de ejemplo por uno real si quieres consultar una reserva existente:
 
 ```sh
 curl -i -X POST http://localhost:8000/api/orders -H 'Content-Type: application/json' -d '{"productId":"00000000-0000-4000-8000-000000000000","quantity":1}'
-curl -i http://localhost:8000/api/inventory/v2/reservations/00000000-0000-4000-8000-000000000000
+curl -i http://localhost:8000/api/inventory/reservations/00000000-0000-4000-8000-000000000000
 curl -i http://localhost:8000/api/orders/health
 curl -i http://localhost:8000/api/inventory/health
-curl -i http://localhost:8000/api/inventory/v1/health
-curl -i http://localhost:8000/api/inventory/v2/health
 curl -i http://localhost:8000/api/notifications/health
 ```
 
-Las dos primeras solicitudes responden `401` y las rutas de health responden `200`. Para comprobar el camino con sesión, inicia sesión con el cookie jar de [autenticación local](#autenticación-local), crea un producto con stock y envía el pedido con `-b /tmp/mercadoya-cookies.txt`. El `POST` responde `202` con `buyerId`; Inventory v2 consume `orders.placed`, reserva stock mediante el token interno de Catalog y publica el resultado. La reserva crea el checkout Polar. Consulta `/api/orders/:orderId/checkout` con la sesión del comprador o abre la página del pedido y pulsa Pagar en Polar. Solo el webhook de cobro produce `payment.succeeded` y confirma el pedido. Configuración de sandbox, firma y eventos en [Orders/Payments](apps/orders-service/README.md).
+Las dos primeras solicitudes responden `401` y las rutas de health responden `200`. Para comprobar el camino con sesión, inicia sesión con el cookie jar de [autenticación local](#autenticación-local), crea un producto con stock y envía el pedido con `-b /tmp/mercadoya-cookies.txt`. El `POST` responde `202` con `buyerId`; Inventory consume `orders.placed`, reserva stock mediante el token interno de Catalog y publica el resultado. La reserva crea el checkout Polar. Consulta `/api/orders/:orderId/checkout` con la sesión del comprador o abre la página del pedido y pulsa Pagar en Polar. Solo el webhook de cobro produce `payment.succeeded` y confirma el pedido. Configuración de sandbox, firma y eventos en [Orders/Payments](apps/orders-service/README.md).
 
 ### Saga, compensación y correos
 
-Orders `:3002` integra Polar sandbox por defecto. `inventory.reserved` crea el checkout; `order.paid` verificado produce `payment.succeeded`. `inventory.rejected` rechaza sin pago. El fallo, la expiración o una orden Polar anulada producen `payment.failed`, que rechaza el pedido y dispara la liberación en Inventory v2. Inventory restaura stock y publica `inventory.released`. El webhook público en Kong usa firma Standard Webhooks y un inbox PostgreSQL para procesar async e idempotentemente. Los subjects mantienen `version: 1` y añaden correlación opcional. Consulta [la integración y sus límites NATS Core](apps/orders-service/README.md) y [ADR 0019](docs/adr/0019-polar-payments-saga.md).
+Orders `:3002` integra Polar sandbox por defecto. `inventory.reserved` crea el checkout; `order.paid` verificado produce `payment.succeeded`. `inventory.rejected` rechaza sin pago. El fallo, la expiración o una orden Polar anulada producen `payment.failed`, que rechaza el pedido y dispara la liberación en Inventory. Inventory restaura stock y publica `inventory.released`. El webhook público en Kong usa firma Standard Webhooks y un inbox PostgreSQL para procesar async e idempotentemente. Los subjects mantienen `version: 1` y añaden correlación opcional. Consulta [la integración y sus límites NATS Core](apps/orders-service/README.md) y [ADR 0019](docs/adr/0019-polar-payments-saga.md).
 
 Con la demo activa y un producto dedicado con al menos dos unidades, ejecuta:
 
@@ -202,7 +194,7 @@ pnpm demo:infra
 
 `BETTER_AUTH_SECRET` debe ser una clave aleatoria de al menos 32 caracteres. Puedes generarla con `openssl rand -base64 48` y guardarla en `.env`; `BETTER_AUTH_URL` apunta a `http://localhost:8000`. Configura `EVENT_BUS=nats` y `NATS_URL=nats://localhost:4222` para Orders y el bridge de Notifications. Ambos fallan al arrancar si no pueden conectar a NATS.
 
-Compose inicia PostgreSQL, NATS, Identity, Catalog/Media, Orders, ambos despliegues Inventory, Notifications y Kong. Conserva las imágenes de Media con un bind mount de `apps/catalog-service/uploads`. Al actualizar una instalación previa, copia allí su carpeta de imágenes antes de arrancar Catalog; los paths relativos en PostgreSQL no cambian. `demo:infra` usa el UID/GID del host para escribirlas. `pnpm demo:infra` aplica primero la migración histórica ahora alojada en Catalog y luego la migración propia de Identity. Adopta instalaciones creadas con `db:push` sin borrar datos. Identity añade JWKS y conserva los usuarios y sesiones. Catalog conserva las migraciones históricas de las tablas compartidas, sin modificar su SQL ni el journal Drizzle. No se habilitan `db:push` ni `db:generate` sobre esta base compartida. Consulta [ADR 0018](docs/adr/0018-catalog-media-kong.md).
+Compose inicia PostgreSQL, NATS, Identity, Catalog/Media, Orders, un único Inventory, Notifications y Kong. Conserva las imágenes de Media con un bind mount de `apps/catalog-service/uploads`. Al actualizar una instalación previa, copia allí su carpeta de imágenes antes de arrancar Catalog; los paths relativos en PostgreSQL no cambian. `demo:infra` usa el UID/GID del host para escribirlas. `pnpm demo:infra` aplica primero la migración histórica ahora alojada en Catalog y luego la migración propia de Identity. Adopta instalaciones creadas con `db:push` sin borrar datos. Identity añade JWKS y conserva los usuarios y sesiones. Catalog conserva las migraciones históricas de las tablas compartidas, sin modificar su SQL ni el journal Drizzle. No se habilitan `db:push` ni `db:generate` sobre esta base compartida. Consulta [ADR 0018](docs/adr/0018-catalog-media-kong.md).
 
 `BETTER_AUTH_URL` y `JWT_ISSUER` usan `http://localhost:8000`. En Compose, `IDENTITY_URL=http://identity:3006` sirve para transporte interno y no modifica el issuer. Los puertos `:3006` de Identity y `:3007` de Catalog quedan ligados a loopback para diagnóstico. Kong es el borde público en `:8000`; su Admin API está desactivada.
 
@@ -222,7 +214,7 @@ pnpm dev
 - Media: <http://localhost:8000/api/media/health>
 - JWKS: <http://localhost:8000/api/auth/jwks>
 - Orders: <http://localhost:8000/api/orders/health>
-- Inventory v2: <http://localhost:8000/api/inventory/v2/health>
+- Inventory: <http://localhost:8000/api/inventory/health>
 - Notifications: <http://localhost:8000/api/notifications/health>
 
 ### Pagos sandbox con Cloudflare Tunnel
@@ -340,6 +332,6 @@ Se conservan las versiones instaladas en la máquina: Node `v24.14.1` y pnpm `11
 
 ## Saga de compra por coreografía
 
-Inventory reserva stock al recibir `orders.placed`. El pedido sigue `pending` tras `inventory.reserved`, que ahora crea el checkout Polar. El webhook publica `payment.succeeded` para confirmarlo o `payment.failed` para rechazarlo. El fallo activa la compensación en Inventory v2, que restaura stock y publica `inventory.released`. El rechazo por stock no inicia Payment ni libera reservas. La [guía de Payments](apps/orders-service/README.md) documenta sandbox, eventos, reintentos y NATS Core.
+Inventory reserva stock al recibir `orders.placed`. El pedido sigue `pending` tras `inventory.reserved`, que ahora crea el checkout Polar. El webhook publica `payment.succeeded` para confirmarlo o `payment.failed` para rechazarlo. El fallo activa la compensación en Inventory, que restaura stock y publica `inventory.released`. El rechazo por stock no inicia Payment ni libera reservas. La [guía de Payments](apps/orders-service/README.md) documenta sandbox, eventos, reintentos y NATS Core.
 
 El CLI `pnpm demo:saga` usa un checkout Polar sandbox y espera el webhook real. Los requisitos y efectos sobre los datos están en el [README del CLI](scripts/README.md). Notifications envía con Resend y React Email un correo por desenlace: confirmación, rechazo por stock o fallo de pago. También admite modo stub. La guía de sandbox actual está en [Orders/Payments](apps/orders-service/README.md); el ejercicio anterior está en el rama `v3-services`.

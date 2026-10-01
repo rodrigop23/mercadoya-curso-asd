@@ -13,20 +13,10 @@ import { createInventoryModule } from './inventory/index.js';
 
 config({ path: fileURLToPath(new URL('../../../.env', import.meta.url)) });
 
-const serviceVersion = process.env.SERVICE_VERSION ?? 'v2';
-if (serviceVersion !== 'v1' && serviceVersion !== 'v2') {
-  throw new Error('SERVICE_VERSION debe ser v1 o v2.');
-}
-
 const catalog = createCatalogHttpClient();
 const eventBus = await createEventBus();
-const inventory = createInventoryModule(
-  catalog,
-  eventBus,
-  createIdentityContract(),
-  serviceVersion,
-);
-await subscribeInventoryEvents(eventBus, inventory, serviceVersion);
+const inventory = createInventoryModule(catalog, eventBus, createIdentityContract());
+await subscribeInventoryEvents(eventBus, inventory);
 
 const app = new Hono();
 const openapi = await readFile(new URL('../openapi.yaml', import.meta.url), 'utf8');
@@ -39,7 +29,7 @@ app.get('/docs', swaggerUI({ url: '/openapi.yaml' }));
 app.route('/api/inventory', inventory.routes);
 const port = Number(process.env.PORT ?? 3003);
 const server = serve({ fetch: app.fetch, port }, (info) => {
-  console.log(`Inventory ${serviceVersion} listening on http://localhost:${info.port}`);
+  console.log(`Inventory listening on http://localhost:${info.port}`);
 });
 
 const shutdown = async () => {

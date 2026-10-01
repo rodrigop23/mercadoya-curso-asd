@@ -7,9 +7,7 @@ export async function subscribeInventoryEvents(
     onOrderPlaced(payload: unknown): Promise<void>;
     onPaymentFailed(payload: unknown): Promise<void>;
   },
-  serviceVersion: 'v1' | 'v2',
 ) {
-  if (serviceVersion !== 'v2') return;
   await eventBus.subscribe(eventSubjects.ordersPlaced, 'inventory.reserve', handlers.onOrderPlaced);
   await eventBus.subscribe(
     eventSubjects.paymentFailed,

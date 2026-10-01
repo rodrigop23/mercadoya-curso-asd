@@ -8,22 +8,33 @@ const { createInventoryRoutes } = await import('../dist/inventory/routes.js');
 const { db, closeDb } = await import('../dist/db/index.js');
 after(closeDb);
 
-test('solo v2 registra reserva y compensación con ambos despliegues', async () => {
+const orderId = '00000000-0000-4000-8000-000000000001';
+const appWithSession = (session) =>
+  new Hono().route(
+    '/api/inventory',
+    createInventoryRoutes({
+      getSession: async () => session,
+    }),
+  );
+
+test('Inventory registra un handler de reserva y uno de compensación', async () => {
   const subscriptions = [];
   const onOrderPlaced = async () => {};
   const onPaymentFailed = async () => {};
-  const bus = { subscribe: async (...args) => subscriptions.push(args) };
-  await subscribeInventoryEvents(bus, { onOrderPlaced, onPaymentFailed }, 'v1');
-  assert.equal(subscriptions.length, 0);
-  await subscribeInventoryEvents(bus, { onOrderPlaced, onPaymentFailed }, 'v2');
+  await subscribeInventoryEvents(
+    { subscribe: async (...args) => subscriptions.push(args) },
+    {
+      onOrderPlaced,
+      onPaymentFailed,
+    },
+  );
   assert.deepEqual(subscriptions, [
     ['orders.placed', 'inventory.reserve', onOrderPlaced],
     ['payment.failed', 'inventory.release', onPaymentFailed],
   ]);
 });
 
-test('health, deprecación y lectura v2 mantienen las rutas reales y los DTO', async (t) => {
-  const orderId = '00000000-0000-4000-8000-000000000001';
+test('health y reservas usan un solo contrato, sin headers de deprecación', async (t) => {
   const row = {
     id: orderId,
     orderId,
@@ -34,56 +45,49 @@ test('health, deprecación y lectura v2 mantienen las rutas reales y los DTO', a
   t.mock.method(db, 'select', () => ({
     from: () => ({ where: () => ({ limit: async () => [row] }) }),
   }));
-  for (const version of ['v1', 'v2']) {
-    const app = new Hono().route(
-      '/api/inventory',
-      createInventoryRoutes(
-        {
-          getSession: async () => ({ user: { id: orderId } }),
-        },
-        version,
-      ),
-    );
-    const health = await app.request(`/api/inventory/${version}/health`);
-    assert.equal(health.status, 200);
-    assert.equal((await health.json()).serviceVersion, version);
-    const response = await app.request(`/api/inventory/${version}/reservations/${orderId}`);
-    assert.equal(response.status, 200);
-    assert.equal(response.headers.get('x-service-version'), version);
-    const { reservation } = await response.json();
-    assert.equal(reservation.status, version === 'v2' ? 'reserved' : undefined);
-    if (version === 'v1') {
-      for (const result of [health, response]) {
-        assert.equal(result.headers.get('deprecation'), '@1790726400');
-        assert.match(result.headers.get('link'), /\/api\/inventory\/v2\/.*rel="successor-version"/);
-        assert.equal(result.headers.get('sunset'), null);
-      }
-      assert.equal((await app.request('/api/inventory/health')).status, 404);
-      assert.equal((await app.request(`/api/inventory/reservations/${orderId}`)).status, 404);
-    } else {
-      assert.equal(response.headers.get('deprecation'), null);
-      assert.equal((await app.request('/api/inventory/health')).status, 200);
-      const alias = await app.request(`/api/inventory/reservations/${orderId}`);
-      assert.equal((await alias.json()).reservation.status, 'reserved');
+  const app = appWithSession({ user: { id: orderId } });
+  const health = await app.request('/api/inventory/health');
+  assert.equal(health.status, 200);
+  assert.deepEqual(await health.json(), { module: 'inventory', ok: true });
+  const response = await app.request(`/api/inventory/reservations/${orderId}`);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    reservation: {
+      ...row,
+      createdAt: row.createdAt.toISOString(),
+      status: 'reserved',
+    },
+  });
+  for (const result of [health, response]) {
+    for (const header of ['deprecation', 'link', 'sunset', 'x-service-version']) {
+      assert.equal(result.headers.get(header), null);
     }
+  }
+  for (const version of ['v1', 'v2']) {
+    assert.equal((await app.request(`/api/inventory/${version}/health`)).status, 404);
+    assert.equal(
+      (await app.request(`/api/inventory/${version}/reservations/${orderId}`)).status,
+      404,
+    );
   }
 });
 
-test('la lectura v2 y su alias exigen sesión antes de leer persistencia', async (t) => {
+test('las reservas exigen sesión antes de leer persistencia', async (t) => {
   const select = t.mock.method(db, 'select', () => {
     throw new Error('No debe consultar DB');
   });
-  const app = new Hono().route(
-    '/api/inventory',
-    createInventoryRoutes(
-      {
-        getSession: async () => null,
-      },
-      'v2',
-    ),
-  );
-  for (const prefix of ['/api/inventory', '/api/inventory/v2']) {
-    assert.equal((await app.request(`${prefix}/reservations/invalid`)).status, 401);
-  }
+  const app = appWithSession(null);
+  assert.equal((await app.request('/api/inventory/reservations/invalid')).status, 401);
+  assert.equal((await app.request('/api/inventory/health')).status, 200);
   assert.equal(select.mock.callCount(), 0);
+});
+
+test('las reservas validan UUID y distinguen reserva ausente', async (t) => {
+  const select = t.mock.method(db, 'select', () => ({
+    from: () => ({ where: () => ({ limit: async () => [] }) }),
+  }));
+  const app = appWithSession({ user: { id: orderId } });
+  assert.equal((await app.request('/api/inventory/reservations/invalid')).status, 400);
+  assert.equal(select.mock.callCount(), 0);
+  assert.equal((await app.request(`/api/inventory/reservations/${orderId}`)).status, 404);
 });

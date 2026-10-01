@@ -22,7 +22,7 @@ export async function createEventBus(): Promise<EventBus> {
 
   const connection = await connect({
     servers: process.env.NATS_URL?.trim() || 'nats://localhost:4222',
-    name: `mercadoya-inventory-${process.env.SERVICE_VERSION ?? 'v2'}`,
+    name: 'mercadoya-inventory',
     timeout: 2_000,
     maxReconnectAttempts: 0,
   });

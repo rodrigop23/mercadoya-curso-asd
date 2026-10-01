@@ -22,26 +22,14 @@ services:
         plugins:
           - name: identity-auth
             config: { verify_url: 'http://identity:3006/api/identity/verify' }
-  - name: inventory-v2
-    url: http://inventory-v2:3003
+  - name: inventory
+    url: http://inventory:3003
     routes:
       - name: inventory-health
-        paths: ['~/api/inventory/health$', '~/api/inventory/v2/health$']
+        paths: ['~/api/inventory/health$']
         strip_path: false
       - name: inventory-protected
-        paths: ['/api/inventory']
-        strip_path: false
-        plugins:
-          - name: identity-auth
-            config: { verify_url: 'http://identity:3006/api/identity/verify' }
-  - name: inventory-v1
-    url: http://inventory-v1:3003
-    routes:
-      - name: inventory-v1-health
-        paths: ['~/api/inventory/v1/health$']
-        strip_path: false
-      - name: inventory-v1-protected
-        paths: ['/api/inventory/v1']
+        paths: ['~/api/inventory/reservations/[^/]+$']
         strip_path: false
         plugins:
           - name: identity-auth

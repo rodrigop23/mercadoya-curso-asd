@@ -134,7 +134,7 @@ Los subjects y `version: 1` se conservan. Los resultados de pago y `inventory.re
 | Rechazo definitivo de Checkout API                                                             | `payment.failed`, con razón de creación; Inventory compensa.        |
 | `checkout.updated`, estado `open`, `confirmed` o `succeeded`; órdenes pendientes y demás tipos | Sin confirmación ni compensación. Se espera `order.paid`.           |
 
-Todos los fallos terminales activan la regla existente de Inventory v2: restaurar stock una vez, eliminar la reserva y publicar `inventory.released`. El rechazo y el correo pueden aparecer antes de la liberación. Polar no define `checkout.canceled`: volver al comercio o cerrar la pestaña mantiene la reserva hasta la expiración; una orden anulada usa `void`. Cancelaciones de suscripciones y reembolsos posteriores al pago no representan un fallo de esta compra única.
+Todos los fallos terminales activan la regla existente de Inventory: restaurar stock una vez, eliminar la reserva y publicar `inventory.released`. El rechazo y el correo pueden aparecer antes de la liberación. Polar no define `checkout.canceled`: volver al comercio o cerrar la pestaña mantiene la reserva hasta la expiración; una orden anulada usa `void`. Cancelaciones de suscripciones y reembolsos posteriores al pago no representan un fallo de esta compra única.
 
 ## Reintentos y límites
 

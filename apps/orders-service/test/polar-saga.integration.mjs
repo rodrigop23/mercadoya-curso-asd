@@ -33,6 +33,8 @@ const { closeDb: closeInventoryDb } = await import('../../inventory-service/dist
 const { createOrdersModule } = await import('../dist/orders/index.js');
 const { createOrdersService } = await import('../dist/orders/service.js');
 const { createInventoryModule } = await import('../../inventory-service/dist/inventory/index.js');
+const { subscribeInventoryEvents } =
+  await import('../../inventory-service/dist/events/subscriptions.js');
 const { handler: notify } = await import('../../notifications-lambda/dist/src/handler.js');
 // Las tablas de saga conservan el baseline real sin crear Identity en este schema.
 const baseline = await readFile(
@@ -164,7 +166,6 @@ const inventory = createInventoryModule(
   },
   bus,
   identity,
-  'v2',
 );
 const trace = [];
 const notificationResults = [];
@@ -172,11 +173,7 @@ for (const subject of Object.values(eventSubjects))
   await bus.subscribe(subject, `polar-test.trace.${schema}`, async (payload) => {
     trace.push({ subject, payload });
   });
-await bus.subscribe(
-  eventSubjects.ordersPlaced,
-  `polar-test.reserve.${schema}`,
-  inventory.onOrderPlaced,
-);
+await subscribeInventoryEvents(bus, inventory);
 await bus.subscribe(eventSubjects.inventoryReserved, `polar-test.checkout.${schema}`, (payload) =>
   worker.onInventoryReserved(payload),
 );
@@ -190,11 +187,7 @@ await bus.subscribe(
   `polar-test.reject.${schema}`,
   orders.onPaymentFailed,
 );
-await bus.subscribe(
-  eventSubjects.paymentFailed,
-  `polar-test.release.${schema}`,
-  inventory.onPaymentFailed,
-);
+
 await bus.subscribe(
   eventSubjects.inventoryReleased,
   `polar-test.compensated.${schema}`,

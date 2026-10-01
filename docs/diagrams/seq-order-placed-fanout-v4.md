@@ -1,6 +1,6 @@
 # Secuencia actual: saga de pedido, compensación y email
 
-Esta secuencia incorpora Identity propio y Kong del prompt 04. Solo Inventory v2 procesa los eventos de reserva y compensación; v1 conserva HTTP explícito y health. El participante de pago es un componente del mismo proceso Orders `:3002`.
+Esta secuencia incorpora Identity propio y Kong del prompt 04. Inventory procesa los eventos de reserva y compensación en un único contenedor. El participante de pago es un componente del mismo proceso Orders `:3002`.
 
 ```mermaid
 sequenceDiagram
@@ -13,7 +13,7 @@ sequenceDiagram
   participant Polar as Polar externo
   participant DB as PostgreSQL :5432
   participant NATS as NATS :4222
-  participant Inv as Inventory v2 :3005
+  participant Inv as Inventory :3003
   participant Catalog as Catalog interno :3007
   participant Bridge as Bridge :3004
   participant Handler as Handler local o Lambda

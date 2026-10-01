@@ -2,8 +2,8 @@
 openapi: 3.1.0
 info:
   title: MercadoYa Inventory HTTP API
-  version: 4.0.0
-  description: V2 es el default de aplicación y del alias sin versión. Solo el despliegue v2 consume la saga. V1 se retiene explícito y deprecated, sin fecha de retirada. No existe POST de reserva.
+  version: 5.0.0
+  description: Un único servicio y contrato HTTP de reservas con status reserved. Consume reserva y compensación por NATS. No existe POST de reserva.
 servers:
   - url: http://localhost:8000
     description: Kong OSS local; los paths incluyen /api.
@@ -12,11 +12,11 @@ paths:
     servers:
       - url: http://localhost:8000
         description: Kong OSS local; los paths incluyen /api.
-      - url: http://localhost:3005
-        description: Inventory v2 directo.
+      - url: http://localhost:3003
+        description: Inventory directo.
     get:
-      operationId: inventoryHealthDefault
-      summary: Estado Inventory v2
+      operationId: inventoryHealth
+      summary: Estado Inventory
       security: []
       responses:
         "200":
@@ -28,7 +28,6 @@ paths:
                 required:
                   - module
                   - ok
-                  - serviceVersion
                 properties:
                   module:
                     type: string
@@ -36,125 +35,15 @@ paths:
                   ok:
                     type: boolean
                     const: true
-                  serviceVersion:
-                    type: string
-                    const: v2
   /api/inventory/reservations/{orderId}:
     servers:
       - url: http://localhost:8000
         description: Kong OSS local; los paths incluyen /api.
-      - url: http://localhost:3005
-        description: Inventory v2 directo.
-    get:
-      operationId: getReservationDefault
-      summary: Consultar reserva v2
-      security:
-        - betterAuthSession: []
-        - applicationJWT: []
-      responses:
-        "200":
-          description: Reserva encontrada.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ReservationResponseV2"
-          headers:
-            X-Service-Version:
-              schema:
-                type: string
-                const: v2
-              description: Versión del proceso.
-        "400":
-          description: Solicitud inválida.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "401":
-          description: Falta una sesión o credencial válida.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "404":
-          description: No encontrado.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "500":
-          description: Falló la operación.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "502":
-          description: El servicio remoto no está disponible.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-      parameters:
-        - name: orderId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
-      description: Verifica Bearer JWT mediante JWKS de Identity; no verifica que el usuario sea comprador. La reserva entra por NATS. Contrato de aplicación por defecto; reservation.status es obligatorio.
-  /api/inventory/v1/health:
-    servers:
-      - url: http://localhost:8000
-        description: Kong OSS local; los paths incluyen /api.
       - url: http://localhost:3003
-        description: Inventory v1 directo.
+        description: Inventory directo.
     get:
-      operationId: inventoryHealthV1
-      summary: Estado Inventory v1
-      security: []
-      responses:
-        "200":
-          description: El proceso responde.
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - module
-                  - ok
-                  - serviceVersion
-                properties:
-                  module:
-                    type: string
-                    const: inventory
-                  ok:
-                    type: boolean
-                    const: true
-                  serviceVersion:
-                    type: string
-                    const: v1
-          headers:
-            Deprecation:
-              schema:
-                type: string
-                const: "@1790726400"
-              description: Fecha de deprecación según RFC 9745. Sin fecha de retirada.
-            Link:
-              schema:
-                type: string
-              description: Ruta v2 equivalente con rel="successor-version".
-      deprecated: true
-      description: Retenido para compatibilidad. Usa /api/inventory/v2/health.
-  /api/inventory/v1/reservations/{orderId}:
-    servers:
-      - url: http://localhost:8000
-        description: Kong OSS local; los paths incluyen /api.
-      - url: http://localhost:3003
-        description: Inventory v1 directo.
-    get:
-      operationId: getReservationV1
-      summary: Consultar reserva v1
+      operationId: getReservation
+      summary: Consultar reserva
       security:
         - betterAuthSession: []
         - applicationJWT: []
@@ -164,168 +53,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ReservationResponseV1"
-          headers:
-            X-Service-Version:
-              schema:
-                type: string
-                const: v1
-              description: Versión del proceso.
-            Deprecation:
-              schema:
-                type: string
-                const: "@1790726400"
-              description: Fecha de deprecación según RFC 9745. Sin fecha de retirada.
-            Link:
-              schema:
-                type: string
-              description: Ruta v2 equivalente con rel="successor-version".
-        "400":
-          description: Solicitud inválida.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-          headers:
-            Deprecation:
-              schema:
-                type: string
-                const: "@1790726400"
-              description: Fecha de deprecación según RFC 9745. Sin fecha de retirada.
-            Link:
-              schema:
-                type: string
-              description: Ruta v2 equivalente con rel="successor-version".
-        "401":
-          description: Falta una sesión o credencial válida.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-          headers:
-            Deprecation:
-              schema:
-                type: string
-                const: "@1790726400"
-              description: Fecha de deprecación según RFC 9745. Sin fecha de retirada.
-            Link:
-              schema:
-                type: string
-              description: Ruta v2 equivalente con rel="successor-version".
-        "404":
-          description: No encontrado.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-          headers:
-            Deprecation:
-              schema:
-                type: string
-                const: "@1790726400"
-              description: Fecha de deprecación según RFC 9745. Sin fecha de retirada.
-            Link:
-              schema:
-                type: string
-              description: Ruta v2 equivalente con rel="successor-version".
-        "500":
-          description: Falló la operación.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-          headers:
-            Deprecation:
-              schema:
-                type: string
-                const: "@1790726400"
-              description: Fecha de deprecación según RFC 9745. Sin fecha de retirada.
-            Link:
-              schema:
-                type: string
-              description: Ruta v2 equivalente con rel="successor-version".
-        "502":
-          description: El servicio remoto no está disponible.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-          headers:
-            Deprecation:
-              schema:
-                type: string
-                const: "@1790726400"
-              description: Fecha de deprecación según RFC 9745. Sin fecha de retirada.
-            Link:
-              schema:
-                type: string
-              description: Ruta v2 equivalente con rel="successor-version".
-      parameters:
-        - name: orderId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
-      deprecated: true
-      description: Verifica Bearer JWT mediante JWKS de Identity; no verifica que el usuario sea comprador. La reserva entra por NATS. Retenido para compatibilidad. Migra a /api/inventory/v2/reservations/{orderId}, que añade reservation.status. Sin fecha de retirada.
-  /api/inventory/v2/health:
-    servers:
-      - url: http://localhost:8000
-        description: Kong OSS local; los paths incluyen /api.
-      - url: http://localhost:3005
-        description: Inventory v2 directo.
-    get:
-      operationId: inventoryHealthV2
-      summary: Estado Inventory v2
-      security: []
-      responses:
-        "200":
-          description: El proceso responde.
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - module
-                  - ok
-                  - serviceVersion
-                properties:
-                  module:
-                    type: string
-                    const: inventory
-                  ok:
-                    type: boolean
-                    const: true
-                  serviceVersion:
-                    type: string
-                    const: v2
-  /api/inventory/v2/reservations/{orderId}:
-    servers:
-      - url: http://localhost:8000
-        description: Kong OSS local; los paths incluyen /api.
-      - url: http://localhost:3005
-        description: Inventory v2 directo.
-    get:
-      operationId: getReservationV2
-      summary: Consultar reserva v2
-      security:
-        - betterAuthSession: []
-        - applicationJWT: []
-      responses:
-        "200":
-          description: Reserva encontrada.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ReservationResponseV2"
-          headers:
-            X-Service-Version:
-              schema:
-                type: string
-                const: v2
-              description: Versión del proceso.
+                $ref: "#/components/schemas/ReservationResponse"
         "400":
           description: Solicitud inválida.
           content:
@@ -364,7 +92,7 @@ paths:
             type: string
             format: uuid
             pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
-      description: Verifica Bearer JWT mediante JWKS de Identity; no verifica que el usuario sea comprador. La reserva entra por NATS. Contrato de aplicación por defecto; reservation.status es obligatorio.
+      description: Verifica Bearer JWT mediante JWKS de Identity; no verifica que el usuario sea comprador. La reserva entra por NATS. reservation.status es obligatorio.
 components:
   securitySchemes:
     applicationJWT:
@@ -378,7 +106,7 @@ components:
       name: better-auth.session_token
       description: Cookie Better Auth local. En HTTPS puede usar el prefijo __Secure-. No es Bearer JWT.
   schemas:
-    ReservationResponseV2:
+    ReservationResponse:
       type: object
       properties:
         reservation:
@@ -431,37 +159,3 @@ components:
               type: string
       required:
         - error
-    ReservationResponseV1:
-      type: object
-      properties:
-        reservation:
-          type: object
-          properties:
-            id:
-              type: string
-              format: uuid
-              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
-            orderId:
-              type: string
-              format: uuid
-              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
-            productId:
-              type: string
-              format: uuid
-              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
-            quantity:
-              type: integer
-              minimum: -9007199254740991
-              maximum: 9007199254740991
-            createdAt:
-              type: string
-              format: date-time
-              pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$
-          required:
-            - id
-            - orderId
-            - productId
-            - quantity
-            - createdAt
-      required:
-        - reservation

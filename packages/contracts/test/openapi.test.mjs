@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
+import { parse } from 'yaml';
 import { generatedDocuments } from '../scripts/openapi.mjs';
 
 const inventory = generatedDocuments.get('apps/inventory-service/openapi.yaml');
@@ -20,33 +22,29 @@ test('checkout requiere auth y webhook documenta firma pública y ACK async', ()
   for (const status of [202, 400, 403, 413, 503]) assert.ok(webhook.responses[status]);
 });
 
-test('Inventory anuncia el despliegue correcto para cada versión y usa el alias v2', () => {
-  for (const prefix of ['/api/inventory', '/api/inventory/v1', '/api/inventory/v2']) {
-    const path = inventory.paths[`${prefix}/reservations/{orderId}`];
-    const v2 = !prefix.endsWith('v1');
+test('Inventory anuncia un despliegue y un contrato sin deprecaciones', () => {
+  assert.deepEqual(Object.keys(inventory.paths).sort(), [
+    '/api/inventory/health',
+    '/api/inventory/reservations/{orderId}',
+  ]);
+  assert.deepEqual(Object.keys(inventory.components.schemas).sort(), [
+    'Error',
+    'ReservationResponse',
+  ]);
+  for (const path of Object.values(inventory.paths)) {
     assert.deepEqual(
       path.servers.map((server) => server.url),
-      ['http://localhost:8000', v2 ? 'http://localhost:3005' : 'http://localhost:3003'],
+      ['http://localhost:8000', 'http://localhost:3003'],
     );
-    assert.equal(path.get.deprecated, v2 ? undefined : true);
-    assert.equal(
-      path.get.responses[200].content['application/json'].schema.$ref,
-      `#/components/schemas/ReservationResponseV${v2 ? 2 : 1}`,
-    );
-    assert.deepEqual(Object.keys(path).sort(), ['get', 'servers']);
-    const health = inventory.paths[`${prefix}/health`];
-    assert.equal(health.get.deprecated, v2 ? undefined : true);
-    if (!v2) {
-      assert.match(path.get.description, /Migra a \/api\/inventory\/v2/);
-      for (const operation of [path.get, health.get]) {
-        for (const response of Object.values(operation.responses)) {
-          assert.equal(response.headers.Deprecation.schema.const, '@1790726400');
-          assert.match(response.headers.Link.description, /successor-version/);
-          assert.equal(response.headers.Sunset, undefined);
-        }
-      }
-    }
+    assert.equal(path.get.deprecated, undefined);
+    for (const response of Object.values(path.get.responses))
+      assert.equal(response.headers, undefined);
   }
+  const reservation = inventory.paths['/api/inventory/reservations/{orderId}'].get;
+  assert.equal(
+    reservation.responses[200].content['application/json'].schema.$ref,
+    '#/components/schemas/ReservationResponse',
+  );
 });
 
 test('los bordes documentados distinguen sesión browser, JWT y token interno de stock', () => {
@@ -90,4 +88,26 @@ test('Catalog documenta origen interno y límites reales de Kong y Hono', () => 
     assert.ok(operation.responses[413].content['application/json']);
     assert.ok(operation.responses[413].content['text/html']);
   }
+});
+
+test('Compose y Kong configuran un único Inventory y solo las rutas vigentes', () => {
+  const root = new URL('../../../', import.meta.url);
+  const compose = parse(readFileSync(new URL('docker-compose.yml', root), 'utf8'));
+  const kong = parse(readFileSync(new URL('infra/kong/kong.yml', root), 'utf8'));
+  assert.deepEqual(
+    Object.keys(compose.services).filter((name) => name.startsWith('inventory')),
+    ['inventory'],
+  );
+  assert.deepEqual(compose.services.inventory.ports, ['127.0.0.1:3003:3003']);
+  assert.equal(compose.services.inventory.environment.SERVICE_VERSION, undefined);
+  const services = kong.services.filter((service) => service.name.startsWith('inventory'));
+  assert.equal(services.length, 1);
+  assert.equal(services[0].url, 'http://inventory:3003');
+  assert.deepEqual(
+    services[0].routes.flatMap((route) => route.paths),
+    ['~/api/inventory/health$', '~/api/inventory/reservations/[^/]+$'],
+  );
+  const dockerfile = readFileSync(new URL('apps/inventory-service/Dockerfile', root), 'utf8');
+  assert.ok(dockerfile.includes('http://127.0.0.1:3003/api/inventory/health'));
+  assert.equal(dockerfile.includes('SERVICE_VERSION'), false);
 });

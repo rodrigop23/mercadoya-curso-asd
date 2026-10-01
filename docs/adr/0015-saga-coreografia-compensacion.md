@@ -12,7 +12,7 @@ Orders y Inventory ejecutan pasos distribuidos y ya intercambian eventos NATS. N
 
 La saga usa coreografía con NATS. Cada consumidor reacciona al evento correspondiente, sin orquestador central. Orders `:3002` aloja el adapter y el worker Polar; el checkout externo y su webhook firmado determinan el resultado.
 
-1. Orders guarda el pedido `pending` y publica `orders.placed`. Solo Inventory v2 lo consume para reservar stock mediante Catalog.
+1. Orders guarda el pedido `pending` y publica `orders.placed`. Inventory lo consume para reservar stock mediante Catalog.
 2. Si Inventory publica `inventory.rejected`, Orders rechaza el pedido y Notifications prepara el correo de stock. No se crea un checkout.
 3. Si Inventory publica `inventory.reserved`, el worker de Orders crea un checkout Polar. Su webhook firmado produce `payment.succeeded` o `payment.failed`. Reservar no confirma.
 4. Con `payment.succeeded`, Orders cambia a `confirmed` y Notifications prepara el correo de confirmación.
@@ -21,7 +21,7 @@ La saga usa coreografía con NATS. Cada consumidor reacciona al evento correspon
 
 La configuración y las garantías del pago actual están en [ADR 0019](0019-polar-payments-saga.md). El ejercicio original permanece en el rama `v3-services`.
 
-La liberación usa un lock transaccional por pedido. Si ya no existe reserva, retorna sin ajustar stock ni publicar otra liberación. Así, fallos duplicados no reponen stock dos veces tras una liberación completada. Solo Inventory v2 consume NATS; v1 conserva lectura HTTP explícita y health; el alias sin versión usa ahora el contrato v2.
+La liberación usa un lock transaccional por pedido. Si ya no existe reserva, retorna sin ajustar stock ni publicar otra liberación. Así, fallos duplicados no reponen stock dos veces tras una liberación completada. Inventory consume NATS en un único contenedor y expone el contrato HTTP vigente en `/api/inventory/*`. La dualidad anterior permanece en la rama `v3-services`.
 
 ## Consecuencias
 

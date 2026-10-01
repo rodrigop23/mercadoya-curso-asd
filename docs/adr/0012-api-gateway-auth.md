@@ -12,7 +12,7 @@ El navegador necesita una dirección de API para módulos locales y servicios ex
 
 ## Decisión
 
-El proceso Hono en `:3001` conserva Identity, Catalog, Media y las rutas de eventos. Proxifica Orders `:3002`, Inventory v1 `:3003`, Inventory v2 `:3005` y el health de Notifications bridge `:3004`. Web y MF llaman a `:3001` con cookie de sesión; CORS admite `localhost:5173` y `localhost:5174` con credenciales. Orders e Inventory consultan `GET /api/me` con la cookie recibida. Inventory usa `x-catalog-internal-token` para Catalog interno. Bridge y handler usan secretos separados para invocación e ingest.
+La topología histórica del gateway Hono en `:3001` permanece en la rama `v3-services`. El despliegue actual usa Kong `:8000`, Identity propio y un único Inventory `:3003`, según [ADR 0017](0017-identity-kong-jwks.md) y [ADR 0008](0008-versionado-inventory.md). Web y MF llaman a Kong con cookie de sesión; CORS admite `localhost:5173` y `localhost:5174` con credenciales. Kong valida la sesión y reenvía JWT; Orders e Inventory verifican firma y claims mediante JWKS. Inventory usa `x-catalog-internal-token` para Catalog interno. Bridge y handler usan un secreto separado para invocación.
 
 ## Consecuencias
 

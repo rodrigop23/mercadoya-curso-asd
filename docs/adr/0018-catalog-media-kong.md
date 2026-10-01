@@ -29,6 +29,6 @@ Se consultaron estas fuentes el 2026-09-30 y se cotejaron las APIs con las versi
 
 ## Verificación
 
-CI valida typecheck, lint, build, OpenAPI generado y contracts. El smoke Identity/Kong cubre además catálogo público, CRUD con cookie y Bearer, buyer 403, cookie directa 401, CORS en ambos orígenes, upload/full/thumb, límites, stock interno y reserva por Inventory v2. La demo saga conserva reserva, rechazo y compensación de pago.
+CI valida typecheck, lint, build, OpenAPI generado y contracts. El smoke Identity/Kong cubre además catálogo público, CRUD con cookie y Bearer, buyer 403, cookie directa 401, CORS en ambos orígenes, upload/full/thumb, límites, stock interno y reserva por Inventory. La demo saga conserva reserva, rechazo y compensación de pago.
 
 Se ejecutaron los checks locales y una pila Compose aislada, sin cambiar el laboratorio activo. El smoke confirmó también reemplazo de una imagen mayor que 1 MiB, rechazo de imagen mayor que 2 MiB y formulario mayor que 3 MiB. La demo saga pasó confirmación, rechazo por stock, pago fallido con restitución y dos eventos duplicados sin doble liberación. Reaplicar la migración y reiniciar Catalog conservó una fila con stock y un archivo con path histórico.

@@ -34,8 +34,7 @@ const schemas = {
   StockResponse: contracts.stockResponseSchema,
   StockAdjustment: contracts.stockAdjustmentSchema,
   StockAdjustmentResponse: contracts.stockAdjustmentResponseSchema,
-  ReservationResponseV1: contracts.reservationResponseV1Schema,
-  ReservationResponseV2: contracts.reservationResponseV2Schema,
+  ReservationResponse: contracts.reservationResponseSchema,
 };
 const allSchemas = Object.fromEntries(
   Object.entries(schemas).map(([name, schema]) => [name, jsonSchema(schema)]),
@@ -98,14 +97,13 @@ const op = (operationId, summary, responses, extra = {}) => ({
   responses,
   ...extra,
 });
-const health = (module, version) =>
+const health = (module) =>
   response('El proceso responde.', {
     type: 'object',
-    required: ['module', 'ok', ...(version ? ['serviceVersion'] : [])],
+    required: ['module', 'ok'],
     properties: {
       module: { type: 'string', const: module },
       ok: { type: 'boolean', const: true },
-      ...(version ? { serviceVersion: { type: 'string', const: version } } : {}),
     },
   });
 const bff = {
@@ -488,93 +486,37 @@ documents.set(
   ),
 );
 
-const inventoryPaths = {};
-for (const [prefix, version, legacy] of [
-  ['/api/inventory', 'v2', true],
-  ['/api/inventory/v1', 'v1', false],
-  ['/api/inventory/v2', 'v2', false],
-]) {
-  const servers = [
-    bff,
-    {
-      url: version === 'v1' ? 'http://localhost:3003' : 'http://localhost:3005',
-      description: `Inventory ${version} directo.`,
-    },
-  ];
-  const suffix = legacy ? 'Default' : version.toUpperCase();
-  inventoryPaths[`${prefix}/health`] = {
-    servers,
+const inventoryServers = [bff, { url: 'http://localhost:3003', description: 'Inventory directo.' }];
+const inventoryPaths = {
+  '/api/inventory/health': {
+    servers: inventoryServers,
+    get: op('inventoryHealth', 'Estado Inventory', { 200: health('inventory') }),
+  },
+  '/api/inventory/reservations/{orderId}': {
+    servers: inventoryServers,
     get: op(
-      `inventoryHealth${suffix}`,
-      `Estado Inventory ${version}`,
-      { 200: health('inventory', version) },
+      'getReservation',
+      'Consultar reserva',
       {
-        ...(version === 'v1'
-          ? {
-              deprecated: true,
-              description: 'Retenido para compatibilidad. Usa /api/inventory/v2/health.',
-            }
-          : {}),
-      },
-    ),
-  };
-  inventoryPaths[`${prefix}/reservations/{orderId}`] = {
-    servers,
-    get: op(
-      `getReservation${suffix}`,
-      `Consultar reserva ${version}`,
-      {
-        200: {
-          ...response(
-            'Reserva encontrada.',
-            version === 'v1' ? 'ReservationResponseV1' : 'ReservationResponseV2',
-          ),
-          headers: {
-            'X-Service-Version': {
-              schema: { type: 'string', const: version },
-              description: 'Versión del proceso.',
-            },
-          },
-        },
+        200: response('Reserva encontrada.', 'ReservationResponse'),
         ...errors(400, 401, 404, 500, 502),
       },
       {
         security: applicationAuth,
         parameters: [id('orderId')],
-        ...(version === 'v1' ? { deprecated: true } : {}),
         description:
-          'Verifica Bearer JWT mediante JWKS de Identity; no verifica que el usuario sea comprador. La reserva entra por NATS. ' +
-          (version === 'v1'
-            ? 'Retenido para compatibilidad. Migra a /api/inventory/v2/reservations/{orderId}, que añade reservation.status. Sin fecha de retirada.'
-            : 'Contrato de aplicación por defecto; reservation.status es obligatorio.'),
+          'Verifica Bearer JWT mediante JWKS de Identity; no verifica que el usuario sea comprador. La reserva entra por NATS. reservation.status es obligatorio.',
       },
     ),
-  };
-  if (version === 'v1') {
-    for (const path of [`${prefix}/health`, `${prefix}/reservations/{orderId}`]) {
-      for (const result of Object.values(inventoryPaths[path].get.responses)) {
-        result.headers = {
-          ...result.headers,
-          Deprecation: {
-            schema: { type: 'string', const: '@1790726400' },
-            description: 'Fecha de deprecación según RFC 9745. Sin fecha de retirada.',
-          },
-          Link: {
-            schema: { type: 'string' },
-            description: 'Ruta v2 equivalente con rel="successor-version".',
-          },
-        };
-      }
-    }
-  }
-}
+  },
+};
 documents.set(
   'apps/inventory-service/openapi.yaml',
   doc(
     'Inventory HTTP API',
-    '4.0.0',
+    '5.0.0',
     inventoryPaths,
-    'V2 es el default de aplicación y del alias sin versión. Solo el despliegue v2 consume la saga. V1 se retiene explícito y deprecated, sin fecha de retirada. No existe POST de reserva.',
+    'Un único servicio y contrato HTTP de reservas con status reserved. Consume reserva y compensación por NATS. No existe POST de reserva.',
   ),
 );
 

@@ -8,8 +8,7 @@ import {
   inventoryReleasedEventSchema,
   paymentSucceededEventSchema,
   paymentFailedEventSchema,
-  reservationResponseV1Schema,
-  reservationResponseV2Schema,
+  reservationResponseSchema,
 } from '@mercadoya/contracts';
 
 const event = {
@@ -112,7 +111,7 @@ test('correlación Polar es aditiva en v1 y sobrevive a inventory.released', () 
   }
 });
 
-test('la respuesta HTTP v2 exige status reserved y mantiene los campos v1', () => {
+test('la respuesta HTTP exige status reserved', () => {
   const reservation = {
     id: '8cdacbbd-a36a-4ac8-9803-04cfc6e29b81',
     orderId: event.orderId,
@@ -120,23 +119,19 @@ test('la respuesta HTTP v2 exige status reserved y mantiene los campos v1', () =
     quantity: event.quantity,
     createdAt: event.occurredAt,
   };
-  assert.deepEqual(reservationResponseV1Schema.parse({ reservation }), { reservation });
-  assert.equal(reservationResponseV2Schema.safeParse({ reservation }).success, false);
-  const v2 = { reservation: { ...reservation, status: 'reserved' } };
-  assert.deepEqual(reservationResponseV2Schema.parse(v2), v2);
-  assert.deepEqual(reservationResponseV1Schema.parse(v2), { reservation });
+  assert.equal(reservationResponseSchema.safeParse({ reservation }).success, false);
+  const response = { reservation: { ...reservation, status: 'reserved' } };
+  assert.deepEqual(reservationResponseSchema.parse(response), response);
   assert.equal(
-    reservationResponseV2Schema.safeParse({
+    reservationResponseSchema.safeParse({
       reservation: { ...reservation, status: 'released' },
     }).success,
     false,
   );
-  for (const schema of [reservationResponseV1Schema, reservationResponseV2Schema]) {
-    assert.equal(
-      schema.safeParse({
-        reservation: { ...v2.reservation, orderId: 'invalid' },
-      }).success,
-      false,
-    );
-  }
+  assert.equal(
+    reservationResponseSchema.safeParse({
+      reservation: { ...response.reservation, orderId: 'invalid' },
+    }).success,
+    false,
+  );
 });

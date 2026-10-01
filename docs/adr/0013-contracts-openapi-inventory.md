@@ -10,7 +10,7 @@ Orders e Inventory intercambian eventos NATS. Inventory también expone lectura 
 
 ## Decisión
 
-`@mercadoya/contracts` contiene los subjects, esquemas Zod de eventos con `version: 1`, puertos TypeScript de Inventory y Catalog, y DTO de lectura HTTP v1/v2. Los subjects son `orders.placed`, `inventory.reserved`, `inventory.rejected`, `inventory.released`, `payment.succeeded` y `payment.failed`. Orders, Inventory y Notifications validan sus eventos con estos esquemas. Los eventos de fallo incluyen `reason`. Orders produce el desenlace mediante Polar y solo Inventory v2 procesa la reserva y la compensación. `apps/inventory-service/openapi.yaml` documenta health y lectura de reservas, con v1 explícito marcado como obsoleto y alias sin versión por defecto en v2. La solicitud de reserva entra por NATS, no por HTTP. Swagger UI sirve ese mismo contrato en `/docs` de ambos despliegues y lo carga desde `/openapi.yaml`.
+`@mercadoya/contracts` contiene los subjects, esquemas Zod de eventos con `version: 1`, puertos TypeScript de Inventory y Catalog, y el DTO vigente de lectura HTTP. Los subjects son `orders.placed`, `inventory.reserved`, `inventory.rejected`, `inventory.released`, `payment.succeeded` y `payment.failed`. Orders, Inventory y Notifications validan sus eventos con estos esquemas. Los eventos de fallo incluyen `reason`. Orders produce el desenlace mediante Polar y Inventory procesa la reserva y la compensación. `apps/inventory-service/openapi.yaml` documenta health y lectura de reservas, en `/api/inventory/*` con status obligatorio. La solicitud de reserva entra por NATS, no por HTTP. Swagger UI sirve ese mismo contrato en `/docs` del único despliegue y lo carga desde `/openapi.yaml`.
 
 ## Consecuencias
 

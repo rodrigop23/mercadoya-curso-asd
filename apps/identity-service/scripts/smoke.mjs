@@ -13,6 +13,7 @@ if (!process.env.DATABASE_URL)
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const email = `smoke-${randomUUID()}@mercadoya.local`;
 const password = randomUUID() + 'Ab1!';
+const inventoryReadOrderId = randomUUID();
 let cookie = '';
 let userId, productId, applicationToken;
 const request = (path, options = {}) =>
@@ -34,8 +35,6 @@ try {
     '/api/identity/health',
     '/api/orders/health',
     '/api/inventory/health',
-    '/api/inventory/v1/health',
-    '/api/inventory/v2/health',
     '/api/notifications/health',
   ]) {
     let status;
@@ -47,6 +46,12 @@ try {
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
     assert.equal(status, 200, path);
+  }
+  for (const version of ['v1', 'v2']) {
+    for (const suffix of ['health', 'reservations/' + randomUUID()]) {
+      const path = `/api/inventory/${version}/${suffix}`;
+      assert.equal((await request(path)).status, 404, path);
+    }
   }
   for (const path of [
     '/api/orders',
@@ -86,6 +91,20 @@ try {
     .join('; ');
   assert.equal((await request('/api/products', { method: 'POST' })).status, 403);
   const buyerToken = (await (await request('/api/auth/token')).json()).token;
+  await pool.query(
+    'INSERT INTO inventory_reservations (order_id, product_id, quantity) VALUES ($1, $2, 1)',
+    [inventoryReadOrderId, randomUUID()],
+  );
+  for (const headers of [{}, { cookie: '', authorization: `Bearer ${buyerToken}` }]) {
+    const response = await request(`/api/inventory/reservations/${inventoryReadOrderId}`, {
+      headers,
+    });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).reservation.status, 'reserved');
+    for (const header of ['deprecation', 'link', 'sunset', 'x-service-version']) {
+      assert.equal(response.headers.get(header), null);
+    }
+  }
   assert.equal(
     (
       await request('/api/products', {
@@ -364,6 +383,7 @@ try {
     'Smoke OK: login/sesión, JWKS, JWT, Kong 401, health público, CRUD Catalog, uploads, CORS, límites, stock interno y rechazo de compra sin catálogo Polar listo.',
   );
 } finally {
+  await pool.query('DELETE FROM inventory_reservations WHERE order_id=$1', [inventoryReadOrderId]);
   // Keep order/reservation records for diagnosis, but delete the temporary identity and product.
   if (productId) {
     if (applicationToken)

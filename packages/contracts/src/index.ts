@@ -73,16 +73,11 @@ const reservationHttpSchema = z.object({
   createdAt: z.string().datetime(),
 });
 
-export const reservationResponseV1Schema = z.object({
-  reservation: reservationHttpSchema,
-});
-
-export const reservationResponseV2Schema = z.object({
+export const reservationResponseSchema = z.object({
   reservation: reservationHttpSchema.extend({ status: z.literal('reserved') }),
 });
 
-export type ReservationResponseV1 = z.infer<typeof reservationResponseV1Schema>;
-export type ReservationResponseV2 = z.infer<typeof reservationResponseV2Schema>;
+export type ReservationResponse = z.infer<typeof reservationResponseSchema>;
 
 export type ReservationReason =
   | 'invalid_quantity'

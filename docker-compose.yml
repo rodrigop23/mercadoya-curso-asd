@@ -24,7 +24,7 @@ services:
       - '4222:4222'
       - '8222:8222'
 
-  inventory-v1:
+  inventory:
     build:
       context: .
       dockerfile: apps/inventory-service/Dockerfile
@@ -32,32 +32,7 @@ services:
     ports:
       - '127.0.0.1:3003:3003'
     environment:
-      # Compatibilidad HTTP explícita y health; no consume eventos de stock.
-      SERVICE_VERSION: v1
-      DATABASE_URL: postgresql://mercadoya:mercadoya_local@postgres:5432/mercadoya
-      NATS_URL: nats://nats:4222
-      EVENT_BUS: nats
-      CATALOG_URL: http://catalog:3007
-      IDENTITY_URL: http://identity:3006
-      JWT_ISSUER: http://localhost:8000
-      JWT_AUDIENCE: mercadoya-services
-      CATALOG_INTERNAL_TOKEN: ${CATALOG_INTERNAL_TOKEN:?Set CATALOG_INTERNAL_TOKEN in .env}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      nats:
-        condition: service_started
-
-  inventory-v2:
-    build:
-      context: .
-      dockerfile: apps/inventory-service/Dockerfile
-    restart: unless-stopped
-    ports:
-      - '127.0.0.1:3005:3003'
-    environment:
-      # Default HTTP y único propietario de reserva/compensación NATS.
-      SERVICE_VERSION: v2
+      # Único propietario de reserva/compensación NATS.
       DATABASE_URL: postgresql://mercadoya:mercadoya_local@postgres:5432/mercadoya
       NATS_URL: nats://nats:4222
       EVENT_BUS: nats
@@ -178,8 +153,7 @@ services:
       - identity
       - catalog
       - orders
-      - inventory-v1
-      - inventory-v2
+      - inventory
       - notifications
 
 volumes:

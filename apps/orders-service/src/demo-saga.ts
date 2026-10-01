@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import { config } from 'dotenv';
 import { fileURLToPath } from 'node:url';
-import { paymentCheckoutResponseSchema, reservationResponseV2Schema } from '@mercadoya/contracts';
+import { paymentCheckoutResponseSchema, reservationResponseSchema } from '@mercadoya/contracts';
 import { paymentProvider } from './payment/config.js';
 
 config({ path: fileURLToPath(new URL('../../../.env', import.meta.url)) });
@@ -97,8 +97,8 @@ const result = await waitFor(
 );
 if (result.order.status === 'confirmed') {
   assert.equal(await stock(), before - 1);
-  const reservation = reservationResponseV2Schema.parse(
-    await read(`/api/inventory/v2/reservations/${order.id}`),
+  const reservation = reservationResponseSchema.parse(
+    await read(`/api/inventory/reservations/${order.id}`),
   );
   assert.equal(reservation.reservation.orderId, order.id);
   console.log(`Cobro Polar confirmado: ${order.id}, stock ${before - 1}.`);
