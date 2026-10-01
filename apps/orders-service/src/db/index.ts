@@ -10,7 +10,11 @@ if (!connectionString) {
   throw new Error('DATABASE_URL is required to connect to PostgreSQL.');
 }
 
-const pool = new Pool({ connectionString });
+export const pool = new Pool({
+  connectionString,
+  connectionTimeoutMillis: 1_000,
+  query_timeout: 1_500,
+});
 export const db = drizzle(pool);
 export async function closeDb() {
   await pool.end();

@@ -12,7 +12,7 @@ if (!connectionString) {
   throw new Error('DATABASE_URL is required to connect to PostgreSQL.');
 }
 
-const pool = new Pool({ connectionString });
+export const pool = new Pool({ connectionString });
 export const db = drizzle(pool, { schema });
 
 export const closeDb = () => pool.end();

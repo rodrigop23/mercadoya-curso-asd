@@ -26,6 +26,13 @@ export const orderPlacedEventSchema = z.object({
 
 export type OrderPlacedEvent = z.infer<typeof orderPlacedEventSchema>;
 
+// Campos aditivos v1: los consumidores antiguos pueden descartarlos.
+const paymentCorrelation = {
+  provider: z.literal('polar').optional(),
+  eventId: z.string().min(1).max(200).optional(),
+  checkoutId: z.string().uuid().optional(),
+  providerOrderId: z.string().uuid().optional(),
+};
 const inventoryReservationResult = {
   version: z.literal(1),
   orderId: z.string().uuid(),
@@ -39,10 +46,17 @@ export const inventoryReservedEventSchema = z.object({
   ...inventoryReservationResult,
   paymentMode: paymentModeSchema.optional(),
 });
-export const inventoryReleasedEventSchema = z.object(inventoryReservationResult);
-export const paymentSucceededEventSchema = z.object(inventoryReservationResult);
+export const inventoryReleasedEventSchema = z.object({
+  ...inventoryReservationResult,
+  ...paymentCorrelation,
+});
+export const paymentSucceededEventSchema = z.object({
+  ...inventoryReservationResult,
+  ...paymentCorrelation,
+});
 export const paymentFailedEventSchema = z.object({
   ...inventoryReservationResult,
+  ...paymentCorrelation,
   reason: z.string().min(1).max(160),
 });
 export type InventoryReleasedEvent = z.infer<typeof inventoryReleasedEventSchema>;

@@ -13,6 +13,7 @@
     "smoke:federation": "playwright test"
   },
   "dependencies": {
+    "@mercadoya/contracts": "workspace:*",
     "@mercadoya/ui": "workspace:*",
     "@tanstack/react-form": "^1.33.5",
     "@tanstack/react-query": "^5.103.2",

@@ -10,13 +10,17 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "oxlint .",
     "format": "oxfmt .",
-    "demo:saga": "tsx src/demo-saga.ts"
+    "demo:saga": "tsx src/demo-saga.ts",
+    "test": "node --test test/*.test.mjs",
+    "test:integration": "node --test test/polar-saga.integration.mjs",
+    "db:migrate": "node scripts/migrate-db.mjs"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.1",
     "@mercadoya/contracts": "workspace:*",
     "@mercadoya/jwt-verifier": "workspace:*",
     "@nats-io/transport-node": "^3.4.0",
+    "@polar-sh/sdk": "1.0.1",
     "dotenv": "^18.0.2",
     "drizzle-orm": "^0.45.3",
     "hono": "^4.13.8",

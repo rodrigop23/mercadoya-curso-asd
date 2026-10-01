@@ -102,6 +102,9 @@ services:
       JWT_ISSUER: http://localhost:8000
       JWT_AUDIENCE: mercadoya-services
       CATALOG_INTERNAL_TOKEN: ${CATALOG_INTERNAL_TOKEN:?Set CATALOG_INTERNAL_TOKEN}
+      PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-polar}
+      POLAR_SERVER: ${POLAR_SERVER:-sandbox}
+      POLAR_ACCESS_TOKEN: ${POLAR_ACCESS_TOKEN:-}
       UPLOADS_DIR: /app/uploads
     ports:
       - '127.0.0.1:3007:3007'
@@ -123,7 +126,14 @@ services:
       JWT_AUDIENCE: mercadoya-services
       NATS_URL: nats://nats:4222
       EVENT_BUS: nats
+      PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-polar}
+      CATALOG_URL: http://catalog:3007
+      CATALOG_INTERNAL_TOKEN: ${CATALOG_INTERNAL_TOKEN:?Set CATALOG_INTERNAL_TOKEN}
       PAYMENT_MODE: ${PAYMENT_MODE:-succeed}
+      POLAR_SERVER: ${POLAR_SERVER:-sandbox}
+      POLAR_ACCESS_TOKEN: ${POLAR_ACCESS_TOKEN:-}
+      POLAR_WEBHOOK_SECRET: ${POLAR_WEBHOOK_SECRET:-}
+      POLAR_WEB_ORIGIN: ${POLAR_WEB_ORIGIN:-http://localhost:5173}
     depends_on:
       postgres:
         condition: service_healthy

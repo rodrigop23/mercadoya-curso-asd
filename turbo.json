@@ -38,7 +38,8 @@
         "CATALOG_INTERNAL_TOKEN",
         "ORDERS_SERVICE_URL",
         "GATEWAY_URL",
-        "DEMO_PRODUCT_ID"
+        "DEMO_PRODUCT_ID",
+        "PAYMENT_PROVIDER"
       ]
     },
     "test": {

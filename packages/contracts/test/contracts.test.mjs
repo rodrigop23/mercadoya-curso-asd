@@ -101,6 +101,26 @@ test('Payment failed exige una causa de entre 1 y 160 caracteres', () => {
   }
 });
 
+test('correlación Polar es aditiva en v1 y sobrevive a inventory.released', () => {
+  const correlation = {
+    provider: 'polar',
+    eventId: 'delivery-id',
+    checkoutId: event.orderId,
+    providerOrderId: event.productId,
+  };
+  for (const schema of [
+    paymentSucceededEventSchema,
+    paymentFailedEventSchema,
+    inventoryReleasedEventSchema,
+  ]) {
+    const input = { ...event, ...correlation, reason: 'polar_checkout_expired' };
+    assert.equal(schema.parse(input).version, 1);
+    for (const [key, value] of Object.entries(correlation))
+      assert.equal(schema.parse(input)[key], value);
+    assert.equal(schema.safeParse({ ...input, checkoutId: 'invalid' }).success, false);
+  }
+});
+
 test('la respuesta HTTP v2 exige status reserved y mantiene los campos v1', () => {
   const reservation = {
     id: '8cdacbbd-a36a-4ac8-9803-04cfc6e29b81',

@@ -19,6 +19,8 @@ const schemas = {
   Error: contracts.errorResponseSchema,
   CreateOrder: contracts.createOrderSchema,
   OrderResponse: contracts.orderResponseSchema,
+  PaymentCheckoutResponse: contracts.paymentCheckoutResponseSchema,
+  CatalogBillingResponse: contracts.catalogBillingResponseSchema,
   SignUp: contracts.signUpSchema,
   SignIn: contracts.signInSchema,
   IdentitySession: contracts.identitySessionResponseSchema,
@@ -41,7 +43,8 @@ const allSchemas = Object.fromEntries(
 // Zod no representa refinements personalizados en JSON Schema.
 allSchemas.StockAdjustment.properties.delta.not = { const: 0 };
 const form = jsonSchema(contracts.productFormSchema);
-form.properties.price.description = 'String decimal; tras trim, mayor que 0 y hasta 99999999.99.';
+form.properties.price.description =
+  'String decimal en soles PEN; tras trim, entre 2.00 y 999999.99, hasta dos decimales.';
 form.properties.stock.description = 'String entero; tras trim, entre 0 y 2147483647.';
 const image = {
   type: 'string',
@@ -70,10 +73,11 @@ const descriptions = {
   401: 'Falta una sesión o credencial válida.',
   403: 'Se requiere rol admin.',
   404: 'No encontrado.',
+  409: 'El producto aún no admite pagos o el importe supera el límite.',
   413: 'El formulario supera 3145728 bytes.',
   500: 'Falló la operación.',
   502: 'El servicio remoto no está disponible.',
-  503: 'Token interno no configurado.',
+  503: 'Servicio no disponible o configuración incompleta.',
 };
 const errors = (...codes) =>
   Object.fromEntries(codes.map((code) => [code, response(descriptions[code], 'Error')]));
@@ -156,7 +160,7 @@ documents.set(
   'apps/orders-service/openapi.yaml',
   doc(
     'Orders',
-    '2.0.0',
+    '2.2.0',
     {
       '/api/orders/health': {
         get: op('ordersHealth', 'Estado de Orders', { 200: health('orders') }),
@@ -167,13 +171,13 @@ documents.set(
           'Crear un pedido pendiente y publicar orders.placed',
           {
             202: response('Pedido aceptado; la saga resuelve el estado.', 'OrderResponse'),
-            ...errors(400, 401, 500, 502),
+            ...errors(400, 401, 404, 409, 500, 502, 503),
           },
           {
             security: applicationAuth,
             requestBody: body('CreateOrder'),
             description:
-              'buyerId procede del claim sub verificado. Campos extra como paymentMode se descartan; solo el CLI interno usa ese override.',
+              'buyerId procede del claim sub verificado. Con Polar, Catalog debe tener el producto sincronizado; 409 mientras se prepara y 503 si Catalog no responde. Orders guarda el precio PEN antes de publicar. Campos extra como paymentMode, moneda o importe se descartan.',
           },
         ),
       },
@@ -181,12 +185,81 @@ documents.set(
         get: op(
           'getOrder',
           'Consultar un pedido autenticado',
-          { 200: response('Pedido encontrado.', 'OrderResponse'), ...errors(400, 404, 500, 502) },
+          {
+            200: response('Pedido encontrado.', 'OrderResponse'),
+            ...errors(400, 401, 404, 500, 502),
+          },
           { security: applicationAuth, parameters: [id('orderId')] },
         ),
       },
+      '/api/orders/{orderId}/checkout': {
+        get: op(
+          'getPaymentCheckout',
+          'Consultar el checkout Polar del comprador',
+          {
+            200: response(
+              'Checkout listo, pedido finalizado o proveedor simulator explícito.',
+              'PaymentCheckoutResponse',
+            ),
+            202: response(
+              'Reserva o creación de checkout pendiente; repetir consulta.',
+              'PaymentCheckoutResponse',
+            ),
+            ...errors(400, 401, 404, 503),
+          },
+          {
+            security: applicationAuth,
+            parameters: [id('orderId')],
+            description:
+              'Solo el comprador puede consultar el enlace. El importe se fija en el servidor para todas las unidades. Respuesta Cache-Control: no-store.',
+          },
+        ),
+      },
+      '/api/payments/polar/webhook': {
+        post: op(
+          'polarWebhook',
+          'Aceptar un webhook firmado de Polar API 2026-04',
+          {
+            202: response('Firma y payload verificados; evento persistido o ignorado.', {
+              type: 'object',
+              required: ['received'],
+              properties: { received: { type: 'boolean', const: true } },
+            }),
+            400: response('Payload o versión de evento inválido.', 'Error'),
+            403: response('Firma o timestamp inválido.', 'Error'),
+            413: response('Payload supera 262144 bytes.', 'Error'),
+            503: response('Inbox no disponible o Polar no activo; Polar debe reintentar.', 'Error'),
+          },
+          {
+            description:
+              'Público en Kong, sin JWT. Standard Webhooks firma webhook-id.timestamp.rawBody; la URL no forma parte del HMAC. Configurar esta URL final sin redirects y formato Raw en Polar. Idempotencia por webhook-id. No enviar datos de cliente ni secretos en ejemplos.',
+            parameters: ['webhook-id', 'webhook-timestamp', 'webhook-signature'].map((name) => ({
+              name,
+              in: 'header',
+              required: true,
+              schema: { type: 'string' },
+            })),
+            requestBody: {
+              required: true,
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: ['type', 'timestamp', 'data'],
+                    properties: {
+                      type: { type: 'string' },
+                      timestamp: { type: 'string', format: 'date-time' },
+                      data: { type: 'object' },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        ),
+      },
     },
-    'Kong acepta sesión browser o JWT. Orders directo requiere Bearer JWT verificado por JWKS. Health público.',
+    'Kong acepta sesión browser o JWT para pedidos y checkout. Orders directo requiere Bearer JWT verificado por JWKS. Health y webhook Polar públicos; webhook usa firma Standard Webhooks.',
     [bff, { url: 'http://localhost:3002', description: 'Orders directo.' }],
   ),
 );
@@ -310,7 +383,7 @@ documents.set(
   'apps/catalog-service/openapi/catalog.yaml',
   doc(
     'Catalog',
-    '1.1.0',
+    '1.2.0',
     {
       '/api/catalog/health': {
         get: op('catalogHealth', 'Estado de Catalog', { 200: health('catalog') }),
@@ -330,7 +403,7 @@ documents.set(
             security: applicationAuth,
             requestBody: body('CreateProduct', 'multipart/form-data'),
             description:
-              'Requiere admin. Media procesa la imagen dentro del módulo; no existe endpoint HTTP de upload separado.',
+              'Requiere admin. Media procesa la imagen dentro del módulo. El producto y su sincronización pendiente se guardan juntos; 201 confirma el guardado local sin esperar a Polar. No existe endpoint HTTP de upload separado.',
           },
         ),
       },
@@ -366,6 +439,31 @@ documents.set(
             ...errors(400, 401, 503),
           },
           { security: [{ catalogInternalToken: [] }], parameters: [id('id')] },
+        ),
+      },
+      '/api/internal/catalog/products/{id}/billing': {
+        servers: [catalogDirect],
+        get: op(
+          'getBillingProduct',
+          'Consultar producto Polar y precio PEN para Orders',
+          {
+            200: response(
+              'Producto sincronizado. Importe unitario en céntimos de sol.',
+              'CatalogBillingResponse',
+            ),
+            202: response(
+              'Sincronización pendiente. No crear un pedido todavía.',
+              'CatalogBillingResponse',
+            ),
+            409: response('La sincronización falló y será reintentada.', 'CatalogBillingResponse'),
+            ...errors(400, 401, 404, 503),
+          },
+          {
+            security: [{ catalogInternalToken: [] }],
+            parameters: [id('id')],
+            description:
+              'No se publica en Kong. Responde Cache-Control: no-store. El comprador no controla el precio ni el ID Polar.',
+          },
         ),
       },
       '/api/internal/catalog/products/{id}/adjust-stock': {

@@ -4,6 +4,9 @@ import { db } from '../../db/index.js';
 import type { MediaContract } from '../media/contract.js';
 import { product } from './schema.js';
 import type { CatalogContract, CreateProductInput, UpdateProductInput } from './contract.js';
+import { queuePolarProduct } from './polar-queue.js';
+import { polarServer } from './polar-config.js';
+import type { CatalogBillingResponse } from '@mercadoya/contracts';
 
 export function createCatalogContract(media: MediaContract): CatalogContract {
   return {
@@ -15,16 +18,21 @@ export function createCatalogContract(media: MediaContract): CatalogContract {
       const image = await media.processProductImage(input.image);
 
       try {
-        const [createdProduct] = await db
-          .insert(product)
-          .values({
-            title: input.title,
-            description: input.description,
-            price: input.price,
-            stock: input.stock,
-            imagePath: image.imagePath,
-          })
-          .returning();
+        const createdProduct = await db.transaction(async (tx) => {
+          const [created] = await tx
+            .insert(product)
+            .values({
+              title: input.title,
+              description: input.description,
+              price: input.price,
+              stock: input.stock,
+              imagePath: image.imagePath,
+            })
+            .returning();
+          if (!created) throw new Error('No se pudo guardar el producto.');
+          await tx.execute(queuePolarProduct(created, polarServer()));
+          return created;
+        });
 
         return createdProduct;
       } catch (error) {
@@ -39,18 +47,22 @@ export function createCatalogContract(media: MediaContract): CatalogContract {
 
       const image = input.image ? await media.processProductImage(input.image) : null;
       try {
-        const [updated] = await db
-          .update(product)
-          .set({
-            title: input.title,
-            description: input.description,
-            price: input.price,
-            stock: input.stock,
-            ...(image ? { imagePath: image.imagePath } : {}),
-            updatedAt: new Date(),
-          })
-          .where(eq(product.id, id))
-          .returning();
+        const updated = await db.transaction(async (tx) => {
+          const [changed] = await tx
+            .update(product)
+            .set({
+              title: input.title,
+              description: input.description,
+              price: input.price,
+              stock: input.stock,
+              ...(image ? { imagePath: image.imagePath } : {}),
+              updatedAt: new Date(),
+            })
+            .where(eq(product.id, id))
+            .returning();
+          if (changed) await tx.execute(queuePolarProduct(changed, polarServer()));
+          return changed;
+        });
 
         if (!updated) {
           if (image) await media.deleteProductImage(image).catch(() => undefined);
@@ -72,7 +84,11 @@ export function createCatalogContract(media: MediaContract): CatalogContract {
     },
 
     async deleteProduct(id: string) {
-      const [deleted] = await db.delete(product).where(eq(product.id, id)).returning();
+      const deleted = await db.transaction(async (tx) => {
+        const [removed] = await tx.delete(product).where(eq(product.id, id)).returning();
+        if (removed) await tx.execute(queuePolarProduct(removed, polarServer(), true));
+        return removed;
+      });
       if (!deleted) return false;
       await media
         .deleteProductImage({
@@ -81,6 +97,29 @@ export function createCatalogContract(media: MediaContract): CatalogContract {
         })
         .catch(() => undefined);
       return true;
+    },
+
+    async getBillingProduct(productId): Promise<CatalogBillingResponse | null> {
+      const result = await db.execute(sql`SELECT p.id, round(p.price*100)::bigint AS unit_amount,
+        s.polar_product_id, s.state, s.version, s.synced_version, s.error_code, s.next_attempt_at
+        FROM product p LEFT JOIN catalog_polar_product s ON s.product_id=p.id AND s.server=${polarServer()}
+        WHERE p.id=${productId}`);
+      const row = result.rows[0];
+      if (!row) return null;
+      if (row.state === 'synced' && row.version === row.synced_version && row.polar_product_id) {
+        return {
+          status: 'ready',
+          product: {
+            productId,
+            polarProductId: String(row.polar_product_id),
+            unitAmount: Number(row.unit_amount),
+            currency: 'pen',
+          },
+        };
+      }
+      return row.state === 'error' || (row.state && row.next_attempt_at === null)
+        ? { status: 'failed', product: null }
+        : { status: 'pending', product: null };
     },
 
     async getAvailableStock(productId) {

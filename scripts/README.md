@@ -1,6 +1,6 @@
 # Demo de saga
 
-Prepara `.env` como indica el README raíz, ejecuta `pnpm demo:infra` y deja `pnpm dev` activo. Se requieren PostgreSQL, NATS, Catalog/Media, Orders e Inventory v2 actualizado. El simulador arranca con Orders. No hay un proceso de pagos separado.
+Esta es la demo histórica del simulador. Configura `PAYMENT_PROVIDER=simulator` en `.env`, reinicia Orders con `pnpm demo:infra` y deja `pnpm dev` activo. Se requieren PostgreSQL, NATS, Catalog/Media, Orders e Inventory v2 actualizado. El CLI rechaza el default Polar; para probar el checkout y webhook reales usa [Orders/Payments](../apps/orders-service/README.md).
 
 Crea desde la UI admin un producto de clase con al menos dos unidades. Después ejecuta desde la raíz:
 

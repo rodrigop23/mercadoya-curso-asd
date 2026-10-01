@@ -1,4 +1,5 @@
 import { queryOptions } from '@tanstack/react-query';
+import { paymentCheckoutResponseSchema } from '@mercadoya/contracts';
 
 import { API_BASE_URL } from './products';
 
@@ -57,5 +58,20 @@ export function orderQueryOptions(orderId: string) {
     queryKey: ['orders', orderId],
     queryFn: () => getOrder(orderId),
     refetchInterval: (query) => (query.state.data?.status === 'pending' ? 750 : false),
+  });
+}
+
+export function checkoutQueryOptions(orderId: string) {
+  return queryOptions({
+    queryKey: ['orders', orderId, 'checkout'],
+    queryFn: async () => {
+      const response = await fetch(
+        `${API_BASE_URL}/api/orders/${encodeURIComponent(orderId)}/checkout`,
+        { credentials: 'include' },
+      );
+      if (!response.ok) throw await readApiError(response, 'No se pudo preparar el pago.');
+      return paymentCheckoutResponseSchema.parse(await response.json());
+    },
+    refetchInterval: (query) => (query.state.data?.provider === 'simulator' ? false : 1000),
   });
 }

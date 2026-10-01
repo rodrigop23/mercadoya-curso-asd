@@ -2,7 +2,7 @@
 openapi: 3.1.0
 info:
   title: MercadoYa Catalog
-  version: 1.1.0
+  version: 1.2.0
   description: Catalog y Media comparten proceso en :3007; Kong publica el CRUD en :8000. Stock interno solo usa http://catalog:3007 en Compose. Multipart conserva strings para price/stock; los refinements numéricos se ejecutan después de convertirlos. Las rutas internas conservan x-catalog-internal-token; Kong responde 404 para ellas. Directo al servicio solo Bearer JWT, vía Kong también cookie de sesión. Límite de formulario 3 MiB e imagen 2 MiB.
 servers:
   - url: http://localhost:8000
@@ -96,7 +96,7 @@ paths:
           multipart/form-data:
             schema:
               $ref: "#/components/schemas/CreateProduct"
-      description: Requiere admin. Media procesa la imagen dentro del módulo; no existe endpoint HTTP de upload separado.
+      description: Requiere admin. Media procesa la imagen dentro del módulo. El producto y su sincronización pendiente se guardan juntos; 201 confirma el guardado local sin esperar a Polar. No existe endpoint HTTP de upload separado.
   /api/products/{id}:
     put:
       operationId: updateProduct
@@ -240,7 +240,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "503":
-          description: Token interno no configurado.
+          description: Servicio no disponible o configuración incompleta.
           content:
             application/json:
               schema:
@@ -253,6 +253,67 @@ paths:
             type: string
             format: uuid
             pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+  /api/internal/catalog/products/{id}/billing:
+    servers:
+      - url: http://localhost:3007
+        description: Catalog/Media directo; mutaciones solo Bearer JWT, stock solo token interno.
+    get:
+      operationId: getBillingProduct
+      summary: Consultar producto Polar y precio PEN para Orders
+      security:
+        - catalogInternalToken: []
+      responses:
+        "200":
+          description: Producto sincronizado. Importe unitario en céntimos de sol.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogBillingResponse"
+        "202":
+          description: Sincronización pendiente. No crear un pedido todavía.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogBillingResponse"
+        "400":
+          description: Solicitud inválida.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Falta una sesión o credencial válida.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: La sincronización falló y será reintentada.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogBillingResponse"
+        "503":
+          description: Servicio no disponible o configuración incompleta.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+      description: "No se publica en Kong. Responde Cache-Control: no-store. El comprador no controla el precio ni el ID Polar."
   /api/internal/catalog/products/{id}/adjust-stock:
     servers:
       - url: http://localhost:3007
@@ -282,7 +343,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "503":
-          description: Token interno no configurado.
+          description: Servicio no disponible o configuración incompleta.
           content:
             application/json:
               schema:
@@ -432,7 +493,7 @@ components:
         price:
           type: string
           pattern: ^\d+(?:\.\d{1,2})?$
-          description: String decimal; tras trim, mayor que 0 y hasta 99999999.99.
+          description: String decimal en soles PEN; tras trim, entre 2.00 y 999999.99, hasta dos decimales.
         stock:
           type: string
           pattern: ^\d+$
@@ -461,7 +522,7 @@ components:
         price:
           type: string
           pattern: ^\d+(?:\.\d{1,2})?$
-          description: String decimal; tras trim, mayor que 0 y hasta 99999999.99.
+          description: String decimal en soles PEN; tras trim, entre 2.00 y 999999.99, hasta dos decimales.
         stock:
           type: string
           pattern: ^\d+$
@@ -486,6 +547,59 @@ components:
             - type: "null"
       required:
         - availableStock
+    CatalogBillingResponse:
+      oneOf:
+        - type: object
+          properties:
+            status:
+              type: string
+              const: ready
+            product:
+              type: object
+              properties:
+                productId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                polarProductId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                unitAmount:
+                  type: integer
+                  minimum: 200
+                  maximum: 99999999
+                currency:
+                  type: string
+                  const: pen
+              required:
+                - productId
+                - polarProductId
+                - unitAmount
+                - currency
+          required:
+            - status
+            - product
+        - type: object
+          properties:
+            status:
+              type: string
+              const: pending
+            product:
+              type: "null"
+          required:
+            - status
+            - product
+        - type: object
+          properties:
+            status:
+              type: string
+              const: failed
+            product:
+              type: "null"
+          required:
+            - status
+            - product
     StockAdjustmentResponse:
       oneOf:
         - type: object

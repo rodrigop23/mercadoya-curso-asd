@@ -38,6 +38,9 @@ importers:
       '@mercadoya/jwt-verifier':
         specifier: workspace:*
         version: link:../../packages/jwt-verifier
+      '@polar-sh/sdk':
+        specifier: 1.0.1
+        version: 1.0.1
       dotenv:
         specifier: ^18.0.2
         version: 18.0.2
@@ -314,6 +317,9 @@ importers:
       '@nats-io/transport-node':
         specifier: ^3.4.0
         version: 3.4.0
+      '@polar-sh/sdk':
+        specifier: 1.0.1
+        version: 1.0.1
       dotenv:
         specifier: ^18.0.2
         version: 18.0.2
@@ -342,6 +348,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@mercadoya/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@mercadoya/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -1919,6 +1928,10 @@ packages:
     resolution: {integrity: sha512-oxMK4vllB9RK5NQ2l1pq1IfOf2AvnEuj/vYGDj0H2nMtmtZpKtCwt/l00GEO6xjGfpBNAvjovvYdCm50dRQkpQ==}
     engines: {node: '>=20'}
     hasBin: true
+
+  '@polar-sh/sdk@1.0.1':
+    resolution: {integrity: sha512-//SIpog6sairTzqC04mIsdp8fqeHfpCd3iweLUOyCm7c4IHlRoaUEWFMGRTDPUjvyu4KBYODaI7aODr9acLQhA==}
+    engines: {node: '>=22'}
 
   '@protobufjs/aspromise@1.1.2':
     resolution: {integrity: sha512-j+gKExEuLmKwvz3OgROXtrJ2UG2x8Ch2YZUxahh+s1F2HZ+wAceUNLkvy6zKCPVRkU++ZWQrdxsUeQXmcg4uoQ==}
@@ -6297,6 +6310,8 @@ snapshots:
   '@playwright/test@1.63.0':
     dependencies:
       playwright: 1.63.0
+
+  '@polar-sh/sdk@1.0.1': {}
 
   '@protobufjs/aspromise@1.1.2': {}
 

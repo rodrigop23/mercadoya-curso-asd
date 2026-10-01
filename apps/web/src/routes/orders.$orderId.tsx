@@ -1,11 +1,11 @@
 import { useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { ArrowLeft, CheckCircle2, CircleAlert, LoaderCircle } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, CircleAlert, CreditCard, LoaderCircle } from 'lucide-react';
 
 import { buttonVariants } from '@mercadoya/ui/components/button';
 import { Card, CardContent, CardDescription, CardHeader } from '@mercadoya/ui/components/card';
-import { orderQueryOptions } from '@/lib/orders';
+import { checkoutQueryOptions, orderQueryOptions } from '@/lib/orders';
 import { productsQueryOptions } from '@/lib/products';
 
 export const Route = createFileRoute('/orders/$orderId')({ component: OrderPage });
@@ -27,6 +27,12 @@ const rejectionReasons: Record<string, string> = {
   product_not_found: 'El producto ya no está disponible.',
   insufficient_stock: 'No hay stock suficiente para completar el pedido.',
   stock_limit: 'La reserva supera el límite de stock del producto.',
+  polar_checkout_expired: 'El plazo para pagar terminó. Estamos devolviendo las unidades al stock.',
+  polar_checkout_failed: 'El pago no se completó. Estamos devolviendo las unidades al stock.',
+  polar_order_void: 'El pago fue anulado. Estamos devolviendo las unidades al stock.',
+  polar_product_unconfigured: 'El pago de este producto aún no está disponible.',
+  polar_checkout_rejected: 'No se pudo preparar el pago de este pedido.',
+  polar_amount_invalid: 'El importe del pedido supera el límite de pago.',
 };
 
 const dateFormatter = new Intl.DateTimeFormat('es-PE', {
@@ -44,6 +50,11 @@ function OrderPage() {
   const queryClient = useQueryClient();
   const orderQuery = useQuery(orderQueryOptions(orderId));
   const order = orderQuery.data;
+  const checkoutQuery = useQuery({
+    ...checkoutQueryOptions(orderId),
+    enabled: order?.status === 'pending',
+  });
+  const checkout = checkoutQuery.data?.checkout;
   const productsQuery = useQuery(productsQueryOptions);
   const product = productsQuery.data?.find((item) => item.id === order?.productId);
 
@@ -105,22 +116,57 @@ function OrderPage() {
             <CardContent className="px-5 py-5 sm:px-6">
               {order.status === 'pending' ? (
                 <div className="flex items-start gap-3 rounded-lg bg-amber-50 px-4 py-3 text-amber-950">
-                  <LoaderCircle
-                    className="mt-0.5 size-4 shrink-0 animate-spin motion-reduce:animate-none"
-                    aria-hidden="true"
-                  />
+                  {checkout ? (
+                    <CreditCard className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                  ) : (
+                    <LoaderCircle
+                      className="mt-0.5 size-4 shrink-0 animate-spin motion-reduce:animate-none"
+                      aria-hidden="true"
+                    />
+                  )}
                   <div>
-                    <p className="text-sm font-semibold">Confirmando stock…</p>
-                    <p className="mt-1 text-sm leading-5 text-amber-900">
-                      Inventory está procesando la reserva. Esta página se actualizará sola.
+                    <p className="text-sm font-semibold" role="status">
+                      {checkout ? 'Tu pedido está listo para pagar' : 'Preparando tu pedido…'}
                     </p>
+                    <p className="mt-1 text-sm leading-5 text-amber-900">
+                      {checkout
+                        ? 'Completa el pago en Polar. El pedido se confirmará cuando recibamos el cobro.'
+                        : 'Estamos comprobando el stock y preparando el pago. Esta página se actualizará sola.'}
+                    </p>
+                    {checkout ? (
+                      <div className="mt-3 flex flex-col items-start gap-2">
+                        <a href={checkout.url} className={buttonVariants()}>
+                          Pagar en Polar
+                        </a>
+                        <p className="text-sm text-amber-900">
+                          {new Intl.NumberFormat('es-PE', {
+                            style: 'currency',
+                            currency: checkout.currency,
+                          }).format(checkout.amount / 100)}{' '}
+                          antes de impuestos. Disponible hasta {formatDate(checkout.expiresAt)}.
+                        </p>
+                      </div>
+                    ) : checkoutQuery.error ? (
+                      <div className="mt-3 flex flex-col items-start gap-2">
+                        <p role="alert" className="text-sm">
+                          No se pudo consultar el pago. Vuelve a intentarlo.
+                        </p>
+                        <button
+                          type="button"
+                          className={buttonVariants({ variant: 'outline' })}
+                          onClick={() => void checkoutQuery.refetch()}
+                        >
+                          Reintentar
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               ) : order.status === 'confirmed' ? (
                 <div className="flex items-start gap-3 rounded-lg bg-emerald-50 px-4 py-3 text-emerald-950">
                   <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                   <div>
-                    <p className="text-sm font-semibold">Stock reservado</p>
+                    <p className="text-sm font-semibold">Pedido confirmado</p>
                     <p className="mt-1 text-sm leading-5 text-emerald-900">
                       El pedido quedó confirmado y el catálogo muestra el stock actualizado.
                     </p>
@@ -130,11 +176,12 @@ function OrderPage() {
                 <div className="flex items-start gap-3 rounded-lg bg-red-50 px-4 py-3 text-red-950">
                   <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                   <div>
-                    <p className="text-sm font-semibold">No se pudo reservar el stock</p>
+                    <p className="text-sm font-semibold">El pedido no se completó</p>
                     <p className="mt-1 text-sm leading-5 text-red-900">
                       {order.rejectionReason
-                        ? (rejectionReasons[order.rejectionReason] ?? order.rejectionReason)
-                        : 'El inventario rechazó este pedido.'}
+                        ? (rejectionReasons[order.rejectionReason] ??
+                          'No se pudo completar este pedido. Puedes volver al catálogo e intentarlo de nuevo.')
+                        : 'No se pudo completar este pedido.'}
                     </p>
                   </div>
                 </div>

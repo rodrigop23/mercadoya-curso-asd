@@ -25,8 +25,8 @@ function productSchema(requiresImage: boolean) {
     price: z
       .string()
       .regex(/^\d+(?:\.\d{1,2})?$/, 'El precio debe tener hasta dos decimales.')
-      .refine((value) => Number(value) >= 0.01 && Number(value) <= 99_999_999.99, {
-        message: 'El precio debe estar entre S/ 0.01 y S/ 99,999,999.99.',
+      .refine((value) => Number(value) >= 2 && Number(value) <= 999_999.99, {
+        message: 'El precio debe estar entre S/ 2.00 y S/ 999,999.99.',
       }),
     stock: z
       .string()
@@ -153,8 +153,8 @@ export function AdminProductForm({
                       <field.FormInput
                         label="Precio (S/)"
                         type="number"
-                        min="0.01"
-                        max="99999999.99"
+                        min="2"
+                        max="999999.99"
                         step="0.01"
                         required
                         placeholder="0.00"

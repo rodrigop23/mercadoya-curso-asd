@@ -1,17 +1,37 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { createOrderSchema } from '@mercadoya/contracts';
+import { createOrderSchema, type PaymentCheckoutResponse } from '@mercadoya/contracts';
 
 import type { IdentityContract } from '../identity/contract.js';
 import type { createOrdersService } from './service.js';
+import { CatalogBillingError } from '../catalog/http.js';
 
 export function createOrdersRoutes(
   orders: ReturnType<typeof createOrdersService>,
   identity: IdentityContract,
+  payments?: { getCheckout(orderId: string): Promise<PaymentCheckoutResponse> },
 ) {
   const routes = new Hono({ strict: false });
 
   routes.get('/health', (c) => c.json({ module: 'orders', ok: true }));
+
+  routes.get('/:orderId/checkout', async (c) => {
+    const session = await identity.getSession(c.req.raw.headers);
+    if (!session) return c.json({ error: 'Unauthorized' }, 401);
+    const orderId = z.uuid().safeParse(c.req.param('orderId'));
+    if (!orderId.success) return c.json({ error: 'Pedido inválido.' }, 400);
+    try {
+      const order = await orders.getOrder(orderId.data);
+      if (!order || order.buyerId !== session.user.id)
+        return c.json({ error: 'El pedido no existe.' }, 404);
+      c.header('Cache-Control', 'no-store');
+      if (!payments) return c.json({ provider: 'simulator', checkout: null }, 200);
+      const result = await payments.getCheckout(orderId.data);
+      return c.json(result, result.checkout || order.status !== 'pending' ? 200 : 202);
+    } catch {
+      return c.json({ error: 'No se pudo consultar el checkout.' }, 503);
+    }
+  });
 
   routes.get('/:orderId', async (c) => {
     const session = await identity.getSession(c.req.raw.headers);
@@ -66,6 +86,8 @@ export function createOrdersRoutes(
 
       return c.json({ order: result.order }, 202);
     } catch (error) {
+      if (error instanceof CatalogBillingError)
+        return c.json({ error: error.message }, error.status);
       console.error('No se pudo crear el pedido:', error);
       return c.json({ error: 'No se pudo crear el pedido.' }, 500);
     }

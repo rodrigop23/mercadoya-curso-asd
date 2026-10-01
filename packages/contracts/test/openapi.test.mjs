@@ -7,6 +7,19 @@ const orders = generatedDocuments.get('apps/orders-service/openapi.yaml');
 const identity = generatedDocuments.get('apps/identity-service/openapi.yaml');
 const catalog = generatedDocuments.get('apps/catalog-service/openapi/catalog.yaml');
 
+test('checkout requiere auth y webhook documenta firma pública y ACK async', () => {
+  const checkout = orders.paths['/api/orders/{orderId}/checkout'].get;
+  assert.deepEqual(checkout.security, [{ betterAuthSession: [] }, { applicationJWT: [] }]);
+  assert.ok(checkout.responses[202]);
+  const webhook = orders.paths['/api/payments/polar/webhook'].post;
+  assert.deepEqual(webhook.security, []);
+  assert.deepEqual(
+    webhook.parameters.map((header) => header.name),
+    ['webhook-id', 'webhook-timestamp', 'webhook-signature'],
+  );
+  for (const status of [202, 400, 403, 413, 503]) assert.ok(webhook.responses[status]);
+});
+
 test('Inventory anuncia el despliegue correcto para cada versión y usa el alias v2', () => {
   for (const prefix of ['/api/inventory', '/api/inventory/v1', '/api/inventory/v2']) {
     const path = inventory.paths[`${prefix}/reservations/{orderId}`];
@@ -62,7 +75,7 @@ test('los bordes documentados distinguen sesión browser, JWT y token interno de
 });
 
 test('Catalog documenta origen interno y límites reales de Kong y Hono', () => {
-  for (const suffix of ['stock', 'adjust-stock']) {
+  for (const suffix of ['stock', 'adjust-stock', 'billing']) {
     assert.deepEqual(
       catalog.paths[`/api/internal/catalog/products/{id}/${suffix}`].servers.map(
         (server) => server.url,

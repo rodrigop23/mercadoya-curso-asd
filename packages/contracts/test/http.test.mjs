@@ -110,6 +110,8 @@ test('Catalog transforma multipart y rechaza precios/stock fuera del rango actua
     { title: ' ' },
     { description: ' ' },
     { price: '0' },
+    { price: '1.99' },
+    { price: '1000000.00' },
     { price: '100000000.00' },
     { price: '1.234' },
     { price: 10 },
@@ -119,7 +121,7 @@ test('Catalog transforma multipart y rechaza precios/stock fuera del rango actua
   ])
     assert.equal(productFormSchema.safeParse({ ...input, ...invalid }).success, false);
   assert.equal(
-    productFormSchema.safeParse({ ...input, price: '99999999.99', stock: '2147483647' }).success,
+    productFormSchema.safeParse({ ...input, price: '999999.99', stock: '2147483647' }).success,
     true,
   );
   assert.equal(

@@ -4,6 +4,8 @@ import { eventSubjects, orderPlacedEventSchema } from '@mercadoya/contracts';
 import { db } from '../db/index.js';
 import type { EventBus } from '../events/event-bus.js';
 import { orderRecord, type OrderStatus } from './schema.js';
+import type { CatalogBillingPort } from '../catalog/http.js';
+import { CatalogBillingError } from '../catalog/http.js';
 
 export type CreateOrderInput = {
   productId: string;
@@ -12,15 +14,25 @@ export type CreateOrderInput = {
   paymentMode?: 'succeed' | 'fail';
 };
 
-export function createOrdersService(eventBus: EventBus) {
+function publicOrder(row: typeof orderRecord.$inferSelect) {
+  const { paymentProduct, ...order } = row;
+  void paymentProduct;
+  return order;
+}
+
+export function createOrdersService(eventBus: EventBus, catalog?: CatalogBillingPort) {
   return {
     async createOrder(input: CreateOrderInput) {
+      const paymentProduct = catalog ? await catalog.getBillingProduct(input.productId) : null;
+      if (paymentProduct && paymentProduct.unitAmount * input.quantity > 99_999_999)
+        throw new CatalogBillingError(409, 'El importe del pedido supera el máximo permitido.');
       const [createdOrder] = await db
         .insert(orderRecord)
         .values({
           productId: input.productId,
           quantity: input.quantity,
           buyerId: input.buyerId,
+          paymentProduct,
           status: 'pending',
         })
         .returning();
@@ -41,7 +53,7 @@ export function createOrdersService(eventBus: EventBus) {
       });
       await eventBus.publish(eventSubjects.ordersPlaced, event);
 
-      return { order: createdOrder };
+      return { order: publicOrder(createdOrder) };
     },
 
     async getOrder(orderId: string) {
@@ -51,7 +63,7 @@ export function createOrdersService(eventBus: EventBus) {
         .where(eq(orderRecord.id, orderId))
         .limit(1);
 
-      return order ?? null;
+      return order ? publicOrder(order) : null;
     },
 
     async recordSagaResult(input: {
@@ -69,7 +81,7 @@ export function createOrdersService(eventBus: EventBus) {
         .where(and(eq(orderRecord.id, input.orderId), eq(orderRecord.status, 'pending')))
         .returning();
 
-      return order ?? null;
+      return order ? publicOrder(order) : null;
     },
   };
 }

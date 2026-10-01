@@ -32,6 +32,8 @@ Material para el walkthrough:
 - C4 S5 en Mermaid: [contexto](docs/diagrams/c4-1-context.md), [contenedores](docs/diagrams/c4-2-containers-v4.md) y [componentes del API, Orders y Notifications](docs/diagrams/c4-3-components-v4.md).
 - Secuencias S5: [saga de compra, compensación y email](docs/diagrams/seq-order-placed-fanout-v4.md) y [admin en MF catálogo](docs/diagrams/seq-admin-mf-catalog-v4.md). Las [vistas V2](docs/diagrams/c4-2-containers.md) y [Archify](docs/diagrams/archify/README.md) se conservan como material histórico.
 
+Los productos se sincronizan automáticamente en segundo plano desde Catalog hacia Polar al crearlos o actualizarlos, y se archivan en Polar al eliminarlos del aplicativo. El catálogo y los checkouts nuevos usan soles peruanos PEN. Orders guarda el precio antes de iniciar la saga; ya no se configura un JSON de productos en env. Consulta [Catalog y sincronización](apps/catalog-service/README.md#sincronización-con-polar), [pagos y sandbox](apps/orders-service/README.md) y [ADR 0021](docs/adr/0021-polar-catalog-sync-pen.md).
+
 ## Requisitos
 
 - Node.js `24.14.1` o superior. El scaffold se creó usando el Node ya instalado en el sistema: `v24.14.1`.
@@ -60,7 +62,7 @@ pnpm test
 
 Turbo ejecuta los scripts de todos los workspaces que los declaran. `build` incluye `@mercadoya/contracts`, Catalog/Media, Orders, Inventory, Notifications, web, MF catálogo y el demo cloud. `typecheck` construye primero las dependencias de cada consumidor para resolver los exports de `contracts` desde un checkout limpio. `test` construye el paquete y sus dependencias antes de ejecutar su suite. El nuevo script raíz `test` delega en Turbo; los scripts existentes se conservan.
 
-La suite usa `node:test` de Node 24.14.1. Los nuevos tests comprueban DTOs de Orders, Identity y Catalog, multipart, stock interno y auth/servers de las specs. `pnpm openapi:check` compara specs y schemas generados byte a byte y ejecuta Redocly; `pnpm openapi:generate` los regenera. Los tests de `contracts` importan el export público compilado y verifican los subjects NATS v1, eventos válidos, versiones, UUIDs, cantidades, fechas, causas de rechazo, override de pago y compatibilidad de las respuestas HTTP de Inventory v1/v2. Notifications conserva sus tests del handler con `fetch` simulado para envío. No se inicia ningún servidor ni se requiere Postgres, NATS, Docker, `.env`, credenciales AWS o secretos de producción. Esto no cubre persistencia, transporte NATS, browser ni el flujo completo de compra.
+La suite usa `node:test` de Node 24.14.1. `pnpm test` comprueba DTOs, multipart, auth/servers, firma/payload Polar, eventos v1 y los handlers de Notifications sin servicios externos. `pnpm openapi:check` compara specs y schemas generados byte a byte y ejecuta Redocly; `pnpm openapi:generate` los regenera. CI añade el job `polar-saga`, que sí usa PostgreSQL y NATS dedicados para verificar persistencia, transporte, éxito, compensación, duplicados y recuperación. El gateway Polar de esa suite es de prueba, sin credenciales ni compras reales; el flujo de sandbox se documenta en [Orders/Payments](apps/orders-service/README.md).
 
 Para ejecutar solo una suite con sus builds previos:
 
@@ -163,19 +165,19 @@ curl -i http://localhost:8000/api/inventory/v2/health
 curl -i http://localhost:8000/api/notifications/health
 ```
 
-Las dos primeras solicitudes responden `401` y las rutas de health responden `200`. Para comprobar el camino con sesión, inicia sesión con el cookie jar de [autenticación local](#autenticación-local), crea un producto con stock y envía el pedido con `-b /tmp/mercadoya-cookies.txt`. El `POST` responde `202` con `buyerId`; Inventory v2 consume `orders.placed`, reserva stock mediante el token interno de Catalog y publica el resultado. Consulta `/api/inventory/v2/reservations/:orderId` con el mismo cookie jar y revisa los logs de Notifications para el resultado del handler y su `emailStatus`. La reserva dispara el simulador; el pedido se confirma solo con `payment.succeeded`.
+Las dos primeras solicitudes responden `401` y las rutas de health responden `200`. Para comprobar el camino con sesión, inicia sesión con el cookie jar de [autenticación local](#autenticación-local), crea un producto con stock y envía el pedido con `-b /tmp/mercadoya-cookies.txt`. El `POST` responde `202` con `buyerId`; Inventory v2 consume `orders.placed`, reserva stock mediante el token interno de Catalog y publica el resultado. La reserva crea el checkout Polar. Consulta `/api/orders/:orderId/checkout` con la sesión del comprador o abre la página del pedido y pulsa Pagar en Polar. Solo el webhook de cobro produce `payment.succeeded` y confirma el pedido. Configuración de sandbox, firma y eventos en [Orders/Payments](apps/orders-service/README.md).
 
 ### Saga, compensación y correos
 
-Orders `:3002` aloja el simulador de pago. `inventory.reserved` inicia el pago simulado y `payment.succeeded` confirma el pedido. `inventory.rejected` rechaza sin pago. `payment.failed` rechaza el pedido y dispara la liberación en Inventory v2, que restaura stock y publica `inventory.released`. El rechazo y el correo de pago fallido pueden aparecer antes de completar la liberación. Consulta [ADR 0015](docs/adr/0015-saga-coreografia-compensacion.md) y [la secuencia canónica](docs/diagrams/seq-order-placed-fanout-v4.md).
+Orders `:3002` integra Polar sandbox por defecto. `inventory.reserved` crea el checkout; `order.paid` verificado produce `payment.succeeded`. `inventory.rejected` rechaza sin pago. El fallo, la expiración o una orden Polar anulada producen `payment.failed`, que rechaza el pedido y dispara la liberación en Inventory v2. Inventory restaura stock y publica `inventory.released`. El webhook público en Kong usa firma Standard Webhooks y un inbox PostgreSQL para procesar async e idempotentemente. Los subjects mantienen `version: 1` y añaden correlación opcional. Consulta [la integración y sus límites NATS Core](apps/orders-service/README.md) y [ADR 0019](docs/adr/0019-polar-payments-saga.md).
 
 Con la demo activa y un producto dedicado con al menos dos unidades, ejecuta:
 
 ```sh
-pnpm demo:saga
+PAYMENT_PROVIDER=simulator pnpm demo:saga
 ```
 
-[La guía del CLI](scripts/README.md) explica los tres casos y la prueba de fallos duplicados. El CLI crea pedidos persistentes y consume una unidad en el caso exitoso. `PAYMENT_MODE=succeed` es el valor por defecto; `fail` fuerza fallos tras reiniciar Orders. El override `paymentMode` del CLI tiene prioridad y no forma parte del POST público.
+[La guía del CLI](scripts/README.md) conserva los casos del simulador y la prueba de fallos duplicados. Requiere reiniciar Orders con `PAYMENT_PROVIDER=simulator`. El CLI crea pedidos persistentes y consume una unidad en el caso exitoso. `PAYMENT_MODE` y el override interno `paymentMode` solo actúan en simulator; el POST público lo descarta. Para Polar usa la compra desde la web y el dashboard sandbox.
 
 Notifications escucha solo estos desenlaces y renderiza los templates con React Email:
 
@@ -223,6 +225,24 @@ pnpm dev
 - Inventory v2: <http://localhost:8000/api/inventory/v2/health>
 - Notifications: <http://localhost:8000/api/notifications/health>
 
+### Pagos sandbox con Cloudflare Tunnel
+
+Para recibir webhooks de Polar durante el desarrollo local, mantén una segunda terminal con el túnel hacia Kong:
+
+```sh
+cloudflared tunnel --url http://localhost:8000
+```
+
+Registra en **Polar sandbox → Settings → Webhooks** la URL HTTPS que imprime el túnel, añadiendo `/api/payments/polar/webhook`. Copia el secret del endpoint a `POLAR_WEBHOOK_SECRET` en el `.env` de la raíz y recarga Orders:
+
+```sh
+docker compose up -d --force-recreate --no-deps orders
+```
+
+La [guía paso a paso de sandbox](apps/orders-service/README.md#preparar-sandbox) incluye instalación de `cloudflared`, formato Raw, API `2026-04`, eventos, revisión de entregas y la tarjeta de prueba `4242 4242 4242 4242`, con fecha futura y CVC `123`. Si el túnel cambia de URL, actualiza el endpoint en Polar.
+
+### Desarrollo de backends
+
 Para desarrollar un backend fuera de Compose, detén su contenedor y usa `pnpm --filter @mercadoya/<servicio> dev`, ajustando el upstream de Kong a `host.docker.internal`. Para apagar el laboratorio usa `docker compose down`; añadir `-v` elimina datos.
 
 El smoke requiere una base de prueba y crea datos temporales:
@@ -234,7 +254,7 @@ set +a
 pnpm --filter @mercadoya/identity-service smoke
 ```
 
-CI ejecuta login/sesión, JWKS, CRUD con cookie y Bearer, buyer 403, uploads/full/thumb, CORS, límites, stock interno y creación/confirmación de pedido con Inventory v2. La demo saga comprueba también rechazo, compensación y eventos duplicados. Las pruebas del verificador cubren issuer/audience incorrectos, firma, expiración, algoritmo, kid y solapamiento de rotación.
+CI ejecuta login/sesión, JWKS, CRUD con cookie y Bearer, buyer 403, uploads/full/thumb, CORS, límites, stock interno y el smoke histórico con simulator explícito. El job `polar-saga` prueba firma/payload, inbox durable, publishers serializados, éxito, compensación, duplicados, reinicios y compatibilidad con Inventory/Notifications usando PostgreSQL/NATS reales y un gateway Polar de prueba. No requiere credenciales Polar. Las pruebas del verificador cubren issuer/audience incorrectos, firma, expiración, algoritmo, kid y solapamiento de rotación.
 
 ## Autenticación local
 
@@ -320,6 +340,6 @@ Se conservan las versiones instaladas en la máquina: Node `v24.14.1` y pnpm `11
 
 ## Saga de compra por coreografía
 
-En `v3-services`, Inventory reserva stock al recibir `orders.placed`. El pedido sigue `pending` tras `inventory.reserved`; un simulador didáctico dentro de Orders publica `payment.succeeded` para confirmarlo o `payment.failed` para rechazarlo. El fallo activa la compensación en Inventory v2, que restaura stock y publica `inventory.released`. El rechazo por stock no inicia Payment ni libera reservas. No hay orquestador ni PSP real.
+Inventory reserva stock al recibir `orders.placed`. El pedido sigue `pending` tras `inventory.reserved`, que ahora crea el checkout Polar. El webhook publica `payment.succeeded` para confirmarlo o `payment.failed` para rechazarlo. El fallo activa la compensación en Inventory v2, que restaura stock y publica `inventory.released`. El rechazo por stock no inicia Payment ni libera reservas. La [guía de Payments](apps/orders-service/README.md) documenta sandbox, eventos, reintentos y NATS Core.
 
-Ejecuta `pnpm demo:saga` para comprobar los tres caminos y fallos duplicados. Los requisitos y efectos sobre los datos están en el [README del CLI](scripts/README.md). Notifications envía con Resend y React Email un correo por desenlace: confirmación, rechazo por stock o fallo de pago. También admite modo stub. Sigue el [checklist V3](docs/demo-v3.md) para preparar la clase y consultar los ADRs y diagramas de saga y correo.
+El CLI `pnpm demo:saga` conserva la demo histórica y requiere `PAYMENT_PROVIDER=simulator`. Los requisitos y efectos sobre los datos están en el [README del CLI](scripts/README.md). Notifications envía con Resend y React Email un correo por desenlace: confirmación, rechazo por stock o fallo de pago. También admite modo stub. La guía de sandbox actual está en [Orders/Payments](apps/orders-service/README.md); el [checklist V3](docs/demo-v3.md) conserva el ejercicio anterior.

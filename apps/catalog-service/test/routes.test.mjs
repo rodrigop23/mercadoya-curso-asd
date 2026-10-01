@@ -53,6 +53,7 @@ function app(authorization = { allowed: true }, overrides = {}) {
       createProduct: async () => product,
       updateProduct: async () => product,
       deleteProduct: async () => true,
+      getBillingProduct: async () => ({ status: 'pending', product: null }),
       getAvailableStock: async () => 5,
       adjustStock: async () => ({ adjusted: true, availableStock: 4 }),
       ...overrides,
@@ -131,6 +132,40 @@ test('stock mantiene token S2S independiente, validación y DTO', async () => {
   assert.equal(
     (await routes.request('/api/internal/catalog/products/invalid/stock', { headers })).status,
     400,
+  );
+});
+
+test('billing es interno, sin caché y distingue sincronización pendiente, fallida y lista', async () => {
+  const path = `/api/internal/catalog/products/${id}/billing`;
+  const headers = { 'x-catalog-internal-token': 'catalog-test-token' };
+  assert.equal((await app().request(path)).status, 401);
+  for (const [status, expected] of [
+    ['pending', 202],
+    ['failed', 409],
+    ['ready', 200],
+  ]) {
+    const result = {
+      status,
+      product:
+        status === 'ready'
+          ? { productId: id, polarProductId: id, unitAmount: 1000, currency: 'pen' }
+          : null,
+    };
+    const response = await app(
+      { allowed: true },
+      { getBillingProduct: async () => result },
+    ).request(path, { headers });
+    assert.equal(response.status, expected);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.deepEqual(await response.json(), result);
+  }
+  assert.equal(
+    (
+      await app({ allowed: true }, { getBillingProduct: async () => null }).request(path, {
+        headers,
+      })
+    ).status,
+    404,
   );
 });
 test('Media genera full/thumb en el volumen configurado y Catalog las sirve sin S3', async () => {

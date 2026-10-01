@@ -13,3 +13,4 @@ minimumReleaseAgeExclude:
   - '@turbo/windows-64@2.11.3'
   - '@turbo/windows-arm64@2.11.3'
   - turbo@2.11.3
+  - '@polar-sh/sdk@1.0.1'

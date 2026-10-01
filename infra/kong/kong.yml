@@ -9,6 +9,10 @@ services:
   - name: orders
     url: http://orders:3002
     routes:
+      - name: polar-webhook-public
+        paths: ['~/api/payments/polar/webhook$']
+        methods: ['POST']
+        strip_path: false
       - name: orders-health
         paths: ['~/api/orders/health$']
         strip_path: false

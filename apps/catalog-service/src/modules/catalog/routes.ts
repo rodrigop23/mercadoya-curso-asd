@@ -31,6 +31,22 @@ export function createCatalogRoutes(identity: AdminAuthorizer, catalogContract: 
     return c.json({ availableStock });
   });
 
+  routes.get('/api/internal/catalog/products/:id/billing', async (c) => {
+    const id = z.uuid().safeParse(c.req.param('id'));
+    if (!id.success) return c.json({ error: 'Identificador de producto inválido.' }, 400);
+    c.header('Cache-Control', 'no-store');
+    try {
+      const result = await catalogContract.getBillingProduct(id.data);
+      if (!result) return c.json({ error: 'Producto no encontrado.' }, 404);
+      return c.json(
+        result,
+        result.status === 'ready' ? 200 : result.status === 'pending' ? 202 : 409,
+      );
+    } catch {
+      return c.json({ error: 'No se pudo consultar el producto para pagos.' }, 503);
+    }
+  });
+
   routes.post('/api/internal/catalog/products/:id/adjust-stock', async (c) => {
     const id = z.uuid().safeParse(c.req.param('id'));
     if (!id.success) return c.json({ error: 'Identificador de producto inválido.' }, 400);

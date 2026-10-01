@@ -22,6 +22,34 @@ export const orderResponseSchema = z.object({
   }),
 });
 
+export const paymentCheckoutResponseSchema = z.object({
+  provider: z.enum(['polar', 'simulator']),
+  checkout: z
+    .object({
+      id: uuidSchema,
+      url: z.url(),
+      expiresAt: z.iso.datetime(),
+      amount: z.number().int().positive(),
+      currency: z.string().length(3),
+    })
+    .nullable(),
+});
+export type PaymentCheckoutResponse = z.infer<typeof paymentCheckoutResponseSchema>;
+
+export const billingProductSchema = z.object({
+  productId: uuidSchema,
+  polarProductId: uuidSchema,
+  unitAmount: z.number().int().min(200).max(99_999_999),
+  currency: z.literal('pen'),
+});
+export const catalogBillingResponseSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('ready'), product: billingProductSchema }),
+  z.object({ status: z.literal('pending'), product: z.null() }),
+  z.object({ status: z.literal('failed'), product: z.null() }),
+]);
+export type BillingProduct = z.infer<typeof billingProductSchema>;
+export type CatalogBillingResponse = z.infer<typeof catalogBillingResponseSchema>;
+
 export const signUpSchema = z.strictObject({
   name: z.string().min(1),
   email: z.email(),
@@ -98,7 +126,13 @@ export const productFormSchema = z.object({
     .trim()
     .regex(/^\d+(?:\.\d{1,2})?$/, 'El precio debe tener hasta dos decimales.')
     .transform(Number)
-    .pipe(z.number().finite().positive().max(99_999_999.99)),
+    .pipe(
+      z
+        .number()
+        .finite()
+        .min(2, 'El precio mínimo es S/ 2.00.')
+        .max(999_999.99, 'El precio máximo es S/ 999,999.99.'),
+    ),
   stock: z
     .string()
     .trim()

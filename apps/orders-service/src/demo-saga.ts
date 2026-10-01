@@ -6,8 +6,15 @@ import {
   reservationResponseV2Schema,
 } from '@mercadoya/contracts';
 import { createEventBus } from './events/event-bus.js';
+import { paymentProvider } from './payment/config.js';
 import { closeDb } from './db/index.js';
 import { createOrdersService } from './orders/service.js';
+
+assert.equal(
+  paymentProvider(),
+  'simulator',
+  'demo:saga requiere PAYMENT_PROVIDER=simulator en Orders y en el CLI.',
+);
 
 // CLI interno de clase: usa la persistencia de Orders y observa NATS antes de publicar.
 const origin = process.env.CATALOG_URL || 'http://localhost:3007';

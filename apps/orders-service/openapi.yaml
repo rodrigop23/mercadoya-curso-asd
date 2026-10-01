@@ -2,8 +2,8 @@
 openapi: 3.1.0
 info:
   title: MercadoYa Orders
-  version: 2.0.0
-  description: Kong acepta sesión browser o JWT. Orders directo requiere Bearer JWT verificado por JWKS. Health público.
+  version: 2.2.0
+  description: Kong acepta sesión browser o JWT para pedidos y checkout. Orders directo requiere Bearer JWT verificado por JWKS. Health y webhook Polar públicos; webhook usa firma Standard Webhooks.
 servers:
   - url: http://localhost:8000
     description: Kong OSS local; los paths incluyen /api.
@@ -58,6 +58,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "404":
+          description: No encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: El producto aún no admite pagos o el importe supera el límite.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           description: Falló la operación.
           content:
@@ -70,13 +82,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "503":
+          description: Servicio no disponible o configuración incompleta.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       requestBody:
         required: true
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/CreateOrder"
-      description: buyerId procede del claim sub verificado. Campos extra como paymentMode se descartan; solo el CLI interno usa ese override.
+      description: buyerId procede del claim sub verificado. Con Polar, Catalog debe tener el producto sincronizado; 409 mientras se prepara y 503 si Catalog no responde. Orders guarda el precio PEN antes de publicar. Campos extra como paymentMode, moneda o importe se descartan.
   /api/orders/{orderId}:
     get:
       operationId: getOrder
@@ -93,6 +111,12 @@ paths:
                 $ref: "#/components/schemas/OrderResponse"
         "400":
           description: Solicitud inválida.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Falta una sesión o credencial válida.
           content:
             application/json:
               schema:
@@ -123,6 +147,136 @@ paths:
             type: string
             format: uuid
             pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+  /api/orders/{orderId}/checkout:
+    get:
+      operationId: getPaymentCheckout
+      summary: Consultar el checkout Polar del comprador
+      security:
+        - betterAuthSession: []
+        - applicationJWT: []
+      responses:
+        "200":
+          description: Checkout listo, pedido finalizado o proveedor simulator explícito.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentCheckoutResponse"
+        "202":
+          description: Reserva o creación de checkout pendiente; repetir consulta.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentCheckoutResponse"
+        "400":
+          description: Solicitud inválida.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Falta una sesión o credencial válida.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Servicio no disponible o configuración incompleta.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+      description: "Solo el comprador puede consultar el enlace. El importe se fija en el servidor para todas las unidades. Respuesta Cache-Control: no-store."
+  /api/payments/polar/webhook:
+    post:
+      operationId: polarWebhook
+      summary: Aceptar un webhook firmado de Polar API 2026-04
+      security: []
+      responses:
+        "202":
+          description: Firma y payload verificados; evento persistido o ignorado.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - received
+                properties:
+                  received:
+                    type: boolean
+                    const: true
+        "400":
+          description: Payload o versión de evento inválido.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Firma o timestamp inválido.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: Payload supera 262144 bytes.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Inbox no disponible o Polar no activo; Polar debe reintentar.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      description: Público en Kong, sin JWT. Standard Webhooks firma webhook-id.timestamp.rawBody; la URL no forma parte del HMAC. Configurar esta URL final sin redirects y formato Raw en Polar. Idempotencia por webhook-id. No enviar datos de cliente ni secretos en ejemplos.
+      parameters:
+        - name: webhook-id
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: webhook-timestamp
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: webhook-signature
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - type
+                - timestamp
+                - data
+              properties:
+                type:
+                  type: string
+                timestamp:
+                  type: string
+                  format: date-time
+                data:
+                  type: object
 components:
   securitySchemes:
     applicationJWT:
@@ -216,3 +370,44 @@ components:
       required:
         - productId
         - quantity
+    PaymentCheckoutResponse:
+      type: object
+      properties:
+        provider:
+          type: string
+          enum:
+            - polar
+            - simulator
+        checkout:
+          anyOf:
+            - type: object
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                url:
+                  type: string
+                  format: uri
+                expiresAt:
+                  type: string
+                  format: date-time
+                  pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$
+                amount:
+                  type: integer
+                  exclusiveMinimum: 0
+                  maximum: 9007199254740991
+                currency:
+                  type: string
+                  minLength: 3
+                  maxLength: 3
+              required:
+                - id
+                - url
+                - expiresAt
+                - amount
+                - currency
+            - type: "null"
+      required:
+        - provider
+        - checkout

@@ -1,4 +1,4 @@
-import type { StockAdjustmentResult } from '@mercadoya/contracts';
+import type { StockAdjustmentResult, CatalogBillingResponse } from '@mercadoya/contracts';
 export type { StockAdjustmentResult } from '@mercadoya/contracts';
 
 export type CatalogProduct = {
@@ -27,6 +27,7 @@ export interface CatalogContract {
   createProduct(input: CreateProductInput): Promise<CatalogProduct>;
   updateProduct(id: string, input: UpdateProductInput): Promise<CatalogProduct | null>;
   deleteProduct(id: string): Promise<boolean>;
+  getBillingProduct(id: string): Promise<CatalogBillingResponse | null>;
   getAvailableStock(productId: string): Promise<number | null>;
   adjustStock(productId: string, delta: number): Promise<StockAdjustmentResult>;
 }
