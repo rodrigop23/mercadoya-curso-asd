@@ -72,6 +72,6 @@ export function checkoutQueryOptions(orderId: string) {
       if (!response.ok) throw await readApiError(response, 'No se pudo preparar el pago.');
       return paymentCheckoutResponseSchema.parse(await response.json());
     },
-    refetchInterval: (query) => (query.state.data?.provider === 'simulator' ? false : 1000),
+    refetchInterval: 1000,
   });
 }

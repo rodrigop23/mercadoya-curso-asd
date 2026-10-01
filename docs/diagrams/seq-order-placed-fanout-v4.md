@@ -9,7 +9,8 @@ sequenceDiagram
   participant API as Kong OSS :8000
   participant Identity as Identity :3006
   participant Orders as Orders :3002
-  participant Payment as Simulador dentro de Orders :3002
+  participant Payment as Worker Polar dentro de Orders :3002
+  participant Polar as Polar externo
   participant DB as PostgreSQL :5432
   participant NATS as NATS :4222
   participant Inv as Inventory v2 :3005
@@ -26,9 +27,10 @@ sequenceDiagram
   Orders->>Identity: JWKS público si no está cacheado
   Identity-->>Orders: claves públicas
   Orders->>Orders: verificar firma y claims; buyerId = sub
-  Orders->>DB: INSERT pedido pending
+  Orders->>Catalog: obtener producto Polar sincronizado y precio PEN
+  Catalog-->>Orders: snapshot para el cobro
+  Orders->>DB: INSERT pedido pending y snapshot
   Orders->>NATS: publish orders.placed version 1
-  Note over Orders,NATS: paymentMode opcional solo desde CLI interno
   Orders-->>API: 202 pedido pending
   API-->>Web: 202 pedido pending
   NATS-->>Inv: orders.placed
@@ -46,10 +48,19 @@ sequenceDiagram
     Note over Inv,Payment: No hay reserva ni pago
   else stock reservado
     Inv->>DB: guarda reserva
-    Inv->>NATS: publish inventory.reserved con paymentMode opcional
+    Inv->>NATS: publish inventory.reserved
     NATS-->>Payment: inventory.reserved
     Note over Orders,Payment: El pedido sigue pending hasta el desenlace del pago
-    alt pago exitoso
+    Payment->>Polar: crear checkout con snapshot PEN
+    Polar-->>Payment: enlace de checkout
+    Web->>API: GET /api/orders/:orderId/checkout con cookie
+    API->>Orders: consulta checkout con JWT
+    Orders-->>Web: enlace Polar
+    Buyer->>Polar: completar checkout
+    Polar->>API: webhook firmado
+    API->>Payment: webhook público
+    Payment->>DB: inbox durable y deduplicación
+    alt order.paid verificado
       Payment->>NATS: publish payment.succeeded
       par confirmación de pedido
         NATS-->>Orders: payment.succeeded
@@ -58,7 +69,7 @@ sequenceDiagram
         NATS-->>Bridge: payment.succeeded
         Bridge->>Handler: invoca template order-confirmed con x-invoke-token
       end
-    else pago fallido
+    else pago fallido, expirado o anulado
       Payment->>NATS: publish payment.failed
       par rechazo de pedido
         NATS-->>Orders: payment.failed
@@ -98,6 +109,6 @@ sequenceDiagram
 
 Los consumidores de cada desenlace avanzan en paralelo. El correo de pago fallido y el estado `rejected` no esperan `inventory.released`. Un fallo duplicado no repone stock tras una liberación completada; si no hay reserva, Inventory no publica otra liberación. El bridge no consume `orders.placed`, `inventory.reserved` ni `inventory.released`.
 
-`PAYMENT_MODE` define el resultado por defecto; el override del CLI tiene prioridad. `EMAIL_MODE` vacío usa Resend si existe `RESEND_API_KEY` y stub si no existe; `stub` fuerza simulación. Todos los correos usan `DEMO_NOTIFY_EMAIL`, sin lookup por `buyerId`. `sent` significa aceptación por Resend. El handler registra el resultado en logs. NATS Core no reproduce eventos perdidos.
+`EMAIL_MODE` vacío usa Resend si existe `RESEND_API_KEY` y stub si no existe; `stub` fuerza simulación. Todos los correos usan `DEMO_NOTIFY_EMAIL`, sin lookup por `buyerId`. `sent` significa aceptación por Resend. El handler registra el resultado en logs. NATS Core no reproduce eventos perdidos.
 
 Consulta [ADR 0015](../adr/0015-saga-coreografia-compensacion.md), [ADR 0011](../adr/0011-notifications-lambda-bridge.md), [la guía de saga](../../scripts/README.md) y [la configuración de Notifications](../../apps/notifications-lambda/README.md).

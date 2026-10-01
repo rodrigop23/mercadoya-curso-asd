@@ -11,11 +11,7 @@ export const eventSubjects = {
 
 export type EventSubject = (typeof eventSubjects)[keyof typeof eventSubjects];
 
-export const paymentModeSchema = z.enum(['succeed', 'fail']);
-
 export const orderPlacedEventSchema = z.object({
-  // Solo el CLI interno usa este override didáctico; el POST público no lo acepta.
-  paymentMode: paymentModeSchema.optional(),
   version: z.literal(1),
   orderId: z.string().uuid(),
   productId: z.string().uuid(),
@@ -44,7 +40,6 @@ const inventoryReservationResult = {
 
 export const inventoryReservedEventSchema = z.object({
   ...inventoryReservationResult,
-  paymentMode: paymentModeSchema.optional(),
 });
 export const inventoryReleasedEventSchema = z.object({
   ...inventoryReservationResult,

@@ -139,7 +139,11 @@ test('límites PEN, rechazo y creación incierta no exponen secretos', async () 
           !error.message.includes(secret),
       );
     }
-    assert.equal(catalogPolarConfig({ PAYMENT_PROVIDER: 'simulator' }), null);
+    assert.throws(() => catalogPolarConfig({ PAYMENT_PROVIDER: 'simulator' }));
+    assert.deepEqual(catalogPolarConfig({ POLAR_ACCESS_TOKEN: 'test-token' }), {
+      accessToken: 'test-token',
+      server: 'sandbox',
+    });
     assert.throws(() => catalogPolarConfig({}), /POLAR_ACCESS_TOKEN/);
   } finally {
     globalThis.fetch = original;

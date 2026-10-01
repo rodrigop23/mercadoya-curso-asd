@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   createOrderSchema,
+  paymentCheckoutResponseSchema,
   orderResponseSchema,
   signUpSchema,
   signInSchema,
@@ -17,11 +18,14 @@ import {
 const id = '4e7a4b1b-e14d-4cd1-9dc9-55e70dbd0cb0';
 const date = '2026-09-30T12:00:00.000Z';
 
-test('Orders mantiene límites HTTP y descarta el override de la demo', () => {
-  assert.deepEqual(createOrderSchema.parse({ productId: id, quantity: 1, paymentMode: 'fail' }), {
-    productId: id,
-    quantity: 1,
-  });
+test('Orders mantiene límites HTTP y descarta importes del cliente', () => {
+  assert.deepEqual(
+    createOrderSchema.parse({ productId: id, quantity: 1, amount: 1, currency: 'usd' }),
+    {
+      productId: id,
+      quantity: 1,
+    },
+  );
   assert.equal(createOrderSchema.safeParse({ productId: id, quantity: 2147483647 }).success, true);
   for (const quantity of [0, 1.5, '1', 2147483648]) {
     assert.equal(createOrderSchema.safeParse({ productId: id, quantity }).success, false);
@@ -200,5 +204,16 @@ test('las respuestas de login usan token opaco y logout admite metadata del prov
       message: 'Invalid email or password',
     }).success,
     true,
+  );
+});
+
+test('checkout solo admite Polar', () => {
+  assert.deepEqual(paymentCheckoutResponseSchema.parse({ provider: 'polar', checkout: null }), {
+    provider: 'polar',
+    checkout: null,
+  });
+  assert.equal(
+    paymentCheckoutResponseSchema.safeParse({ provider: 'simulator', checkout: null }).success,
+    false,
   );
 });

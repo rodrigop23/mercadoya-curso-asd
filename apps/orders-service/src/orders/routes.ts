@@ -9,7 +9,7 @@ import { CatalogBillingError } from '../catalog/http.js';
 export function createOrdersRoutes(
   orders: ReturnType<typeof createOrdersService>,
   identity: IdentityContract,
-  payments?: { getCheckout(orderId: string): Promise<PaymentCheckoutResponse> },
+  payments: { getCheckout(orderId: string): Promise<PaymentCheckoutResponse> },
 ) {
   const routes = new Hono({ strict: false });
 
@@ -25,7 +25,6 @@ export function createOrdersRoutes(
       if (!order || order.buyerId !== session.user.id)
         return c.json({ error: 'El pedido no existe.' }, 404);
       c.header('Cache-Control', 'no-store');
-      if (!payments) return c.json({ provider: 'simulator', checkout: null }, 200);
       const result = await payments.getCheckout(orderId.data);
       return c.json(result, result.checkout || order.status !== 'pending' ? 200 : 202);
     } catch {

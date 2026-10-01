@@ -241,7 +241,7 @@ async function createOrder(quantity = 2) {
   const response = await app.request('/api/orders', {
     method: 'POST',
     headers: { authorization: 'Bearer buyer', 'content-type': 'application/json' },
-    body: JSON.stringify({ productId, quantity, paymentMode: 'succeed' }),
+    body: JSON.stringify({ productId, quantity }),
   });
   assert.equal(response.status, 202);
   const { order } = await response.json();
@@ -437,6 +437,7 @@ test('Polar, PostgreSQL, NATS, Inventory y Notifications completan la saga', asy
           bus,
           { getSession: async () => ({ user: { id: 'outsider' } }) },
           worker,
+          catalogBilling,
         ).routes;
         assert.equal((await outsiderRoutes.request(`/${order.id}/checkout`)).status, 404);
         assert.equal((await app.request(`/api/orders/${order.id}/checkout`)).status, 401);

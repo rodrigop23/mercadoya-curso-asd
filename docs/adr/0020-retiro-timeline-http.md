@@ -8,7 +8,7 @@ Se retiran la pantalla de eventos, el historial del pedido, su cliente y tipos d
 
 Notifications conserva sus suscripciones a `payment.succeeded`, `inventory.rejected` y `payment.failed`, valida los mismos contratos y envía los mismos correos. El handler registra los resultados en logs locales o CloudWatch y responde 202 sin ingest HTTP. Se retiran los parámetros CDK y secretos exclusivos de ese ingest.
 
-Los subjects, schemas, productores y consumidores NATS de la saga permanecen iguales. El simulador de pago permanece dentro de Orders. Las migraciones y tablas históricas se conservan para instalaciones existentes.
+Los subjects, schemas, productores y consumidores NATS de la saga permanecen iguales. El worker Polar permanece dentro de Orders. Las migraciones y tablas históricas se conservan para instalaciones existentes.
 
 ## Operación
 

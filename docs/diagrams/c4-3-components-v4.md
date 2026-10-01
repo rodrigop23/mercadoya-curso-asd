@@ -1,6 +1,6 @@
 # C4 nivel 3: componentes del API, Orders y Notifications con Identity y Kong
 
-La vista abre Identity `:3006`, Orders `:3002` y Notifications, detrás de Kong `:8000`. El simulador comparte el proceso Orders. En local el bridge invoca el handler en su proceso; con Function URL, el handler corre en AWS Lambda.
+La vista abre Identity `:3006`, Orders `:3002` y Notifications, detrás de Kong `:8000`. El worker Polar comparte el proceso Orders. En local el bridge invoca el handler en su proceso; con Function URL, el handler corre en AWS Lambda.
 
 ```mermaid
 flowchart LR
@@ -9,7 +9,8 @@ flowchart LR
   subgraph ordersProcess["Orders :3002, proceso Node"]
     orders["Rutas y servicio Orders<br/>pending, confirmed, rejected"]
     outcomes["Consumidores de desenlaces<br/>pago y resultados Inventory"]
-    simulator["Simulador de pago<br/>PAYMENT_MODE y override del evento"]
+    payments["Worker Polar<br/>checkout e inbox durable"]
+    webhook["Webhook Polar<br/>firma Standard Webhooks"]
   end
   inv1["Inventory v1 :3003"]
   inv2["Inventory v2 :3005"]
@@ -20,6 +21,7 @@ flowchart LR
     mail["Cliente Resend<br/>EMAIL_MODE, key, remitente y destinatario"]
   end
   nats["NATS :4222"]
+  polar["Polar externo<br/>checkout y webhook"]
   resend["Resend externo"]
   db[("PostgreSQL :5432")]
   files[("uploads")]
@@ -50,8 +52,12 @@ flowchart LR
   catalog --> db
   orders -->|SQL pedido| db
   orders -->|orders.placed| nats
-  nats -->|inventory.reserved| simulator
-  simulator -->|payment.succeeded o payment.failed| nats
+  nats -->|inventory.reserved| payments
+  payments -->|crear checkout| polar
+  polar -->|webhook firmado por Kong| webhook
+  webhook -->|inbox PostgreSQL| payments
+  payments -->|payment.succeeded o payment.failed| nats
+  catalog -->|sync productos PEN| polar
   nats -->|payment.succeeded, payment.failed, inventory.rejected, inventory.released| outcomes
   outcomes --> orders
   nats -->|payment.succeeded, payment.failed, inventory.rejected| bridge

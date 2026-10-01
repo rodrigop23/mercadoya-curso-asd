@@ -6,10 +6,8 @@ import { createProductGateway } from './modules/catalog/polar-gateway.js';
 import { createProductSyncWorker } from './modules/catalog/polar-worker.js';
 
 const polar = catalogPolarConfig();
-const worker = polar
-  ? createProductSyncWorker(pool, polar.server, createProductGateway(polar))
-  : null;
-await worker?.start();
+const worker = createProductSyncWorker(pool, polar.server, createProductGateway(polar));
+await worker.start();
 
 const server = serve({ fetch: createApp().fetch, port: Number(process.env.PORT ?? 3007) }, (info) =>
   console.log(`Catalog/Media listening on http://localhost:${info.port}`),
@@ -17,7 +15,7 @@ const server = serve({ fetch: createApp().fetch, port: Number(process.env.PORT ?
 const shutdown = () =>
   server.close(() => {
     void (async () => {
-      await worker?.stop();
+      await worker.stop();
       await closeDb();
     })();
   });

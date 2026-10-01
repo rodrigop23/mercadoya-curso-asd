@@ -1,6 +1,6 @@
 # C4 nivel 2: contenedores de MercadoYa con Identity y Kong
 
-Las cajas muestran las unidades de ejecución y el handler de Notifications. En local, el handler comparte el proceso del bridge. `inventory-v1` e `inventory-v2` son dos despliegues de la misma imagen. Orders incluye el simulador de pago en el mismo proceso `:3002`. El bridge corre como proceso Node y puede invocar el handler local en ese proceso o una Function URL. Resend es un proveedor externo de correo.
+Las cajas muestran las unidades de ejecución y el handler de Notifications. En local, el handler comparte el proceso del bridge. `inventory-v1` e `inventory-v2` son dos despliegues de la misma imagen. Orders incluye el worker Polar en el mismo proceso `:3002`. El bridge corre como proceso Node y puede invocar el handler local en ese proceso o una Function URL. Resend es un proveedor externo de correo.
 
 ```mermaid
 flowchart LR
@@ -12,7 +12,7 @@ flowchart LR
     kong["Kong OSS 3.9.1 :8000"]
     identity["Identity :3006<br/>sesión Better Auth, JWT y JWKS"]
     catalog["Catalog/Media :3007<br/>CRUD, JWT y media"]
-    orders["Orders :3002<br/>proceso Node y simulador de pago"]
+    orders["Orders :3002<br/>proceso Node y worker Polar"]
     inv1["Inventory v1 :3003<br/>compatibilidad HTTP y health"]
     inv2["Inventory v2 :3005<br/>default HTTP, reserva y compensación NATS"]
     bridge["Notifications bridge :3004<br/>consume desenlaces"]
@@ -22,6 +22,7 @@ flowchart LR
     uploads[("Disco local<br/>uploads")]
   end
 
+  polar["Polar externo<br/>productos PEN y checkout"]
   resend["Resend externo<br/>correo a DEMO_NOTIFY_EMAIL"]
 
   buyer -->|HTTP| web
@@ -48,8 +49,13 @@ flowchart LR
   inv2 -->|stock con token S2S| catalog
   inv2 -->|JWKS| identity
   orders -->|JWKS| identity
+  catalog -->|sync productos PEN| polar
+  orders -->|crear checkout| polar
+  buyer -->|pago en checkout| polar
+  polar -->|webhook firmado| kong
+  kong -->|webhook público| orders
   bridge -->|invoca con token| lambda
   lambda -->|HTML y texto si modo resend| resend
 ```
 
-Compose publica `3005:3003` para v2. La base es compartida en esta demo. El slice federado ejecuta sus peticiones en el documento del host y comparte React/ReactDOM y UI. El handler no recibe NATS directamente. Inventory v2 consume `orders.placed` y `payment.failed`; v1 mantiene HTTP explícito y health. El simulador consume `inventory.reserved` y publica el resultado del pago. Kong es el entrypoint y todos los servicios backend corren en Compose. Consulta [la secuencia de saga](seq-order-placed-fanout-v4.md).
+Compose publica `3005:3003` para v2. La base es compartida en esta demo. El slice federado ejecuta sus peticiones en el documento del host y comparte React/ReactDOM y UI. El handler no recibe NATS directamente. Inventory v2 consume `orders.placed` y `payment.failed`; v1 mantiene HTTP explícito y health. El worker consume `inventory.reserved`, crea el checkout Polar y publica el resultado del webhook firmado. Kong es el entrypoint y todos los servicios backend corren en Compose. Consulta [la secuencia de saga](seq-order-placed-fanout-v4.md).

@@ -9,8 +9,8 @@ import type { CatalogBillingPort } from '../catalog/http.js';
 export function createOrdersModule(
   eventBus: EventBus,
   identity: IdentityContract,
-  payments?: { getCheckout(orderId: string): Promise<PaymentCheckoutResponse> },
-  catalog?: CatalogBillingPort,
+  payments: { getCheckout(orderId: string): Promise<PaymentCheckoutResponse> },
+  catalog: CatalogBillingPort,
 ) {
   const service = createOrdersService(eventBus, catalog);
 

@@ -1,0 +1,7 @@
+# Fixture exclusiva de CI; no se carga desde demo:infra ni Compose normal.
+services:
+  catalog:
+    environment:
+      NODE_OPTIONS: --import=/polar-unavailable.mjs
+    volumes:
+      - ./.github/fixtures/polar-unavailable.mjs:/polar-unavailable.mjs:ro

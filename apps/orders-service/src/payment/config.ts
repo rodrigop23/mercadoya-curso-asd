@@ -1,10 +1,11 @@
 import { z } from 'zod';
 
 export function paymentProvider(env: NodeJS.ProcessEnv = process.env) {
-  return z.enum(['polar', 'simulator']).parse(env.PAYMENT_PROVIDER?.trim() || 'polar');
+  return z.literal('polar').parse(env.PAYMENT_PROVIDER?.trim() || 'polar');
 }
 
 export function polarConfig(env: NodeJS.ProcessEnv = process.env) {
+  paymentProvider(env);
   // No imprimir valores ni errores Zod de configuración: pueden incluir credenciales.
   const schema = z.object({
     accessToken: z.string().min(1),

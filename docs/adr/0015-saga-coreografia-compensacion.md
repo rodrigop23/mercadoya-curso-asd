@@ -10,16 +10,16 @@ Orders y Inventory ejecutan pasos distribuidos y ya intercambian eventos NATS. N
 
 ## Decisión
 
-La saga usa coreografía con NATS. Cada consumidor reacciona al evento correspondiente, sin orquestador central. El pago es un simulador dentro del proceso Orders `:3002`, sin PSP ni bounded context Payments independiente.
+La saga usa coreografía con NATS. Cada consumidor reacciona al evento correspondiente, sin orquestador central. Orders `:3002` aloja el adapter y el worker Polar; el checkout externo y su webhook firmado determinan el resultado.
 
 1. Orders guarda el pedido `pending` y publica `orders.placed`. Solo Inventory v2 lo consume para reservar stock mediante Catalog.
-2. Si Inventory publica `inventory.rejected`, Orders rechaza el pedido y Notifications prepara el correo de stock. No se simula pago.
-3. Si Inventory publica `inventory.reserved`, el simulador en Orders publica `payment.succeeded` o `payment.failed`. Reservar no confirma.
+2. Si Inventory publica `inventory.rejected`, Orders rechaza el pedido y Notifications prepara el correo de stock. No se crea un checkout.
+3. Si Inventory publica `inventory.reserved`, el worker de Orders crea un checkout Polar. Su webhook firmado produce `payment.succeeded` o `payment.failed`. Reservar no confirma.
 4. Con `payment.succeeded`, Orders cambia a `confirmed` y Notifications prepara el correo de confirmación.
 5. Con `payment.failed`, Orders cambia a `rejected`, Inventory ejecuta `release(orderId)` y Notifications prepara el correo de pago fallido. Estos consumidores trabajan en paralelo.
 6. Inventory restaura el stock, elimina la reserva y publica `inventory.released`. Orders también consume este evento para registrar el rechazo si el pedido sigue `pending`. Los resultados solo actualizan pedidos `pending`; un estado terminal no se sobrescribe. El estado `rejected` y el correo pueden observarse antes de completar la compensación.
 
-`PAYMENT_MODE` selecciona `succeed` o `fail`, con `succeed` por defecto. El override opcional `paymentMode` en `orders.placed` se propaga a `inventory.reserved` y tiene prioridad sobre la variable de entorno. Solo el CLI interno lo usa; el POST público no lo acepta.
+La configuración y las garantías del pago actual están en [ADR 0019](0019-polar-payments-saga.md). El ejercicio original permanece en el rama `v3-services`.
 
 La liberación usa un lock transaccional por pedido. Si ya no existe reserva, retorna sin ajustar stock ni publicar otra liberación. Así, fallos duplicados no reponen stock dos veces tras una liberación completada. Solo Inventory v2 consume NATS; v1 conserva lectura HTTP explícita y health; el alias sin versión usa ahora el contrato v2.
 
@@ -34,7 +34,7 @@ NATS Core no persiste eventos ni reintenta su entrega. Guardar el pedido y publi
 ## Referencias
 
 - [Contratos de eventos](../../packages/contracts/src/index.ts).
-- [Simulador de pago](../../apps/orders-service/src/payment/simulator.ts) y [suscripciones de Orders](../../apps/orders-service/src/index.ts).
+- [Worker Polar](../../apps/orders-service/src/payment/worker.ts) y [suscripciones de Orders](../../apps/orders-service/src/index.ts).
 - [Liberación de Inventory](../../apps/inventory-service/src/inventory/service.ts) y [publicación de inventory.released](../../apps/inventory-service/src/inventory/index.ts).
 - [CLI de saga](../../apps/orders-service/src/demo-saga.ts) y [guía de ejecución](../../scripts/README.md).
 - [ADR 0011 de Notifications](0011-notifications-lambda-bridge.md) y [secuencia canónica](../diagrams/seq-order-placed-fanout-v4.md).

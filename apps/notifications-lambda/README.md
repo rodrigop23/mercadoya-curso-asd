@@ -45,9 +45,11 @@ Todos los pedidos usan `DEMO_NOTIFY_EMAIL`, también cuando tienen `buyerId`. Id
 
 Para comprobar los tres correos:
 
-1. Con `PAYMENT_MODE=succeed`, crea un pedido desde la UI con stock suficiente. Espera "Pedido confirmado" después de `payment.succeeded`.
-2. Con `PAYMENT_MODE=fail`, reinicia Orders y crea otro pedido con stock suficiente. Espera "El pago no se completó" con el motivo del fallo. Inventory libera el stock por separado.
-3. Pide más unidades que el stock disponible. Espera "No pudimos completar tu pedido" con el motivo de Inventory. Devuelve `PAYMENT_MODE` a `succeed`.
+1. Configura [Polar sandbox](../orders-service/README.md), crea un pedido con stock y completa su checkout. Espera "Pedido confirmado" después del webhook `order.paid` y `payment.succeeded`.
+2. Crea otro pedido y deja expirar su checkout o anula la orden en Polar sandbox. Espera "El pago no se completó". Inventory libera el stock por separado.
+3. Pide más unidades que el stock disponible en un producto sincronizado. Espera "No pudimos completar tu pedido" con el motivo de Inventory.
+
+La suite `polar-saga` de CI verifica los tres desenlaces y los duplicados con el handler real en modo stub.
 
 También puedes ejecutar `pnpm demo:saga` con un producto de clase y stock suficiente. Sus pedidos tienen `buyerId: null`: solo prueba el inbox si configuraste key, remitente y `DEMO_NOTIFY_EMAIL` y el modo permite Resend. Consulta los logs de Notifications por cada ID del CLI. El CLI publica fallos duplicados para comprobar la compensación. Cada envío usa una clave de idempotencia por subject y pedido; Resend evita repetir el mismo correo dentro de su ventana de idempotencia, pero pueden aparecer registros duplicados en los logs. Estos son tres tipos de correo, uno por desenlace, no tres correos en cada pedido.
 

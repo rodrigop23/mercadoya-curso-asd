@@ -23,7 +23,7 @@ export const orderResponseSchema = z.object({
 });
 
 export const paymentCheckoutResponseSchema = z.object({
-  provider: z.enum(['polar', 'simulator']),
+  provider: z.literal('polar'),
   checkout: z
     .object({
       id: uuidSchema,

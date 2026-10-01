@@ -69,15 +69,6 @@ for (const [subject, schema, extra] of schemas) {
   });
 }
 
-test('solo Orders e Inventory reserved aceptan el override de pago válido', () => {
-  for (const schema of [orderPlacedEventSchema, inventoryReservedEventSchema]) {
-    for (const paymentMode of ['succeed', 'fail']) {
-      assert.equal(schema.parse({ ...event, paymentMode }).paymentMode, paymentMode);
-    }
-    assert.equal(schema.safeParse({ ...event, paymentMode: 'unknown' }).success, false);
-  }
-});
-
 test('Inventory rejected exige una causa conocida', () => {
   for (const reason of [
     'invalid_quantity',

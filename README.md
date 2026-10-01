@@ -174,10 +174,10 @@ Orders `:3002` integra Polar sandbox por defecto. `inventory.reserved` crea el c
 Con la demo activa y un producto dedicado con al menos dos unidades, ejecuta:
 
 ```sh
-PAYMENT_PROVIDER=simulator pnpm demo:saga
+pnpm demo:saga
 ```
 
-[La guía del CLI](scripts/README.md) conserva los casos del simulador y la prueba de fallos duplicados. Requiere reiniciar Orders con `PAYMENT_PROVIDER=simulator`. El CLI crea pedidos persistentes y consume una unidad en el caso exitoso. `PAYMENT_MODE` y el override interno `paymentMode` solo actúan en simulator; el POST público lo descarta. Para Polar usa la compra desde la web y el dashboard sandbox.
+[La guía del CLI](scripts/README.md) comprueba rechazo por stock y muestra un checkout Polar sandbox real. Completa el pago en el navegador y espera el webhook firmado. El CLI crea pedidos persistentes y consume una unidad si el cobro se confirma. Las pruebas de integración comprueban compensación y duplicados sin credenciales Polar. El ejercicio histórico permanece en el rama `v3-services`.
 
 Notifications escucha solo estos desenlaces y renderiza los templates con React Email:
 
@@ -254,7 +254,7 @@ set +a
 pnpm --filter @mercadoya/identity-service smoke
 ```
 
-CI ejecuta login/sesión, JWKS, CRUD con cookie y Bearer, buyer 403, uploads/full/thumb, CORS, límites, stock interno y el smoke histórico con simulator explícito. El job `polar-saga` prueba firma/payload, inbox durable, publishers serializados, éxito, compensación, duplicados, reinicios y compatibilidad con Inventory/Notifications usando PostgreSQL/NATS reales y un gateway Polar de prueba. No requiere credenciales Polar. Las pruebas del verificador cubren issuer/audience incorrectos, firma, expiración, algoritmo, kid y solapamiento de rotación.
+CI ejecuta login/sesión, JWKS, CRUD con cookie y Bearer, buyer 403, uploads/full/thumb, CORS, límites, stock interno y rechazo de compras sin catálogo Polar sincronizado. El job `polar-saga` prueba firma/payload, inbox durable, publishers serializados, éxito, compensación, duplicados, reinicios y compatibilidad con Inventory/Notifications usando PostgreSQL/NATS reales y un gateway Polar de prueba. No requiere credenciales Polar. Las pruebas del verificador cubren issuer/audience incorrectos, firma, expiración, algoritmo, kid y solapamiento de rotación.
 
 ## Autenticación local
 
@@ -342,4 +342,4 @@ Se conservan las versiones instaladas en la máquina: Node `v24.14.1` y pnpm `11
 
 Inventory reserva stock al recibir `orders.placed`. El pedido sigue `pending` tras `inventory.reserved`, que ahora crea el checkout Polar. El webhook publica `payment.succeeded` para confirmarlo o `payment.failed` para rechazarlo. El fallo activa la compensación en Inventory v2, que restaura stock y publica `inventory.released`. El rechazo por stock no inicia Payment ni libera reservas. La [guía de Payments](apps/orders-service/README.md) documenta sandbox, eventos, reintentos y NATS Core.
 
-El CLI `pnpm demo:saga` conserva la demo histórica y requiere `PAYMENT_PROVIDER=simulator`. Los requisitos y efectos sobre los datos están en el [README del CLI](scripts/README.md). Notifications envía con Resend y React Email un correo por desenlace: confirmación, rechazo por stock o fallo de pago. También admite modo stub. La guía de sandbox actual está en [Orders/Payments](apps/orders-service/README.md); el [checklist V3](docs/demo-v3.md) conserva el ejercicio anterior.
+El CLI `pnpm demo:saga` usa un checkout Polar sandbox y espera el webhook real. Los requisitos y efectos sobre los datos están en el [README del CLI](scripts/README.md). Notifications envía con Resend y React Email un correo por desenlace: confirmación, rechazo por stock o fallo de pago. También admite modo stub. La guía de sandbox actual está en [Orders/Payments](apps/orders-service/README.md); el ejercicio anterior está en el rama `v3-services`.

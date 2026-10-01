@@ -1,6 +1,6 @@
 # Orders y pagos Polar
 
-Orders es un proceso Node/Hono en `:3002`. Publica `orders.placed`, crea el checkout al recibir `inventory.reserved` y mantiene el pedido en `pending` hasta recibir `payment.succeeded` o un rechazo. Polar sandbox es el proveedor por defecto; solo `PAYMENT_PROVIDER=simulator` habilita el simulador histórico.
+Orders es un proceso Node/Hono en `:3002`. Publica `orders.placed`, crea el checkout al recibir `inventory.reserved` y mantiene el pedido en `pending` hasta recibir `payment.succeeded` o un rechazo. Polar es el único proveedor, con sandbox por defecto.
 
 ## Preparar sandbox
 
@@ -70,11 +70,11 @@ docker compose up -d --force-recreate --no-deps orders
 
 Crea un producto desde el admin y espera a que termine su sincronización con Polar. Compra desde el catálogo y pulsa **Pagar en Polar** en la página del pedido, después de la reserva y la creación del checkout. La [documentación oficial de sandbox](https://polar.sh/docs/integrate/sandbox) indica estos datos para probar un pago exitoso:
 
-| Dato | Valor de prueba |
-| ---- | --------------- |
-| Número | `4242 4242 4242 4242` |
+| Dato        | Valor de prueba                             |
+| ----------- | ------------------------------------------- |
+| Número      | `4242 4242 4242 4242`                       |
 | Vencimiento | Cualquier fecha futura, por ejemplo `12/30` |
-| CVC | Cualquier CVC válido, por ejemplo `123` |
+| CVC         | Cualquier CVC válido, por ejemplo `123`     |
 
 Úsala en Polar sandbox, donde no se procesa dinero real. Los precios y checkouts de MercadoYa usan soles peruanos `PEN`.
 
@@ -88,7 +88,7 @@ Como alternativa al túnel, Polar CLI puede reenviar a `http://localhost:8000/ap
 
 | Variable                                     | Uso                                                                                                                                |
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `PAYMENT_PROVIDER`                           | `polar` por defecto; `simulator` requiere selección explícita.                                                                     |
+| `PAYMENT_PROVIDER`                           | Solo `polar`, por defecto; cualquier otro valor impide arrancar.                                                                   |
 | `POLAR_SERVER`                               | `sandbox` por defecto; `production` es una selección explícita.                                                                    |
 | `POLAR_ACCESS_TOKEN`                         | Token de organización para Catalog y Orders con products:write, organizations:write y checkouts:read/write. Solo env del servidor. |
 | `POLAR_WEBHOOK_SECRET`                       | Secreto del endpoint o del forwarder. Se pasa literalmente al SDK.                                                                 |
@@ -105,7 +105,7 @@ El cliente oficial está fijado a `@polar-sh/sdk@1.0.1`. Importa `createPolar` y
 
 ## HTTP y persistencia
 
-- `POST /api/orders` acepta producto y cantidad autenticados, devuelve `202` y el pedido. Descarta `paymentMode` y cualquier importe, moneda o metadata del cliente. Consulta Catalog por HTTP interno y guarda el precio PEN antes de publicar. Producto inexistente devuelve 404, sincronización pendiente/fallida o importe excesivo devuelve 409 y Catalog inaccesible devuelve 503. Estos rechazos no reservan stock.
+- `POST /api/orders` acepta producto y cantidad autenticados, devuelve `202` y el pedido. Descarta cualquier importe, moneda o metadata del cliente. Consulta Catalog por HTTP interno y guarda el precio PEN antes de publicar. Producto inexistente devuelve 404, sincronización pendiente/fallida o importe excesivo devuelve 409 y Catalog inaccesible devuelve 503. Estos rechazos no reservan stock.
 - `GET /api/orders/:orderId/checkout` requiere sesión/JWT y ser el comprador. Devuelve `202` con `checkout: null` mientras se prepara, o `200` con ID, URL, expiración, importe y moneda. Usa `Cache-Control: no-store`. Otro comprador recibe `404`.
 - `POST /api/payments/polar/webhook` es público en Kong y Orders. Verifica firma y timestamp sobre el cuerpo original antes de parsear. Una firma inválida devuelve `403`, un payload inválido `400` y un cuerpo mayor de 256 KiB `413`.
 - Un evento aceptado devuelve `202` después de persistir su resultado normalizado en el inbox. Si PostgreSQL no lo acepta, devuelve `503` para permitir reentrega. La respuesta no espera checkout, NATS, Inventory ni correo.
@@ -138,7 +138,7 @@ Todos los fallos terminales activan la regla existente de Inventory v2: restaura
 
 ## Reintentos y límites
 
-El inbox deduplica por event id en PostgreSQL, también después de reiniciar y ante entregas concurrentes. Un worker procesa en serie y toma un advisory lock compartido entre réplicas antes de llamar a Polar o publicar. Orders usa queue groups NATS; el simulador y Polar nunca se suscriben juntos. El primer resultado terminal de un checkout queda fijado; eventos tardíos, repetidos, de otra sesión o con importe distinto no cambian el pedido ni liberan stock.
+El inbox deduplica por event id en PostgreSQL, también después de reiniciar y ante entregas concurrentes. Un worker procesa en serie y toma un advisory lock compartido entre réplicas antes de llamar a Polar o publicar. Orders usa queue groups NATS para el worker Polar. El primer resultado terminal de un checkout queda fijado; eventos tardíos, repetidos, de otra sesión o con importe distinto no cambian el pedido ni liberan stock.
 
 El worker publica antes del commit y reintenta los fallos de publicación desde el inbox. Una caída después de publicar y antes del commit puede repetir el mismo evento con el mismo `eventId`. Orders y la compensación de Inventory ya son idempotentes. Esta es entrega **at-least-once desde el inbox al publisher**, no una garantía de recepción para consumidores desconectados. NATS Core no guarda ni reproduce mensajes; `flush()` no es un ACK del consumidor. Tampoco recupera automáticamente `orders.placed`/`inventory.reserved` perdidos durante una desconexión. No se añadió outbox ni JetStream.
 
@@ -154,9 +154,9 @@ pnpm exec turbo run test --filter=@mercadoya/orders-service --filter=@mercadoya/
 PAYMENTS_TEST_DATABASE_URL=<url-test> PAYMENTS_TEST_NATS_URL=<url-test> pnpm --filter @mercadoya/orders-service test:integration
 ```
 
-CI ejecuta firma actual y legacy, raw body alterado, timestamps, payload inválido, solicitud SDK y aislamiento del simulador. El job `polar-saga` usa Catalog con su API interna HTTP, PostgreSQL/NATS reales y gateways Polar de prueba: verifica sincronización, precio PEN guardado ante cambios posteriores, éxito, fallo, expiración, anulación, duplicados, importe/correlación, reinicio del worker, creación incierta, compensación y el handler real de Notifications en modo stub. No usa credenciales Polar ni cobra contra sandbox. El smoke histórico de Kong declara `PAYMENT_PROVIDER=simulator` explícitamente.
+CI ejecuta firma actual y legacy, raw body alterado, timestamps, payload inválido, solicitud SDK y configuración exclusiva de Polar. El job `polar-saga` usa Catalog con su API interna HTTP, PostgreSQL/NATS reales y gateways Polar de prueba: verifica sincronización, precio PEN guardado ante cambios posteriores, éxito, fallo, expiración, anulación, duplicados, importe/correlación, reinicio del worker, creación incierta, compensación y el handler real de Notifications en modo stub. No usa credenciales Polar ni cobra contra sandbox. El smoke de Kong verifica el rechazo sin producto Polar sincronizado; su fixture de CI devuelve 401 al SDK de Catalog.
 
-El [CLI histórico](../../scripts/README.md) requiere `PAYMENT_PROVIDER=simulator` tanto en Orders como en el CLI. `PAYMENT_MODE=succeed|fail` y el override por pedido solo actúan en ese proveedor. No lo uses para comprobar Polar sandbox.
+El [CLI de demo](../../scripts/README.md) crea pedidos por Kong, muestra el checkout Polar sandbox y espera el webhook firmado. La implementación histórica permanece en el rama `v3-services`.
 
 ## Documentación oficial verificada
 

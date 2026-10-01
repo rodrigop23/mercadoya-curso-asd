@@ -49,7 +49,6 @@ export function createInventoryModule(
 
       if (result.reserved) {
         const reservationEvent = inventoryReservedEventSchema.parse({
-          paymentMode: event.paymentMode,
           version: 1,
           orderId: event.orderId,
           productId: event.productId,

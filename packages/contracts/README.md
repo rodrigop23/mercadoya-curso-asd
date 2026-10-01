@@ -4,14 +4,14 @@
 
 ## Specs y ownership
 
-| Contrato                            | Spec versionada                                            | Owner de implementación                                                                                    |
-| ----------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Inventory HTTP v1/v2 y alias        | [Inventory](../../apps/inventory-service/openapi.yaml)     | `apps/inventory-service`                                                                                   |
-| Orders HTTP                         | [Orders](../../apps/orders-service/openapi.yaml)           | `apps/orders-service`                                                                                      |
-| Identity, login y sesión            | [Identity](../../apps/identity-service/openapi.yaml)       | `apps/identity-service`                                                                                    |
-| Catalog público y stock interno     | [Catalog](../../apps/catalog-service/openapi/catalog.yaml) | `apps/catalog-service/src/modules/catalog`                                                                 |
-| Media, health y lectura de imágenes | [Media](../../apps/catalog-service/openapi/media.yaml)     | Media procesa imágenes; Catalog monta `/uploads/*`                                                         |
-| NATS saga v1                        | [JSON Schemas por subject](events.schema.json)             | Orders publica pedidos y resultados del simulador Payment; Inventory publica reserva, rechazo y liberación |
+| Contrato                            | Spec versionada                                            | Owner de implementación                                                                       |
+| ----------------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Inventory HTTP v1/v2 y alias        | [Inventory](../../apps/inventory-service/openapi.yaml)     | `apps/inventory-service`                                                                      |
+| Orders HTTP                         | [Orders](../../apps/orders-service/openapi.yaml)           | `apps/orders-service`                                                                         |
+| Identity, login y sesión            | [Identity](../../apps/identity-service/openapi.yaml)       | `apps/identity-service`                                                                       |
+| Catalog público y stock interno     | [Catalog](../../apps/catalog-service/openapi/catalog.yaml) | `apps/catalog-service/src/modules/catalog`                                                    |
+| Media, health y lectura de imágenes | [Media](../../apps/catalog-service/openapi/media.yaml)     | Media procesa imágenes; Catalog monta `/uploads/*`                                            |
+| NATS saga v1                        | [JSON Schemas por subject](events.schema.json)             | Orders publica pedidos y resultados de Polar; Inventory publica reserva, rechazo y liberación |
 
 El owner del módulo revisa su spec y los schemas en cada cambio de handler. Los owners de consumidores afectados deben revisar cambios incompatibles. Identity corre en su servicio propio; Catalog y Media comparten `apps/catalog-service` en :3007. Media recibe `image` mediante multipart de Catalog, no tiene una ruta independiente de upload. Identity documenta los endpoints que usan la web y los servicios; el catch-all GET/POST `/api/auth/*` también delega endpoints del proveedor Better Auth y su plugin admin. No declaramos esos endpoints adicionales como contratos propios de MercadoYa.
 
@@ -49,7 +49,7 @@ La versión del paquete usa SemVer. Correcciones de documentación/generación s
 
 Antes de integrar un breaking change, el PR debe incluir el bump de `packages/contracts/package.json`, actualizar la versión del documento afectado en el generador y documentar ruta/subject nuevo, consumidores afectados y periodo de deprecación en un ADR. Se conserva el contrato anterior con `deprecated: true` y una fecha/condición de retirada acordada hasta migrar sus consumidores. No se permite cambiar silenciosamente un schema existente. La revisión de owners exige esa evidencia; lint y comparación reproducible no sustituyen la revisión semántica de compatibilidad.
 
-Los eventos mantienen exactamente `orders.placed`, `inventory.reserved`, `inventory.rejected`, `inventory.released`, `payment.succeeded` y `payment.failed`. Todos llevan `version: 1`, `orderId` como correlación, `productId`, `quantity`, `buyerId` y `occurredAt`. `buyerId: string | null` se conserva por compatibilidad, aunque Orders público obtiene el ID de sesión. `payment.failed.reason` tiene 1 a 160 caracteres y `inventory.rejected.reason` conserva las causas actuales. `orders.placed` e `inventory.reserved` aceptan `paymentMode` opcional del CLI; el POST público lo descarta. Los resultados de pago y liberación descartan esa metadata.
+Los eventos mantienen exactamente `orders.placed`, `inventory.reserved`, `inventory.rejected`, `inventory.released`, `payment.succeeded` y `payment.failed`. Todos llevan `version: 1`, `orderId` como correlación, `productId`, `quantity`, `buyerId` y `occurredAt`. `buyerId: string | null` se conserva por compatibilidad, aunque Orders público obtiene el ID de sesión. `payment.failed.reason` tiene 1 a 160 caracteres y `inventory.rejected.reason` conserva las causas actuales. Orders guarda el precio PEN de Catalog antes de publicar. Los resultados de pago llevan correlación opcional de Polar, compatible con consumidores v1.
 
 Para eventos incompatibles se añade un schema con `version` nuevo y subject versionado acordado, con publicación/consumo paralelo durante la migración. No se sustituye el payload de un subject v1 con datos incompatibles. Los tests de parse deben cubrir ambos contratos y su correlación antes de retirar v1.
 

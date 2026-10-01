@@ -6,7 +6,7 @@ Aceptada en S5 (`v3-services`). Actualizada tras la saga y la integración de Re
 
 ## Contexto
 
-NATS entrega los eventos del pedido, mientras que Notifications ejecuta un handler AWS Lambda. En local hace falta unir ambos sin desplegar AWS. Tras incorporar el pago simulado, la notificación depende del desenlace, no de la creación del pedido ni de la reserva.
+NATS entrega los eventos del pedido, mientras que Notifications ejecuta un handler AWS Lambda. En local hace falta unir ambos sin desplegar AWS. Tras incorporar el desenlace del pago a la saga, la notificación depende del desenlace, no de la creación del pedido ni de la reserva.
 
 ## Decisión
 

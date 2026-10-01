@@ -19,12 +19,15 @@ Kong llama al endpoint interno `POST /api/identity/verify`. Con cookie, Identity
 
 `@mercadoya/jwt-verifier` usa `jose`, fija RS256 y requiere los claims anteriores. Cachea JWKS durante sesenta segundos y vuelve a consultar un `kid` desconocido, con cooldown de cinco segundos. Durante ese cooldown una clave recién rotada puede producir un 401 transitorio. Health es público; un fallo de Identity o JWKS produce 5xx y no autoriza la solicitud.
 
-Para ejecutar el smoke contra una base de prueba:
+Para ejecutar el smoke desde la raíz contra un stack de prueba, inicia Compose con el override `.github/compose-smoke.yml`. Catalog usa su worker real y una fixture exclusiva de CI que devuelve 401 a Polar, por lo que los productos no quedan listos para compra. Configura credenciales efímeras en `.env` y ejecuta:
 
 ```sh
-DATABASE_URL=postgresql://mercadoya:mercadoya_local@localhost:5432/mercadoya pnpm --filter @mercadoya/identity-service smoke
+set -a
+. ./.env
+set +a
+pnpm --filter @mercadoya/identity-service smoke
 ```
 
-El smoke crea un usuario y producto temporales, inicia sesión, verifica JWKS y JWT, crea pedidos con cookie y con Bearer y espera confirmación y reserva Inventory v2. Borra el usuario y producto al terminar; deja pedidos para diagnóstico. CI usa un stack efímero. No ejecutes este smoke contra una base de producción.
+El smoke crea un usuario y producto temporales, inicia sesión, verifica JWKS y JWT, y comprueba que las compras con cookie y Bearer respondan 409 sin reservar stock cuando el producto Polar no está listo. Inserta un pedido de lectura para verificar el acceso al checkout y al estado con JWT. Borra el usuario y producto al terminar; deja ese pedido para diagnóstico. CI usa un stack efímero. Los desenlaces Polar y la compensación Inventory v2 se verifican en el job `polar-saga`, con PostgreSQL y NATS dedicados. No ejecutes este smoke contra una base de producción.
 
 Documentación verificada para esta implementación: [Better Auth JWT](https://better-auth.com/docs/plugins/jwt), [sesiones](https://better-auth.com/docs/concepts/session-management), [Kong JWT](https://developer.konghq.com/plugins/jwt/), [Kong OIDC](https://developer.konghq.com/plugins/openid-connect/) y [plugin Lua de Kong](https://developer.konghq.com/custom-plugins/handler.lua/). Además se contrastaron el esquema y las opciones con el código instalado de Better Auth 1.7.5.

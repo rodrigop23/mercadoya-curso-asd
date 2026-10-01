@@ -94,7 +94,7 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/CreateOrder"
-      description: buyerId procede del claim sub verificado. Con Polar, Catalog debe tener el producto sincronizado; 409 mientras se prepara y 503 si Catalog no responde. Orders guarda el precio PEN antes de publicar. Campos extra como paymentMode, moneda o importe se descartan.
+      description: buyerId procede del claim sub verificado. Con Polar, Catalog debe tener el producto sincronizado; 409 mientras se prepara y 503 si Catalog no responde. Orders guarda el precio PEN antes de publicar. Campos extra como moneda o importe se descartan.
   /api/orders/{orderId}:
     get:
       operationId: getOrder
@@ -156,7 +156,7 @@ paths:
         - applicationJWT: []
       responses:
         "200":
-          description: Checkout listo, pedido finalizado o proveedor simulator explícito.
+          description: Checkout Polar listo o pedido finalizado.
           content:
             application/json:
               schema:
@@ -375,9 +375,7 @@ components:
       properties:
         provider:
           type: string
-          enum:
-            - polar
-            - simulator
+          const: polar
         checkout:
           anyOf:
             - type: object

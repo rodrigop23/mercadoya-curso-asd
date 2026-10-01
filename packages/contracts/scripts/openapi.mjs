@@ -177,7 +177,7 @@ documents.set(
             security: applicationAuth,
             requestBody: body('CreateOrder'),
             description:
-              'buyerId procede del claim sub verificado. Con Polar, Catalog debe tener el producto sincronizado; 409 mientras se prepara y 503 si Catalog no responde. Orders guarda el precio PEN antes de publicar. Campos extra como paymentMode, moneda o importe se descartan.',
+              'buyerId procede del claim sub verificado. Con Polar, Catalog debe tener el producto sincronizado; 409 mientras se prepara y 503 si Catalog no responde. Orders guarda el precio PEN antes de publicar. Campos extra como moneda o importe se descartan.',
           },
         ),
       },
@@ -197,10 +197,7 @@ documents.set(
           'getPaymentCheckout',
           'Consultar el checkout Polar del comprador',
           {
-            200: response(
-              'Checkout listo, pedido finalizado o proveedor simulator explícito.',
-              'PaymentCheckoutResponse',
-            ),
+            200: response('Checkout Polar listo o pedido finalizado.', 'PaymentCheckoutResponse'),
             202: response(
               'Reserva o creación de checkout pendiente; repetir consulta.',
               'PaymentCheckoutResponse',

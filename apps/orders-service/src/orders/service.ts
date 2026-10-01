@@ -11,7 +11,6 @@ export type CreateOrderInput = {
   productId: string;
   quantity: number;
   buyerId: string | null;
-  paymentMode?: 'succeed' | 'fail';
 };
 
 function publicOrder(row: typeof orderRecord.$inferSelect) {
@@ -20,11 +19,11 @@ function publicOrder(row: typeof orderRecord.$inferSelect) {
   return order;
 }
 
-export function createOrdersService(eventBus: EventBus, catalog?: CatalogBillingPort) {
+export function createOrdersService(eventBus: EventBus, catalog: CatalogBillingPort) {
   return {
     async createOrder(input: CreateOrderInput) {
-      const paymentProduct = catalog ? await catalog.getBillingProduct(input.productId) : null;
-      if (paymentProduct && paymentProduct.unitAmount * input.quantity > 99_999_999)
+      const paymentProduct = await catalog.getBillingProduct(input.productId);
+      if (paymentProduct.unitAmount * input.quantity > 99_999_999)
         throw new CatalogBillingError(409, 'El importe del pedido supera el máximo permitido.');
       const [createdOrder] = await db
         .insert(orderRecord)
@@ -44,7 +43,6 @@ export function createOrdersService(eventBus: EventBus, catalog?: CatalogBilling
       // La saga mantiene pending hasta el resultado de Payment o el rechazo de Inventory.
       const event = orderPlacedEventSchema.parse({
         version: 1,
-        paymentMode: input.paymentMode,
         orderId: createdOrder.id,
         productId: input.productId,
         quantity: input.quantity,

@@ -10,7 +10,6 @@ import {
   createPolarGateway,
 } from '../dist/payment/polar.js';
 import { createPolarWebhookRoutes, mapPolarEvent } from '../dist/payment/webhook.js';
-import { subscribePaymentSimulator } from '../dist/payment/simulator.js';
 
 const secret = `whsec_${randomBytes(32).toString('base64')}`;
 const orderId = randomUUID();
@@ -174,18 +173,11 @@ test('checkout confirmado o exitoso no acredita cobro; failed, expired y void co
   );
 });
 
-test('Polar es default; el override didáctico no puede activar el simulador', async () => {
+test('Polar es el único proveedor y exige credenciales', () => {
   assert.equal(paymentProvider({}), 'polar');
-  assert.equal(paymentProvider({ PAYMENT_PROVIDER: 'simulator' }), 'simulator');
-  assert.throws(() => paymentProvider({ PAYMENT_PROVIDER: 'stripe' }));
-  const original = process.env.PAYMENT_PROVIDER;
-  process.env.PAYMENT_PROVIDER = 'polar';
-  try {
-    await assert.rejects(subscribePaymentSimulator({}), /requiere PAYMENT_PROVIDER=simulator/);
-  } finally {
-    if (original === undefined) delete process.env.PAYMENT_PROVIDER;
-    else process.env.PAYMENT_PROVIDER = original;
-  }
+  assert.equal(paymentProvider({ PAYMENT_PROVIDER: 'polar' }), 'polar');
+  assert.throws(() => paymentProvider({ PAYMENT_PROVIDER: 'simulator' }));
+  assert.throws(() => polarConfig({ PAYMENT_PROVIDER: 'simulator' }));
   assert.throws(
     () => polarConfig({ POLAR_ACCESS_TOKEN: secret }),
     (error) => !error.message.includes(secret),
@@ -209,7 +201,6 @@ test('SDK 1.0.1 fija API 2026-04, sandbox, precio total y correlación server-si
     quantity: 2,
     buyerId: 'buyer',
     occurredAt: timestamp,
-    paymentMode: 'succeed',
   };
   const originalFetch = globalThis.fetch;
   try {

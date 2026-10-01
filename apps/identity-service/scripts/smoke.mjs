@@ -290,9 +290,18 @@ try {
   assert.equal(publicProducts.status, 200);
   assert.ok((await publicProducts.json()).products.some((p) => p.id === productId));
   const created = await jsonPost('/api/orders', { productId, quantity: 1 });
-  assert.equal(created.status, 202);
-  const { order } = await created.json();
-  assert.equal(order.buyerId, userId);
+  assert.equal(created.status, 409);
+  assert.equal(
+    (await pool.query('SELECT 1 FROM orders_order WHERE product_id=$1', [productId])).rowCount,
+    0,
+  );
+  // Fixture de lectura; la compra exige sincronización real con Polar.
+  const {
+    rows: [order],
+  } = await pool.query(
+    "INSERT INTO orders_order(product_id, quantity, buyer_id, status) VALUES ($1, 1, $2, 'pending') RETURNING id",
+    [productId, userId],
+  );
   const browserCookie = cookie;
   assert.equal(
     (await jsonPost('/api/orders', { productId, quantity: 1 }, { authorization: 'Bearer invalid' }))
@@ -314,26 +323,16 @@ try {
     { productId, quantity: 1 },
     { authorization: `Bearer ${token}` },
   );
-  assert.equal(bearerOrder.status, 202);
-  for (let attempt = 0; attempt < 40; attempt++) {
-    const result = await request(`/api/orders/${order.id}`, {
-      headers: { authorization: `Bearer ${token}` },
-    });
-    assert.equal(result.status, 200);
-    if ((await result.json()).order.status === 'confirmed') break;
-    if (attempt === 39) throw new Error('La saga no confirmó el pedido.');
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  const reservation = await request(`/api/inventory/reservations/${order.id}`, {
+  assert.equal(bearerOrder.status, 409);
+  const checkout = await request(`/api/orders/${order.id}/checkout`, {
     headers: { authorization: `Bearer ${token}` },
   });
-  assert.equal(reservation.status, 200);
-  assert.equal(reservation.headers.get('x-service-version'), 'v2');
-  assert.equal((await reservation.json()).reservation.status, 'reserved');
+  assert.equal(checkout.status, 202);
+  assert.deepEqual(await checkout.json(), { provider: 'polar', checkout: null });
   const stock = await fetch(`${catalogBase}/api/internal/catalog/products/${productId}/stock`, {
     headers: { 'x-catalog-internal-token': internalToken },
   });
-  assert.ok((await stock.json()).availableStock <= 4, 'Inventory no descontó stock en Catalog.');
+  assert.equal((await stock.json()).availableStock, 5);
   assert.equal(
     (
       await request('/api/orders', {
@@ -362,7 +361,7 @@ try {
   assert.equal((await request(`/uploads/${productData.imagePath}`)).status, 404);
   productId = undefined;
   console.log(
-    'Smoke OK: login/sesión, JWKS, JWT, Kong 401, health público, CRUD Catalog, uploads, CORS, límites, stock interno y saga Inventory v2.',
+    'Smoke OK: login/sesión, JWKS, JWT, Kong 401, health público, CRUD Catalog, uploads, CORS, límites, stock interno y rechazo de compra sin catálogo Polar listo.',
   );
 } finally {
   // Keep order/reservation records for diagnosis, but delete the temporary identity and product.
