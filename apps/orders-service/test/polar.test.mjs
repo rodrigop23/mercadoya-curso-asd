@@ -100,35 +100,47 @@ test('firma válida con JSON, tipo o estructura inválida devuelve 400', async (
   }
 });
 
-test('la ruta persiste antes de responder y no ejecuta efectos de saga inline', async () => {
-  let release;
-  const pending = new Promise((resolve) => {
-    release = resolve;
-  });
-  let started = false;
-  const response = send(
-    app(async () => {
-      started = true;
-      await pending;
-    }),
-    JSON.stringify(paid),
-  );
-  await new Promise((resolve) => setTimeout(resolve, 10));
-  assert.equal(started, true);
-  release();
-  assert.equal((await response).status, 202);
-  assert.equal(
-    (
-      await send(
-        app(async () => {
-          throw new Error('unavailable');
-        }),
-        JSON.stringify(paid),
-      )
-    ).status,
-    503,
-  );
-});
+test(
+  'la ruta persiste antes de responder y no ejecuta efectos de saga inline',
+  { timeout: 5000 },
+  async () => {
+    const { promise: pending, resolve: release } = Promise.withResolvers();
+    const { promise: started, resolve: signalStarted } = Promise.withResolvers();
+    let responded = false;
+    const response = send(
+      app(async () => {
+        signalStarted();
+        await pending;
+      }),
+      JSON.stringify(paid),
+    ).then((result) => {
+      responded = true;
+      return result;
+    });
+    try {
+      await Promise.race([
+        started,
+        response.then(() => assert.fail('La ruta respondió antes de persistir el evento.')),
+      ]);
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(responded, false);
+    } finally {
+      release();
+    }
+    assert.equal((await response).status, 202);
+    assert.equal(
+      (
+        await send(
+          app(async () => {
+            throw new Error('unavailable');
+          }),
+          JSON.stringify(paid),
+        )
+      ).status,
+      503,
+    );
+  },
+);
 
 test('checkout confirmado o exitoso no acredita cobro; failed, expired y void compensan', () => {
   for (const status of ['open', 'confirmed', 'succeeded']) {
