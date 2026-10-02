@@ -11,11 +11,7 @@ export const eventSubjects = {
 
 export type EventSubject = (typeof eventSubjects)[keyof typeof eventSubjects];
 
-export const paymentModeSchema = z.enum(['succeed', 'fail']);
-
 export const orderPlacedEventSchema = z.object({
-  // Solo el CLI interno usa este override didáctico; el POST público no lo acepta.
-  paymentMode: paymentModeSchema.optional(),
   version: z.literal(1),
   orderId: z.string().uuid(),
   productId: z.string().uuid(),
@@ -26,6 +22,13 @@ export const orderPlacedEventSchema = z.object({
 
 export type OrderPlacedEvent = z.infer<typeof orderPlacedEventSchema>;
 
+// Campos aditivos v1: los consumidores antiguos pueden descartarlos.
+const paymentCorrelation = {
+  provider: z.literal('polar').optional(),
+  eventId: z.string().min(1).max(200).optional(),
+  checkoutId: z.string().uuid().optional(),
+  providerOrderId: z.string().uuid().optional(),
+};
 const inventoryReservationResult = {
   version: z.literal(1),
   orderId: z.string().uuid(),
@@ -37,12 +40,18 @@ const inventoryReservationResult = {
 
 export const inventoryReservedEventSchema = z.object({
   ...inventoryReservationResult,
-  paymentMode: paymentModeSchema.optional(),
 });
-export const inventoryReleasedEventSchema = z.object(inventoryReservationResult);
-export const paymentSucceededEventSchema = z.object(inventoryReservationResult);
+export const inventoryReleasedEventSchema = z.object({
+  ...inventoryReservationResult,
+  ...paymentCorrelation,
+});
+export const paymentSucceededEventSchema = z.object({
+  ...inventoryReservationResult,
+  ...paymentCorrelation,
+});
 export const paymentFailedEventSchema = z.object({
   ...inventoryReservationResult,
+  ...paymentCorrelation,
   reason: z.string().min(1).max(160),
 });
 export type InventoryReleasedEvent = z.infer<typeof inventoryReleasedEventSchema>;
@@ -64,16 +73,11 @@ const reservationHttpSchema = z.object({
   createdAt: z.string().datetime(),
 });
 
-export const reservationResponseV1Schema = z.object({
-  reservation: reservationHttpSchema,
-});
-
-export const reservationResponseV2Schema = z.object({
+export const reservationResponseSchema = z.object({
   reservation: reservationHttpSchema.extend({ status: z.literal('reserved') }),
 });
 
-export type ReservationResponseV1 = z.infer<typeof reservationResponseV1Schema>;
-export type ReservationResponseV2 = z.infer<typeof reservationResponseV2Schema>;
+export type ReservationResponse = z.infer<typeof reservationResponseSchema>;
 
 export type ReservationReason =
   | 'invalid_quantity'
@@ -91,11 +95,11 @@ export interface InventoryPort {
   }): Promise<ReservationResult>;
 }
 
-export type StockAdjustmentResult =
-  | { adjusted: true; availableStock: number }
-  | { adjusted: false; reason: 'product_not_found' | 'insufficient_stock' | 'stock_limit' };
+export type StockAdjustmentResult = import('./http.js').StockAdjustmentResponse;
 
 export interface CatalogStockContract {
   getAvailableStock(productId: string): Promise<number | null>;
   adjustStock(productId: string, delta: number): Promise<StockAdjustmentResult>;
 }
+
+export * from './http.js';

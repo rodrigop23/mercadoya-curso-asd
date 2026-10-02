@@ -1,42 +1,48 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { useEffect, useState } from 'react';
-
+import { Component, lazy, Suspense, type ReactNode } from 'react';
 import { AdminAccessGuard } from '@/features/identity/admin-access-guard';
+import { API_BASE_URL } from '@/lib/products';
 
 export const Route = createFileRoute('/admin/products')({ component: AdminProductsPage });
+const CatalogSlice = lazy(() => import('catalog/AdminProducts'));
 
-const remoteUrl = (import.meta.env.VITE_MF_CATALOG_URL ?? 'http://localhost:5174').replace(
-  /\/$/,
-  '',
-);
+class CatalogBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  override state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  override render() {
+    if (this.state.failed) {
+      return (
+        <main className="mx-auto max-w-6xl px-4 py-12" role="alert">
+          <h1 className="text-xl font-semibold">
+            El catálogo de administración no está disponible
+          </h1>
+          <p className="mt-3">Comprueba la conexión e intenta recargar la página.</p>
+          <a className="mt-4 inline-block underline" href="/admin/products">
+            Recargar catálogo
+          </a>
+        </main>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 function AdminProductsPage() {
-  const [height, setHeight] = useState(900);
-  const [frame, setFrame] = useState<HTMLIFrameElement | null>(null);
-
-  useEffect(() => {
-    if (!frame) return;
-    const origin = new URL(remoteUrl).origin;
-    function resize(event: MessageEvent) {
-      if (event.source !== frame?.contentWindow || event.origin !== origin) return;
-      if (event.data?.type !== 'mercadoya:catalog-height') return;
-      const nextHeight = event.data.height;
-      if (typeof nextHeight === 'number' && Number.isFinite(nextHeight)) {
-        setHeight(Math.max(600, Math.min(nextHeight, 10000)));
-      }
-    }
-    window.addEventListener('message', resize);
-    return () => window.removeEventListener('message', resize);
-  }, [frame]);
-
   return (
     <AdminAccessGuard>
-      <iframe
-        ref={setFrame}
-        title="Administración de productos"
-        src={remoteUrl}
-        style={{ display: 'block', width: '100%', height, border: 0 }}
-      />
+      <CatalogBoundary>
+        <Suspense
+          fallback={
+            <main className="mx-auto max-w-6xl px-4 py-12" role="status">
+              Cargando catálogo…
+            </main>
+          }
+        >
+          <CatalogSlice apiBaseUrl={API_BASE_URL} />
+        </Suspense>
+      </CatalogBoundary>
     </AdminAccessGuard>
   );
 }

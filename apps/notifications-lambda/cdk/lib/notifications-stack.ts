@@ -19,15 +19,6 @@ export class NotificationsStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
-    const ingestUrl = new CfnParameter(this, 'EventsIngestUrl', {
-      type: 'String',
-      description: 'URL pública HTTPS de POST /api/events/ingest.',
-    });
-    const ingestToken = new CfnParameter(this, 'NotificationsIngestToken', {
-      type: 'String',
-      noEcho: true,
-      description: 'Token compartido con el API para timeline ingest.',
-    });
     const invokeToken = new CfnParameter(this, 'NotificationsInvokeToken', {
       type: 'String',
       noEcho: true,
@@ -71,8 +62,6 @@ export class NotificationsStack extends Stack {
       memorySize: 256,
       timeout: Duration.seconds(20),
       environment: {
-        EVENTS_INGEST_URL: ingestUrl.valueAsString,
-        NOTIFICATIONS_INGEST_TOKEN: ingestToken.valueAsString,
         NOTIFICATIONS_INVOKE_TOKEN: invokeToken.valueAsString,
         RESEND_API_KEY: resendKey.valueAsString,
         RESEND_FROM: resendFrom.valueAsString,

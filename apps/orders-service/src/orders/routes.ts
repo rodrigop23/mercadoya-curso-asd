@@ -1,23 +1,40 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { createOrderSchema, type PaymentCheckoutResponse } from '@mercadoya/contracts';
 
 import type { IdentityContract } from '../identity/contract.js';
 import type { createOrdersService } from './service.js';
-
-const createOrderSchema = z.object({
-  productId: z.string().uuid(),
-  quantity: z.number().int().positive().max(2_147_483_647),
-});
+import { CatalogBillingError } from '../catalog/http.js';
 
 export function createOrdersRoutes(
   orders: ReturnType<typeof createOrdersService>,
   identity: IdentityContract,
+  payments: { getCheckout(orderId: string): Promise<PaymentCheckoutResponse> },
 ) {
   const routes = new Hono({ strict: false });
 
   routes.get('/health', (c) => c.json({ module: 'orders', ok: true }));
 
+  routes.get('/:orderId/checkout', async (c) => {
+    const session = await identity.getSession(c.req.raw.headers);
+    if (!session) return c.json({ error: 'Unauthorized' }, 401);
+    const orderId = z.uuid().safeParse(c.req.param('orderId'));
+    if (!orderId.success) return c.json({ error: 'Pedido inválido.' }, 400);
+    try {
+      const order = await orders.getOrder(orderId.data);
+      if (!order || order.buyerId !== session.user.id)
+        return c.json({ error: 'El pedido no existe.' }, 404);
+      c.header('Cache-Control', 'no-store');
+      const result = await payments.getCheckout(orderId.data);
+      return c.json(result, result.checkout || order.status !== 'pending' ? 200 : 202);
+    } catch {
+      return c.json({ error: 'No se pudo consultar el checkout.' }, 503);
+    }
+  });
+
   routes.get('/:orderId', async (c) => {
+    const session = await identity.getSession(c.req.raw.headers);
+    if (!session) return c.json({ error: 'Unauthorized' }, 401);
     const parsedOrderId = z.string().uuid().safeParse(c.req.param('orderId'));
     if (!parsedOrderId.success) {
       return c.json({ error: 'El identificador del pedido no es válido.' }, 400);
@@ -68,6 +85,8 @@ export function createOrdersRoutes(
 
       return c.json({ order: result.order }, 202);
     } catch (error) {
+      if (error instanceof CatalogBillingError)
+        return c.json({ error: error.message }, error.status);
       console.error('No se pudo crear el pedido:', error);
       return c.json({ error: 'No se pudo crear el pedido.' }, 500);
     }

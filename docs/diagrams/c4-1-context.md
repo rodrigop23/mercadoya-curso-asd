@@ -11,4 +11,4 @@ flowchart LR
   admin -->|administra productos| mercadoya
 ```
 
-El comprador usa el catálogo y los pedidos del host. El admin usa la ruta de productos, que monta un MF en iframe. Identity vive dentro de MercadoYa; este contexto no supone un proveedor de identidad externo. La demo S3 separada no participa en este sistema.
+El comprador usa el catálogo y los pedidos del host. El admin usa la ruta de productos, que carga el slice de catálogo por Module Federation. Identity vive dentro de MercadoYa; este contexto no supone un proveedor de identidad externo. La demo S3 separada no participa en este sistema.

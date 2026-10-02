@@ -12,8 +12,6 @@ const payload = {
 };
 const envNames = [
   'NOTIFICATIONS_INVOKE_TOKEN',
-  'NOTIFICATIONS_INGEST_TOKEN',
-  'EVENTS_INGEST_URL',
   'RESEND_API_KEY',
   'RESEND_FROM',
   'DEMO_NOTIFY_EMAIL',
@@ -29,13 +27,12 @@ type Call = {
 };
 let calls: Call[];
 let resendFailure: 'api' | 'network' | undefined;
-let ingestFailure: boolean;
+const originalInfo = console.info;
+let notifications: Record<string, unknown>[];
 
 beforeEach(() => {
   Object.assign(process.env, {
     NOTIFICATIONS_INVOKE_TOKEN: 'invoke-test',
-    NOTIFICATIONS_INGEST_TOKEN: 'ingest-test',
-    EVENTS_INGEST_URL: 'https://timeline.example/api/events/ingest',
     RESEND_API_KEY: 're_test_only',
     RESEND_FROM: 'MercadoYa <orders@example.com>',
     DEMO_NOTIFY_EMAIL: 'buyer@example.com',
@@ -43,7 +40,11 @@ beforeEach(() => {
   });
   calls = [];
   resendFailure = undefined;
-  ingestFailure = false;
+  notifications = [];
+  console.info = (message: string) => {
+    const entry = JSON.parse(message);
+    if (entry.step === 'notification.created') notifications.push(entry);
+  };
   globalThis.fetch = async (input, options) => {
     const url = String(input);
     calls.push({
@@ -58,13 +59,13 @@ beforeEach(() => {
         return Response.json({ name: 'validation_error', message: 'Rejected' }, { status: 422 });
       return Response.json({ id: 'email-test-id' });
     }
-    assert.equal(url, process.env.EVENTS_INGEST_URL);
-    return Response.json({ ok: !ingestFailure }, { status: ingestFailure ? 503 : 202 });
+    throw new Error(`HTTP inesperado: ${url}`);
   };
 });
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  console.info = originalInfo;
   for (const name of envNames) {
     if (originalEnv[name] === undefined) delete process.env[name];
     else process.env[name] = originalEnv[name];
@@ -85,8 +86,10 @@ for (const [subject, title, reason] of [
 ] as const) {
   test(`${subject} envía un correo y registra el desenlace`, async () => {
     assert.equal((await invoke(subject, reason ? { reason } : {})).statusCode, 202);
-    assert.equal(calls.length, 2);
-    const [send, ingest] = calls;
+    assert.equal(calls.length, 1);
+    const [send] = calls;
+    assert.equal(notifications.length, 1);
+    const notification = notifications[0];
     assert.equal(send.body.subject, title);
     assert.equal(send.body.to, 'buyer@example.com');
     assert.equal(send.body.from, process.env.RESEND_FROM);
@@ -97,11 +100,10 @@ for (const [subject, title, reason] of [
     if (reason) assert.match(String(send.body.text), new RegExp(reason));
     assert.equal(send.headers.get('idempotency-key'), `${subject}/${payload.orderId}`);
     assert.ok(send.signal);
-    assert.equal(ingest.headers.get('x-ingest-token'), 'ingest-test');
-    assert.equal(ingest.body.type, 'notification.email');
-    assert.equal(ingest.body.emailStatus, 'sent');
-    assert.equal(ingest.body.emailId, 'email-test-id');
-    assert.equal(ingest.body.body, send.body.text);
+    assert.equal(notification.type, 'notification.email');
+    assert.equal(notification.emailStatus, 'sent');
+    assert.equal(notification.emailId, 'email-test-id');
+    assert.equal(notification.body, send.body.text);
   });
 }
 
@@ -122,23 +124,26 @@ for (const scenario of ['sin key', 'modo stub', 'sin destinatario', 'destinatari
       (await invoke('payment.succeeded', { buyerId: 'identity-user-id' })).statusCode,
       202,
     );
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0].body.type, 'notification.stub');
-    assert.equal(calls[0].body.emailStatus, 'stub');
-    assert.ok(calls[0].body.stubReason);
-    assert.notEqual(calls[0].body.recipient, 'identity-user-id');
+    assert.equal(calls.length, 0);
+    assert.equal(notifications.length, 1);
+    assert.equal(notifications[0].type, 'notification.stub');
+    assert.equal(notifications[0].emailStatus, 'stub');
+    assert.ok(notifications[0].stubReason);
+    assert.notEqual(notifications[0].recipient, 'identity-user-id');
   });
 }
 
 for (const failure of ['api', 'network', 'config'] as const) {
-  test(`fallo ${failure} mantiene ingest y 202`, async () => {
+  test(`fallo ${failure} registra el error y mantiene 202`, async () => {
     if (failure === 'config') delete process.env.RESEND_FROM;
     else resendFailure = failure;
     assert.equal((await invoke('payment.failed', { reason: 'test_failure' })).statusCode, 202);
-    const ingest = calls.at(-1)!;
-    assert.equal(ingest.body.emailStatus, 'error');
-    assert.equal(ingest.body.emailError, true);
-    assert.equal(ingest.body.type, 'notification.email');
+    assert.equal(calls.length, failure === 'config' ? 0 : 1);
+    assert.equal(notifications.length, 1);
+    const notification = notifications[0];
+    assert.equal(notification.emailStatus, 'error');
+    assert.equal(notification.emailError, true);
+    assert.equal(notification.type, 'notification.email');
   });
 }
 
@@ -164,9 +169,4 @@ test('acepta body base64 de Function URL', async () => {
       .statusCode,
     202,
   );
-});
-
-test('un fallo de ingest sigue siendo visible para el bridge', async () => {
-  ingestFailure = true;
-  await assert.rejects(invoke('payment.succeeded'), /Timeline ingest respondió 503/);
 });

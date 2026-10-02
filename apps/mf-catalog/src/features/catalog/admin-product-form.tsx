@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@mercadoya/ui/components/button';
 import {
   Dialog,
   DialogContent,
@@ -9,10 +9,11 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { FieldGroup } from '@/components/ui/field';
+} from '@mercadoya/ui/components/dialog';
+import { FieldGroup } from '@mercadoya/ui/components/field';
 import { useAppForm } from '@/hooks/use-app-form';
-import { createProduct, productsQueryOptions, updateProduct, type Product } from '@/lib/products';
+import type { Product } from '@/lib/products';
+import { useCatalogApi } from '@/catalog-slice';
 
 const MAX_IMAGE_SIZE = 2 * 1024 * 1024;
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -24,8 +25,8 @@ function productSchema(requiresImage: boolean) {
     price: z
       .string()
       .regex(/^\d+(?:\.\d{1,2})?$/, 'El precio debe tener hasta dos decimales.')
-      .refine((value) => Number(value) >= 0.01 && Number(value) <= 99_999_999.99, {
-        message: 'El precio debe estar entre S/ 0.01 y S/ 99,999,999.99.',
+      .refine((value) => Number(value) >= 2 && Number(value) <= 999_999.99, {
+        message: 'El precio debe estar entre S/ 2.00 y S/ 999,999.99.',
       }),
     stock: z
       .string()
@@ -59,6 +60,7 @@ export function AdminProductForm({
   onClose: () => void;
   onClosed: () => void;
 }) {
+  const { createProduct, productsQueryOptions, updateProduct } = useCatalogApi();
   const queryClient = useQueryClient();
   const mutation = useMutation({
     mutationFn: (formData: FormData) =>
@@ -151,8 +153,8 @@ export function AdminProductForm({
                       <field.FormInput
                         label="Precio (S/)"
                         type="number"
-                        min="0.01"
-                        max="99999999.99"
+                        min="2"
+                        max="999999.99"
                         step="0.01"
                         required
                         placeholder="0.00"

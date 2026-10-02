@@ -3,14 +3,17 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "dev": "turbo run build --filter @mercadoya/contracts && turbo run dev",
-    "demo:infra": "docker compose up -d postgres nats && pnpm --filter @mercadoya/api db:push && docker compose up -d --build --remove-orphans inventory-v1 inventory-v2",
+    "dev": "turbo run dev --filter=@mercadoya/web --filter=@mercadoya/mf-catalog",
+    "demo:infra": "docker compose up -d postgres nats && pnpm --filter @mercadoya/catalog-service db:migrate && pnpm --filter @mercadoya/identity-service db:migrate && pnpm --filter @mercadoya/orders-service db:migrate && mkdir -p apps/catalog-service/uploads && LOCAL_UID=$(id -u) LOCAL_GID=$(id -g) docker compose up -d --build --remove-orphans",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "format": "turbo run format format:root",
     "format:root": "oxfmt package.json turbo.json .oxlintrc.json .oxfmtrc.json",
     "typecheck": "turbo run typecheck",
-    "demo:saga": "turbo run demo:saga --filter @mercadoya/orders-service"
+    "demo:saga": "turbo run demo:saga --filter @mercadoya/orders-service",
+    "test": "turbo run test",
+    "openapi:generate": "turbo run openapi:generate --filter=@mercadoya/contracts",
+    "openapi:check": "turbo run openapi:check --filter=@mercadoya/contracts"
   },
   "devDependencies": {
     "esbuild": "0.28.2",

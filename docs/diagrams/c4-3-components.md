@@ -1,5 +1,7 @@
 # C4 nivel 3: componentes de MercadoYa en S4 / V2 (histórico)
 
+Documento histórico de una etapa anterior. No describe el despliegue actual ni debe usarse para iniciarlo. Consulta el [README actual](../../README.md) y el ADR 0020 sobre el retiro de la experiencia de eventos.
+
 Este diagrama conserva la composición del API en `v2-integration`. Para el runtime actual consulta [componentes S5](c4-3-components-v3.md).
 
 La API compone seis módulos en un proceso Hono. NATS conecta los handlers de eventos; Catalog no consume `orders.placed`.

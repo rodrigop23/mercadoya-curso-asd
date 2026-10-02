@@ -1,7 +1,7 @@
 import type { ComponentProps, ReactNode } from 'react';
 
-import { Field, FieldDescription, FieldError, FieldLabel } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
+import { Field, FieldDescription, FieldError, FieldLabel } from '@mercadoya/ui/components/field';
+import { Input } from '@mercadoya/ui/components/input';
 import { useFieldContext } from '@/hooks/form-context';
 
 type FormInputProps = Omit<

@@ -1,7 +1,7 @@
 import type { ComponentProps, ReactNode } from 'react';
 
-import { Field, FieldDescription, FieldError, FieldLabel } from '@/components/ui/field';
-import { Textarea } from '@/components/ui/textarea';
+import { Field, FieldDescription, FieldError, FieldLabel } from '@mercadoya/ui/components/field';
+import { Textarea } from '@mercadoya/ui/components/textarea';
 import { useFieldContext } from '@/hooks/form-context';
 
 type FormTextareaProps = Omit<

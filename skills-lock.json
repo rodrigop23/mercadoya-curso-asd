@@ -7,6 +7,12 @@
       "skillPath": ".agents/skills/impeccable/SKILL.md",
       "computedHash": "d4cfdc3b7a18041ff02e1ad4b6377450e978e10928ba7e96377ff7d66994b490"
     },
+    "polar-integration": {
+      "source": "polarsource/skills",
+      "sourceType": "github",
+      "skillPath": "skills/polar-integration/SKILL.md",
+      "computedHash": "fe8f63acfb963229ea806c07c0f22c7cd8ab61a944f3a00841d8022c18dd0190"
+    },
     "shadcn": {
       "source": "shadcn-ui/ui",
       "sourceType": "github",

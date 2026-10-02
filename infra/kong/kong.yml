@@ -1,0 +1,76 @@
+_format_version: '3.0'
+services:
+  - name: identity
+    url: http://identity:3006
+    routes:
+      - name: identity-public
+        paths: ['/api/auth', '/api/me', '~/api/identity/health$']
+        strip_path: false
+  - name: orders
+    url: http://orders:3002
+    routes:
+      - name: polar-webhook-public
+        paths: ['~/api/payments/polar/webhook$']
+        methods: ['POST']
+        strip_path: false
+      - name: orders-health
+        paths: ['~/api/orders/health$']
+        strip_path: false
+      - name: orders-protected
+        paths: ['/api/orders']
+        strip_path: false
+        plugins:
+          - name: identity-auth
+            config: { verify_url: 'http://identity:3006/api/identity/verify' }
+  - name: inventory
+    url: http://inventory:3003
+    routes:
+      - name: inventory-health
+        paths: ['~/api/inventory/health$']
+        strip_path: false
+      - name: inventory-protected
+        paths: ['~/api/inventory/reservations/[^/]+$']
+        strip_path: false
+        plugins:
+          - name: identity-auth
+            config: { verify_url: 'http://identity:3006/api/identity/verify' }
+  - name: notifications
+    url: http://notifications:3004
+    routes:
+      - name: notifications-health
+        paths: ['~/api/notifications/health$']
+        strip_path: false
+      - name: notifications-protected
+        paths: ['/api/notifications']
+        strip_path: false
+        plugins:
+          - name: identity-auth
+            config: { verify_url: 'http://identity:3006/api/identity/verify' }
+  - name: catalog-media
+    url: http://catalog:3007
+    routes:
+      - name: catalog-mutations
+        paths: ['/api/products']
+        methods: ['POST', 'PUT', 'DELETE', 'PATCH']
+        strip_path: false
+        plugins:
+          - name: identity-auth
+            config: { verify_url: 'http://identity:3006/api/identity/verify' }
+      - name: catalog-public
+        paths: ['/api/products', '/api/catalog/health', '/api/media/health', '/uploads']
+        methods: ['GET', 'HEAD', 'OPTIONS']
+        strip_path: false
+      - name: catalog-stock-internal-only
+        paths: ['/api/internal/catalog']
+        strip_path: false
+        plugins:
+          - name: request-termination
+            config: { status_code: 404, message: 'Not found' }
+plugins:
+  - name: cors
+    config:
+      origins: ['http://localhost:5173', 'http://localhost:5174']
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
+      headers: ['Content-Type', 'Authorization']
+      credentials: true
+      preflight_continue: false

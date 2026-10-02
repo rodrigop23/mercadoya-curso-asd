@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1790691783444,
+      "tag": "0000_lumpy_lockheed",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790859314328,
+      "tag": "0001_polar_products",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790868000000,
+      "tag": "0002_polar_retry_limits",
+      "breakpoints": true
+    }
+  ]
+}

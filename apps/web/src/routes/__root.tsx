@@ -2,8 +2,8 @@ import type { QueryClient } from '@tanstack/react-query';
 import { Link, Outlet, createRootRouteWithContext } from '@tanstack/react-router';
 import { ChevronDownIcon, LogOutIcon } from 'lucide-react';
 
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
+import { Avatar, AvatarFallback } from '@mercadoya/ui/components/avatar';
+import { Button } from '@mercadoya/ui/components/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,7 +12,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+} from '@mercadoya/ui/components/dropdown-menu';
 import { authClient } from '@/lib/auth-client';
 import '../styles.css';
 
@@ -52,13 +52,6 @@ function RootLayout() {
               activeProps={{ className: 'bg-emerald-50 text-primary' }}
             >
               Catálogo
-            </Link>
-            <Link
-              to="/events"
-              className="rounded-lg px-3 py-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-              activeProps={{ className: 'bg-emerald-50 text-primary' }}
-            >
-              Eventos
             </Link>
             {isAdmin && (
               <Link

@@ -31,6 +31,7 @@ export async function createEventBus(): Promise<EventBus> {
 }
 
 function createNatsEventBus(connection: NatsConnection): EventBus {
+  const consumerTasks: Promise<void>[] = [];
   return {
     transport: 'nats',
     async publish(subject, payload) {
@@ -39,8 +40,8 @@ function createNatsEventBus(connection: NatsConnection): EventBus {
       logEvent({ type: 'event.publish', transport: 'nats', subject, ...eventMetadata(payload) });
     },
     async subscribe(subject, consumer, handler) {
-      const subscription = connection.subscribe(subject);
-      void (async () => {
+      const subscription = connection.subscribe(subject, { queue: consumer });
+      const consume = (async () => {
         for await (const message of subscription) {
           let payload: unknown;
           try {
@@ -73,10 +74,12 @@ function createNatsEventBus(connection: NatsConnection): EventBus {
           error: error instanceof Error ? error.message : String(error),
         });
       });
+      consumerTasks.push(consume);
       await connection.flush();
     },
     async close() {
       if (!connection.isClosed()) await connection.drain();
+      await Promise.all(consumerTasks);
     },
   };
 }

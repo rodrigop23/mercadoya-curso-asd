@@ -27,7 +27,7 @@ type HttpEvent = {
   isBase64Encoded?: boolean;
 };
 
-// Deja tiempo para el ingest dentro del timeout de Lambda y del bridge.
+// Limita el envío al timeout del handler y del bridge.
 class NotificationsResend extends Resend {
   override fetchRequest<T>(path: string, options: RequestInit = {}) {
     return super.fetchRequest<T>(path, { ...options, signal: AbortSignal.timeout(5_000) });
@@ -76,11 +76,6 @@ export async function handler(event: HttpEvent) {
   if (!parsed.success) {
     return { statusCode: 400, body: JSON.stringify({ error: 'Evento inválido.' }) };
   }
-  const ingestUrl = process.env.EVENTS_INGEST_URL;
-  const ingestToken = process.env.NOTIFICATIONS_INGEST_TOKEN;
-  if (!ingestUrl || !ingestToken)
-    throw new Error('Configura EVENTS_INGEST_URL y NOTIFICATIONS_INGEST_TOKEN.');
-
   const { subject, payload } = parsed.data;
   const email = emailFor(parsed.data);
   const html = await render(email.component);
@@ -133,15 +128,5 @@ export async function handler(event: HttpEvent) {
     ...(emailStatus === 'error' ? { emailError: true } : {}),
   };
   console.info(JSON.stringify({ step: 'notification.created', ...notification }));
-  const response = await fetch(ingestUrl, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-ingest-token': ingestToken },
-    body: JSON.stringify(notification),
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!response.ok) throw new Error(`Timeline ingest respondió ${response.status}.`);
-  console.info(
-    JSON.stringify({ step: 'notification.ingested', orderId: payload.orderId, subject }),
-  );
   return { statusCode: 202, body: JSON.stringify({ ok: true }) };
 }

@@ -1,0 +1,168 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate monorepo
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      # pnpm 11+, packageManager fija pnpm y .node-version fija Node.
+      # La cache contiene el store; no node_modules ni resultados de Turbo.
+      - name: Setup pnpm and Node
+        uses: pnpm/setup@v3
+        with:
+          node-version-file: .node-version
+          cache: true
+          cache-dependency-path: pnpm-lock.yaml
+          install: false
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck all workspaces including shared UI
+        run: pnpm typecheck
+      - name: Lint all workspaces including shared UI
+        run: pnpm lint
+      - name: Build all consumers including web and mf-catalog
+        run: pnpm build
+      - name: Validate versioned OpenAPI and generated schemas
+        run: pnpm openapi:check
+      - name: Test
+        run: pnpm test
+
+  federation-smoke:
+    name: Federation dev and preview smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/setup@v3
+        with:
+          node-version-file: .node-version
+          cache: true
+          cache-dependency-path: pnpm-lock.yaml
+          install: false
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @mercadoya/web exec playwright install --with-deps chromium
+      - name: Build host and remote
+        run: pnpm exec turbo run build --filter=@mercadoya/web --filter=@mercadoya/mf-catalog
+      - name: Preview federation, singleton identity, CRUD, guards and remote failure
+        run: pnpm --filter @mercadoya/web smoke:federation
+      - name: Dev federation, singleton identity, CRUD, guards and remote failure
+        env:
+          MF_SMOKE_MODE: dev
+        run: pnpm --filter @mercadoya/web smoke:federation
+      - name: Build host consuming the remote manifest
+        env:
+          VITE_MF_CATALOG_ENTRY: http://localhost:5174/mf-manifest.json
+        run: pnpm exec turbo run build --filter=@mercadoya/web
+      - name: Preview manifest federation
+        run: pnpm --filter @mercadoya/web smoke:federation
+
+  polar-saga:
+    name: Polar signature, inbox and NATS saga
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: polar_test
+          POSTGRES_DB: polar_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d polar_test"
+          --health-interval 2s --health-timeout 5s --health-retries 15
+      nats:
+        image: nats:2-alpine
+        ports: ['4222:4222']
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/setup@v3
+        with:
+          node-version-file: .node-version
+          cache: true
+          cache-dependency-path: pnpm-lock.yaml
+          install: false
+      - run: pnpm install --frozen-lockfile
+      - name: Build payment and saga consumers
+        run: pnpm exec turbo run build --filter=@mercadoya/orders-service... --filter=@mercadoya/catalog-service... --filter=@mercadoya/inventory-service --filter=@mercadoya/notifications-lambda
+      - name: Verify SDK payload and Standard Webhooks signatures
+        run: pnpm --filter @mercadoya/orders-service test
+      - name: Verify product SDK, PEN and transactional synchronization
+        run: pnpm --filter @mercadoya/catalog-service test
+      - name: Verify product synchronization and recovery in PostgreSQL
+        env:
+          PRODUCTS_TEST_DATABASE_URL: postgresql://postgres:polar_test@localhost:5432/polar_test
+        run: pnpm --filter @mercadoya/catalog-service test:integration
+      - name: Verify async inbox, duplicate deliveries, stock and Notifications
+        env:
+          PAYMENTS_TEST_DATABASE_URL: postgresql://postgres:polar_test@localhost:5432/polar_test
+          PAYMENTS_TEST_NATS_URL: nats://localhost:4222
+        run: pnpm --filter @mercadoya/orders-service test:integration
+
+  identity-gateway-smoke:
+    name: Identity, Catalog and Kong smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/setup@v3
+        with:
+          node-version-file: .node-version
+          cache: true
+          cache-dependency-path: pnpm-lock.yaml
+          install: false
+      - run: pnpm install --frozen-lockfile
+      - name: Generate ephemeral credentials
+        run: |
+          node --input-type=module <<'JS'
+          import { randomBytes } from 'node:crypto';
+          import { writeFileSync } from 'node:fs';
+          const names = ['BETTER_AUTH_SECRET', 'CATALOG_INTERNAL_TOKEN', 'NOTIFICATIONS_INVOKE_TOKEN', 'POLAR_WEBHOOK_SECRET'];
+          const values = names.map(name => `${name}=${randomBytes(48).toString('base64url')}`);
+          writeFileSync('.env', values.join('\n') + '\nPAYMENT_PROVIDER=polar\nPOLAR_ACCESS_TOKEN=ci-unavailable\nDATABASE_URL=postgresql://mercadoya:mercadoya_local@localhost:5432/mercadoya\n', { mode: 0o600 });
+          JS
+      - name: Initialize infrastructure and migrations
+        run: |
+          docker compose up -d --wait postgres nats
+          pnpm --filter @mercadoya/catalog-service db:migrate
+          pnpm --filter @mercadoya/identity-service db:migrate
+          pnpm --filter @mercadoya/orders-service db:migrate
+          pnpm --filter @mercadoya/jwt-verifier build
+      - name: Build and start Kong OSS and services
+        run: |
+          mkdir -p apps/catalog-service/uploads
+          LOCAL_UID=$(id -u) LOCAL_GID=$(id -g) docker compose -f docker-compose.yml -f .github/compose-smoke.yml up -d --build
+      - name: Login, JWKS, Catalog CRUD and Polar billing guard
+        env:
+          DATABASE_URL: postgresql://mercadoya:mercadoya_local@localhost:5432/mercadoya
+        run: |
+          set -a
+          . ./.env
+          set +a
+          pnpm --filter @mercadoya/identity-service smoke
+      - name: Diagnostics on failure
+        if: failure()
+        run: docker compose logs --tail=100
+      - name: Cleanup ephemeral stack
+        if: always()
+        run: docker compose down -v --remove-orphans

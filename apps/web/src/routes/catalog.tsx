@@ -3,10 +3,10 @@ import { useMutation, useSuspenseQuery } from '@tanstack/react-query';
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { ArrowRight, LoaderCircle, PackageOpen, ShoppingCart } from 'lucide-react';
 
-import { Button, buttonVariants } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Button, buttonVariants } from '@mercadoya/ui/components/button';
+import { Card, CardContent } from '@mercadoya/ui/components/card';
+import { Input } from '@mercadoya/ui/components/input';
+import { Label } from '@mercadoya/ui/components/label';
 import { createOrder } from '@/lib/orders';
 import { productImageUrl, productsQueryOptions, type Product } from '@/lib/products';
 

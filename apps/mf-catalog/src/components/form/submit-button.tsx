@@ -1,7 +1,7 @@
 import type { ComponentProps } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
+import { Button } from '@mercadoya/ui/components/button';
+import { Spinner } from '@mercadoya/ui/components/spinner';
 import { useFormContext } from '@/hooks/form-context';
 
 type SubmitButtonProps = Omit<ComponentProps<typeof Button>, 'type'> & {

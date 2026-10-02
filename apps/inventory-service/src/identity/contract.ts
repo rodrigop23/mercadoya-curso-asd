@@ -1,24 +1,13 @@
-import { z } from 'zod';
-
-const sessionSchema = z.object({ user: z.object({ id: z.string() }) });
-
+import { createTokenVerifier } from '@mercadoya/jwt-verifier';
 export type IdentityContract = {
-  getSession(headers: Headers): Promise<z.infer<typeof sessionSchema> | null>;
+  getSession(headers: Headers): Promise<{ user: { id: string } } | null>;
 };
-
 export function createIdentityContract(): IdentityContract {
-  const origin = new URL(process.env.IDENTITY_URL || 'http://localhost:3001');
+  const verify = createTokenVerifier();
   return {
     async getSession(headers) {
-      const forwarded = new Headers();
-      for (const name of ['cookie', 'authorization']) {
-        const value = headers.get(name);
-        if (value) forwarded.set(name, value);
-      }
-      const response = await fetch(new URL('/api/me', origin), { headers: forwarded });
-      if (response.status === 401) return null;
-      if (!response.ok) throw new Error(`Identity respondió ${response.status}.`);
-      return sessionSchema.parse(await response.json());
+      const claims = await verify(headers.get('authorization'));
+      return claims ? { user: { id: claims.sub } } : null;
     },
   };
 }

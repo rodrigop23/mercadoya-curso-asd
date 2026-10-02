@@ -8,3 +8,5 @@ cdk.out/
 uploads/
 .DS_Store
 *.tsbuildinfo
+test-results/
+playwright-report/

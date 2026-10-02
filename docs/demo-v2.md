@@ -1,5 +1,7 @@
 # Demo MercadoYa V2: integración
 
+Documento histórico de una etapa anterior. No describe el despliegue actual ni debe usarse para iniciarlo. Consulta el [README actual](../README.md) y el ADR 0020 sobre el retiro de la experiencia de eventos.
+
 Guion de preparación y checklist para la sesión de 50 minutos. Esta rama combina el pipeline local de imágenes, los módulos de dominio y los pedidos procesados por eventos. La demo S3→Lambda está aislada del flujo de MercadoYa.
 
 ## Antes de entrar

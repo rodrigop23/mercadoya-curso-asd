@@ -1,0 +1,641 @@
+# Generado por @mercadoya/contracts. No editar; ejecutar pnpm openapi:generate.
+openapi: 3.1.0
+info:
+  title: MercadoYa Catalog
+  version: 1.2.0
+  description: Catalog y Media comparten proceso en :3007; Kong publica el CRUD en :8000. Stock interno solo usa http://catalog:3007 en Compose. Multipart conserva strings para price/stock; los refinements numéricos se ejecutan después de convertirlos. Las rutas internas conservan x-catalog-internal-token; Kong responde 404 para ellas. Directo al servicio solo Bearer JWT, vía Kong también cookie de sesión. Límite de formulario 3 MiB e imagen 2 MiB.
+servers:
+  - url: http://localhost:8000
+    description: Kong OSS local; los paths incluyen /api.
+  - url: http://localhost:3007
+    description: Catalog/Media directo; mutaciones solo Bearer JWT, stock solo token interno.
+paths:
+  /api/catalog/health:
+    get:
+      operationId: catalogHealth
+      summary: Estado de Catalog
+      security: []
+      responses:
+        "200":
+          description: El proceso responde.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - module
+                  - ok
+                properties:
+                  module:
+                    type: string
+                    const: catalog
+                  ok:
+                    type: boolean
+                    const: true
+  /api/products:
+    get:
+      operationId: listProducts
+      summary: Listar productos
+      security: []
+      responses:
+        "200":
+          description: Productos ordenados por fecha de creación descendente.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductsResponse"
+    post:
+      operationId: createProduct
+      summary: Crear producto con imagen
+      security:
+        - betterAuthSession: []
+        - applicationJWT: []
+      responses:
+        "201":
+          description: Producto creado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductResponse"
+        "400":
+          description: Solicitud inválida.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Falta una sesión o credencial válida.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Se requiere rol admin.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: El formulario supera 3145728 bytes. Kong puede devolver HTML; Catalog devuelve JSON.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+            text/html:
+              schema:
+                type: string
+        "500":
+          description: Falló la operación.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/CreateProduct"
+      description: Requiere admin. Media procesa la imagen dentro del módulo. El producto y su sincronización pendiente se guardan juntos; 201 confirma el guardado local sin esperar a Polar. No existe endpoint HTTP de upload separado.
+  /api/products/{id}:
+    put:
+      operationId: updateProduct
+      summary: Actualizar producto; la imagen es opcional
+      security:
+        - betterAuthSession: []
+        - applicationJWT: []
+      responses:
+        "200":
+          description: Producto actualizado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductResponse"
+        "400":
+          description: Solicitud inválida.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Falta una sesión o credencial válida.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Se requiere rol admin.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: El formulario supera 3145728 bytes. Kong puede devolver HTML; Catalog devuelve JSON.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+            text/html:
+              schema:
+                type: string
+        "500":
+          description: Falló la operación.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/UpdateProduct"
+    delete:
+      operationId: deleteProduct
+      summary: Eliminar producto y sus imágenes
+      security:
+        - betterAuthSession: []
+        - applicationJWT: []
+      responses:
+        "204":
+          description: Producto eliminado; sin cuerpo.
+        "400":
+          description: Solicitud inválida.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Falta una sesión o credencial válida.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Se requiere rol admin.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Falló la operación.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+  /api/internal/catalog/products/{id}/stock:
+    servers:
+      - url: http://localhost:3007
+        description: Catalog/Media directo; mutaciones solo Bearer JWT, stock solo token interno.
+    get:
+      operationId: getStock
+      summary: Consultar stock para Inventory
+      security:
+        - catalogInternalToken: []
+      responses:
+        "200":
+          description: null si no existe el producto.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StockResponse"
+        "400":
+          description: Solicitud inválida.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Falta una sesión o credencial válida.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Servicio no disponible o configuración incompleta.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+  /api/internal/catalog/products/{id}/billing:
+    servers:
+      - url: http://localhost:3007
+        description: Catalog/Media directo; mutaciones solo Bearer JWT, stock solo token interno.
+    get:
+      operationId: getBillingProduct
+      summary: Consultar producto Polar y precio PEN para Orders
+      security:
+        - catalogInternalToken: []
+      responses:
+        "200":
+          description: Producto sincronizado. Importe unitario en céntimos de sol.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogBillingResponse"
+        "202":
+          description: Sincronización pendiente. No crear un pedido todavía.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogBillingResponse"
+        "400":
+          description: Solicitud inválida.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Falta una sesión o credencial válida.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: La sincronización falló y será reintentada.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogBillingResponse"
+        "503":
+          description: Servicio no disponible o configuración incompleta.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+      description: "No se publica en Kong. Responde Cache-Control: no-store. El comprador no controla el precio ni el ID Polar."
+  /api/internal/catalog/products/{id}/adjust-stock:
+    servers:
+      - url: http://localhost:3007
+        description: Catalog/Media directo; mutaciones solo Bearer JWT, stock solo token interno.
+    post:
+      operationId: adjustStock
+      summary: Ajustar stock atómicamente
+      security:
+        - catalogInternalToken: []
+      responses:
+        "200":
+          description: Resultado de negocio; los rechazos también usan HTTP 200.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StockAdjustmentResponse"
+        "400":
+          description: Solicitud inválida.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Falta una sesión o credencial válida.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Servicio no disponible o configuración incompleta.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StockAdjustment"
+components:
+  securitySchemes:
+    applicationJWT:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: RS256, kid, sub, role, iss=http://localhost:8000, aud=mercadoya-services, iat y exp. Directo al servicio requiere Bearer; Kong admite también sesión browser.
+    betterAuthSession:
+      type: apiKey
+      in: cookie
+      name: better-auth.session_token
+      description: Cookie Better Auth local. En HTTPS puede usar el prefijo __Secure-. No es Bearer JWT.
+    catalogInternalToken:
+      type: apiKey
+      in: header
+      name: x-catalog-internal-token
+      description: Secreto compartido para Inventory, no para el navegador.
+  schemas:
+    ProductsResponse:
+      type: object
+      properties:
+        products:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+                pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+              title:
+                type: string
+              description:
+                type: string
+              price:
+                type: number
+              stock:
+                type: integer
+                minimum: -9007199254740991
+                maximum: 9007199254740991
+              imagePath:
+                type: string
+              createdAt:
+                type: string
+                format: date-time
+                pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$
+              updatedAt:
+                type: string
+                format: date-time
+                pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$
+            required:
+              - id
+              - title
+              - description
+              - price
+              - stock
+              - imagePath
+              - createdAt
+              - updatedAt
+      required:
+        - products
+    ProductResponse:
+      type: object
+      properties:
+        product:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+            title:
+              type: string
+            description:
+              type: string
+            price:
+              type: number
+            stock:
+              type: integer
+              minimum: -9007199254740991
+              maximum: 9007199254740991
+            imagePath:
+              type: string
+            createdAt:
+              type: string
+              format: date-time
+              pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$
+            updatedAt:
+              type: string
+              format: date-time
+              pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$
+          required:
+            - id
+            - title
+            - description
+            - price
+            - stock
+            - imagePath
+            - createdAt
+            - updatedAt
+      required:
+        - product
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        details:
+          type: object
+          propertyNames:
+            type: string
+          additionalProperties:
+            type: array
+            items:
+              type: string
+      required:
+        - error
+    CreateProduct:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 160
+        description:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        price:
+          type: string
+          pattern: ^\d+(?:\.\d{1,2})?$
+          description: String decimal en soles PEN; tras trim, entre 2.00 y 999999.99, hasta dos decimales.
+        stock:
+          type: string
+          pattern: ^\d+$
+          description: String entero; tras trim, entre 0 y 2147483647.
+        image:
+          type: string
+          format: binary
+          description: Archivo JPEG, PNG o WebP, no vacío, hasta 2097152 bytes. Media verifica MIME y firma y produce las imágenes full/thumb.
+      required:
+        - title
+        - description
+        - price
+        - stock
+        - image
+    UpdateProduct:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 160
+        description:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        price:
+          type: string
+          pattern: ^\d+(?:\.\d{1,2})?$
+          description: String decimal en soles PEN; tras trim, entre 2.00 y 999999.99, hasta dos decimales.
+        stock:
+          type: string
+          pattern: ^\d+$
+          description: String entero; tras trim, entre 0 y 2147483647.
+        image:
+          type: string
+          format: binary
+          description: Archivo JPEG, PNG o WebP, no vacío, hasta 2097152 bytes. Media verifica MIME y firma y produce las imágenes full/thumb.
+      required:
+        - title
+        - description
+        - price
+        - stock
+    StockResponse:
+      type: object
+      properties:
+        availableStock:
+          anyOf:
+            - type: integer
+              minimum: 0
+              maximum: 9007199254740991
+            - type: "null"
+      required:
+        - availableStock
+    CatalogBillingResponse:
+      oneOf:
+        - type: object
+          properties:
+            status:
+              type: string
+              const: ready
+            product:
+              type: object
+              properties:
+                productId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                polarProductId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                unitAmount:
+                  type: integer
+                  minimum: 200
+                  maximum: 99999999
+                currency:
+                  type: string
+                  const: pen
+              required:
+                - productId
+                - polarProductId
+                - unitAmount
+                - currency
+          required:
+            - status
+            - product
+        - type: object
+          properties:
+            status:
+              type: string
+              const: pending
+            product:
+              type: "null"
+          required:
+            - status
+            - product
+        - type: object
+          properties:
+            status:
+              type: string
+              const: failed
+            product:
+              type: "null"
+          required:
+            - status
+            - product
+    StockAdjustmentResponse:
+      oneOf:
+        - type: object
+          properties:
+            adjusted:
+              type: boolean
+              const: true
+            availableStock:
+              type: integer
+              minimum: 0
+              maximum: 9007199254740991
+          required:
+            - adjusted
+            - availableStock
+        - type: object
+          properties:
+            adjusted:
+              type: boolean
+              const: false
+            reason:
+              type: string
+              enum:
+                - product_not_found
+                - insufficient_stock
+                - stock_limit
+          required:
+            - adjusted
+            - reason
+    StockAdjustment:
+      type: object
+      properties:
+        delta:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+          not:
+            const: 0
+      required:
+        - delta

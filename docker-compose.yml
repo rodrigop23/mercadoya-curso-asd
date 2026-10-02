@@ -24,51 +24,137 @@ services:
       - '4222:4222'
       - '8222:8222'
 
-  inventory-v1:
+  inventory:
     build:
       context: .
       dockerfile: apps/inventory-service/Dockerfile
     restart: unless-stopped
     ports:
-      - '3003:3003'
+      - '127.0.0.1:3003:3003'
     environment:
-      SERVICE_VERSION: v1
+      # Único propietario de reserva/compensación NATS.
       DATABASE_URL: postgresql://mercadoya:mercadoya_local@postgres:5432/mercadoya
       NATS_URL: nats://nats:4222
       EVENT_BUS: nats
-      CATALOG_URL: http://host.docker.internal:3001
-      IDENTITY_URL: http://host.docker.internal:3001
+      CATALOG_URL: http://catalog:3007
+      IDENTITY_URL: http://identity:3006
+      JWT_ISSUER: http://localhost:8000
+      JWT_AUDIENCE: mercadoya-services
       CATALOG_INTERNAL_TOKEN: ${CATALOG_INTERNAL_TOKEN:?Set CATALOG_INTERNAL_TOKEN in .env}
-    extra_hosts:
-      - 'host.docker.internal:host-gateway'
     depends_on:
       postgres:
         condition: service_healthy
       nats:
         condition: service_started
 
-  inventory-v2:
+  identity:
     build:
       context: .
-      dockerfile: apps/inventory-service/Dockerfile
+      dockerfile: apps/identity-service/Dockerfile
     restart: unless-stopped
-    ports:
-      - '3005:3003'
     environment:
-      SERVICE_VERSION: v2
       DATABASE_URL: postgresql://mercadoya:mercadoya_local@postgres:5432/mercadoya
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET}
+      BETTER_AUTH_URL: http://localhost:8000
+      JWT_ISSUER: http://localhost:8000
+      JWT_AUDIENCE: mercadoya-services
+      IDENTITY_URL: http://127.0.0.1:3006
+    ports:
+      - '127.0.0.1:3006:3006'
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  catalog:
+    user: '${LOCAL_UID:-1000}:${LOCAL_GID:-1000}'
+    build:
+      context: .
+      dockerfile: apps/catalog-service/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://mercadoya:mercadoya_local@postgres:5432/mercadoya
+      IDENTITY_URL: http://identity:3006
+      JWT_ISSUER: http://localhost:8000
+      JWT_AUDIENCE: mercadoya-services
+      CATALOG_INTERNAL_TOKEN: ${CATALOG_INTERNAL_TOKEN:?Set CATALOG_INTERNAL_TOKEN}
+      PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-polar}
+      POLAR_SERVER: ${POLAR_SERVER:-sandbox}
+      POLAR_ACCESS_TOKEN: ${POLAR_ACCESS_TOKEN:-}
+      UPLOADS_DIR: /app/uploads
+    ports:
+      - '127.0.0.1:3007:3007'
+    volumes:
+      - ./apps/catalog-service/uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  orders:
+    build:
+      context: .
+      dockerfile: apps/orders-service/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://mercadoya:mercadoya_local@postgres:5432/mercadoya
+      IDENTITY_URL: http://identity:3006
+      JWT_ISSUER: http://localhost:8000
+      JWT_AUDIENCE: mercadoya-services
       NATS_URL: nats://nats:4222
       EVENT_BUS: nats
-      CATALOG_URL: http://host.docker.internal:3001
-      IDENTITY_URL: http://host.docker.internal:3001
-      CATALOG_INTERNAL_TOKEN: ${CATALOG_INTERNAL_TOKEN:?Set CATALOG_INTERNAL_TOKEN in .env}
-    extra_hosts:
-      - 'host.docker.internal:host-gateway'
+      PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-polar}
+      CATALOG_URL: http://catalog:3007
+      CATALOG_INTERNAL_TOKEN: ${CATALOG_INTERNAL_TOKEN:?Set CATALOG_INTERNAL_TOKEN}
+      POLAR_SERVER: ${POLAR_SERVER:-sandbox}
+      POLAR_ACCESS_TOKEN: ${POLAR_ACCESS_TOKEN:-}
+      POLAR_WEBHOOK_SECRET: ${POLAR_WEBHOOK_SECRET:-}
+      POLAR_WEB_ORIGIN: ${POLAR_WEB_ORIGIN:-http://localhost:5173}
     depends_on:
       postgres:
         condition: service_healthy
       nats:
         condition: service_started
+
+  notifications:
+    build:
+      context: .
+      dockerfile: apps/notifications-lambda/Dockerfile
+    restart: unless-stopped
+    environment:
+      NATS_URL: nats://nats:4222
+      EVENT_BUS: nats
+      EMAIL_MODE: ${EMAIL_MODE:-stub}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM: ${RESEND_FROM:-}
+      DEMO_NOTIFY_EMAIL: ${DEMO_NOTIFY_EMAIL:-}
+      NOTIFICATIONS_FUNCTION_URL: ${NOTIFICATIONS_FUNCTION_URL:-}
+      NOTIFICATIONS_INVOKE_TOKEN: ${NOTIFICATIONS_INVOKE_TOKEN:?Set NOTIFICATIONS_INVOKE_TOKEN}
+    depends_on:
+      nats:
+        condition: service_started
+
+  kong:
+    build:
+      context: .
+      dockerfile: infra/kong/Dockerfile
+    restart: unless-stopped
+    environment:
+      KONG_DATABASE: 'off'
+      KONG_NGINX_WORKER_PROCESSES: '2'
+      KONG_DECLARATIVE_CONFIG: /etc/kong/kong.yml
+      KONG_PLUGINS: bundled,identity-auth
+      KONG_ADMIN_LISTEN: 'off'
+      KONG_PROXY_LISTEN: 0.0.0.0:8000
+      KONG_NGINX_HTTP_CLIENT_MAX_BODY_SIZE: 3m
+    ports:
+      - '8000:8000'
+    volumes:
+      - ./infra/kong/kong.yml:/etc/kong/kong.yml:ro
+    depends_on:
+      - identity
+      - catalog
+      - orders
+      - inventory
+      - notifications
 
 volumes:
   postgres_data:

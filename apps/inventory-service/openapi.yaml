@@ -1,33 +1,33 @@
+# Generado por @mercadoya/contracts. No editar; ejecutar pnpm openapi:generate.
 openapi: 3.1.0
 info:
   title: MercadoYa Inventory HTTP API
-  version: 2.0.0
-  description: >-
-    Borde HTTP de lectura de Inventory. La reserva de stock se solicita mediante
-    el evento NATS orders.placed y se resuelve con inventory.reserved o
-    inventory.rejected; no existe una ruta HTTP para reservar.
+  version: 5.0.0
+  description: Un único servicio y contrato HTTP de reservas con status reserved. Consume reserva y compensación por NATS. No existe POST de reserva.
 servers:
-  - url: http://localhost:3001
-    description: Gateway/BFF usado por la web y la clase
+  - url: http://localhost:8000
+    description: Kong OSS local; los paths incluyen /api.
 paths:
   /api/inventory/health:
-    servers: &v1Servers
-      - url: http://localhost:3001
-        description: Gateway/BFF
+    servers:
+      - url: http://localhost:8000
+        description: Kong OSS local; los paths incluyen /api.
       - url: http://localhost:3003
-        description: Inventory v1 directo
+        description: Inventory directo.
     get:
-      summary: Estado de Inventory v1 (alias heredado)
-      deprecated: true
+      operationId: inventoryHealth
+      summary: Estado Inventory
       security: []
       responses:
-        '200':
+        "200":
           description: El proceso responde.
           content:
             application/json:
               schema:
                 type: object
-                required: [module, ok, serviceVersion]
+                required:
+                  - module
+                  - ok
                 properties:
                   module:
                     type: string
@@ -35,20 +35,55 @@ paths:
                   ok:
                     type: boolean
                     const: true
-                  serviceVersion:
-                    type: string
-                    const: v1
   /api/inventory/reservations/{orderId}:
-    servers: *v1Servers
-    get: &reservationV1
-      summary: Consultar la reserva de un pedido con el contrato v1
-      deprecated: true
-      description: >-
-        Requiere una sesión Better Auth. La cookie llega mediante el gateway
-        y Inventory valida la sesión con Identity. La ruta no comprueba que
-        el usuario sea el comprador del pedido.
+    servers:
+      - url: http://localhost:8000
+        description: Kong OSS local; los paths incluyen /api.
+      - url: http://localhost:3003
+        description: Inventory directo.
+    get:
+      operationId: getReservation
+      summary: Consultar reserva
       security:
         - betterAuthSession: []
+        - applicationJWT: []
+      responses:
+        "200":
+          description: Reserva encontrada.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReservationResponse"
+        "400":
+          description: Solicitud inválida.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Falta una sesión o credencial válida.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Falló la operación.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: El servicio remoto no está disponible.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       parameters:
         - name: orderId
           in: path
@@ -56,200 +91,71 @@ paths:
           schema:
             type: string
             format: uuid
-      responses:
-        '200':
-          description: Reserva encontrada.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ReservationResponseV1'
-        '400':
-          description: El orderId no es un UUID válido.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '401':
-          description: Falta una sesión válida.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '404':
-          description: La reserva aún no existe.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '500':
-          description: Falló la consulta de la reserva.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '502':
-          description: Falló la validación de la sesión con Identity.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-  /api/inventory/v1/health:
-    servers: *v1Servers
-    get:
-      summary: Estado de Inventory v1
-      deprecated: true
-      security: []
-      responses:
-        '200':
-          description: El proceso v1 responde.
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [module, ok, serviceVersion]
-                properties:
-                  module:
-                    type: string
-                    const: inventory
-                  ok:
-                    type: boolean
-                    const: true
-                  serviceVersion:
-                    type: string
-                    const: v1
-  /api/inventory/v1/reservations/{orderId}:
-    servers: *v1Servers
-    get: *reservationV1
-  /api/inventory/v2/health:
-    servers: &v2Servers
-      - url: http://localhost:3001
-        description: Gateway/BFF
-      - url: http://localhost:3005
-        description: Inventory v2 directo
-    get:
-      summary: Estado de Inventory v2
-      security: []
-      responses:
-        '200':
-          description: El proceso v2 responde.
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [module, ok, serviceVersion]
-                properties:
-                  module:
-                    type: string
-                    const: inventory
-                  ok:
-                    type: boolean
-                    const: true
-                  serviceVersion:
-                    type: string
-                    const: v2
-  /api/inventory/v2/reservations/{orderId}:
-    servers: *v2Servers
-    get:
-      summary: Consultar la reserva de un pedido con el contrato v2
-      description: >-
-        Requiere la misma sesión Better Auth que v1. La respuesta añade
-        reservation.status como campo obligatorio.
-      security:
-        - betterAuthSession: []
-      parameters:
-        - name: orderId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Reserva encontrada.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ReservationResponseV2'
-        '400':
-          description: El orderId no es un UUID válido.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '401':
-          description: Falta una sesión válida.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '404':
-          description: La reserva aún no existe.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '500':
-          description: Falló la consulta de la reserva.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '502':
-          description: Falló la validación de la sesión con Identity.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+      description: Verifica Bearer JWT mediante JWKS de Identity; no verifica que el usuario sea comprador. La reserva entra por NATS. reservation.status es obligatorio.
 components:
   securitySchemes:
+    applicationJWT:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: RS256, kid, sub, role, iss=http://localhost:8000, aud=mercadoya-services, iat y exp. Directo al servicio requiere Bearer; Kong admite también sesión browser.
     betterAuthSession:
       type: apiKey
       in: cookie
       name: better-auth.session_token
-      description: Cookie de sesión Better Auth enviada al gateway en localhost:3001.
+      description: Cookie Better Auth local. En HTTPS puede usar el prefijo __Secure-. No es Bearer JWT.
   schemas:
-    ReservationResponseV1:
+    ReservationResponse:
       type: object
-      required: [reservation]
       properties:
         reservation:
-          $ref: '#/components/schemas/Reservation'
-    ReservationResponseV2:
-      type: object
-      required: [reservation]
-      properties:
-        reservation:
-          $ref: '#/components/schemas/ReservationV2'
-    ReservationV2:
-      allOf:
-        - $ref: '#/components/schemas/Reservation'
-        - type: object
-          required: [status]
+          type: object
           properties:
+            id:
+              type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+            orderId:
+              type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+            productId:
+              type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+            quantity:
+              type: integer
+              minimum: -9007199254740991
+              maximum: 9007199254740991
+            createdAt:
+              type: string
+              format: date-time
+              pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$
             status:
               type: string
               const: reserved
-    Reservation:
-      type: object
-      required: [id, orderId, productId, quantity, createdAt]
-      properties:
-        id:
-          type: string
-          format: uuid
-        orderId:
-          type: string
-          format: uuid
-        productId:
-          type: string
-          format: uuid
-        quantity:
-          type: integer
-        createdAt:
-          type: string
-          format: date-time
+          required:
+            - id
+            - orderId
+            - productId
+            - quantity
+            - createdAt
+            - status
+      required:
+        - reservation
     Error:
       type: object
-      required: [error]
       properties:
         error:
           type: string
+        details:
+          type: object
+          propertyNames:
+            type: string
+          additionalProperties:
+            type: array
+            items:
+              type: string
+      required:
+        - error

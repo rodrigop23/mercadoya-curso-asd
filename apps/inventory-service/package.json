@@ -8,11 +8,14 @@
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "oxlint .",
-    "format": "oxfmt ."
+    "format": "oxfmt .",
+    "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
-    "@mercadoya/contracts": "workspace:*",
     "@hono/node-server": "^2.1.1",
+    "@hono/swagger-ui": "^0.6.1",
+    "@mercadoya/contracts": "workspace:*",
+    "@mercadoya/jwt-verifier": "workspace:*",
     "@nats-io/transport-node": "^3.4.0",
     "dotenv": "^18.0.2",
     "drizzle-orm": "^0.45.3",

@@ -1,5 +1,7 @@
 # C4 nivel 2: contenedores de MercadoYa en S4 / V2 (histórico)
 
+Documento histórico de una etapa anterior. No describe el despliegue actual ni debe usarse para iniciarlo. Consulta el [README actual](../../README.md) y el ADR 0020 sobre el retiro de la experiencia de eventos.
+
 Este diagrama conserva la arquitectura de la rama `v2-integration`. Para el runtime actual consulta [contenedores S5](c4-2-containers-v3.md).
 
 Vista de ejecución de MercadoYa. La SPA corre en `:5173`; la API Hono corre en `:3001`.

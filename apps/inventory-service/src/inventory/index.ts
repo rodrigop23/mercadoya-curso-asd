@@ -18,13 +18,12 @@ export function createInventoryModule(
   catalog: CatalogStockContract,
   eventBus: EventBus,
   identity: IdentityContract,
-  serviceVersion: 'v1' | 'v2',
 ) {
   const contract = createInventoryContract(catalog);
 
   return {
     contract,
-    routes: createInventoryRoutes(identity, serviceVersion),
+    routes: createInventoryRoutes(identity),
     async onPaymentFailed(payload: unknown) {
       const event = paymentFailedEventSchema.parse(payload);
       const released = await contract.release(event.orderId);
@@ -49,7 +48,6 @@ export function createInventoryModule(
 
       if (result.reserved) {
         const reservationEvent = inventoryReservedEventSchema.parse({
-          paymentMode: event.paymentMode,
           version: 1,
           orderId: event.orderId,
           productId: event.productId,

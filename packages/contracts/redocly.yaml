@@ -1,0 +1,18 @@
+# Validación estructural y referencias obligatorias, sin reglas editoriales arbitrarias.
+extends:
+  - spec
+rules:
+  operation-operationId: error
+  operation-operationId-unique: error
+  security-defined: error
+apis:
+  inventory:
+    root: ../../apps/inventory-service/openapi.yaml
+  orders:
+    root: ../../apps/orders-service/openapi.yaml
+  identity:
+    root: ../../apps/identity-service/openapi.yaml
+  catalog:
+    root: ../../apps/catalog-service/openapi/catalog.yaml
+  media:
+    root: ../../apps/catalog-service/openapi/media.yaml

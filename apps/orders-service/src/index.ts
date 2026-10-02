@@ -9,16 +9,27 @@ import {
   paymentFailedEventSchema,
   inventoryReleasedEventSchema,
 } from '@mercadoya/contracts';
-import { subscribePaymentSimulator } from './payment/simulator.js';
-import { closeDb } from './db/index.js';
+import { closeDb, pool } from './db/index.js';
+import { polarConfig } from './payment/config.js';
+import { createPolarGateway } from './payment/polar.js';
+import { createPolarWebhookRoutes } from './payment/webhook.js';
+import { createPaymentWorker } from './payment/worker.js';
 import { createEventBus } from './events/event-bus.js';
 import { createIdentityContract } from './identity/contract.js';
 import { createOrdersModule } from './orders/index.js';
+import { createCatalogBillingClient } from './catalog/http.js';
 
 config({ path: fileURLToPath(new URL('../../../.env', import.meta.url)) });
 
+const polar = polarConfig();
 const eventBus = await createEventBus();
-const orders = createOrdersModule(eventBus, createIdentityContract());
+const worker = createPaymentWorker(pool, eventBus, createPolarGateway(polar));
+const orders = createOrdersModule(
+  eventBus,
+  createIdentityContract(),
+  worker,
+  createCatalogBillingClient(),
+);
 await eventBus.subscribe(eventSubjects.paymentSucceeded, 'orders.confirm', async (payload) => {
   await orders.onPaymentSucceeded(paymentSucceededEventSchema.parse(payload));
 });
@@ -35,10 +46,19 @@ await eventBus.subscribe(
     await orders.onInventoryRejected(inventoryRejectedEventSchema.parse(payload));
   },
 );
-await subscribePaymentSimulator(eventBus);
+await eventBus.subscribe(
+  eventSubjects.inventoryReserved,
+  'payment.polar',
+  worker.onInventoryReserved,
+);
+worker.start();
 
 const app = new Hono();
 app.route('/api/orders', orders.routes);
+app.route(
+  '/api/payments/polar/webhook',
+  createPolarWebhookRoutes(polar.webhookSecret, worker.enqueue),
+);
 const port = Number(process.env.PORT ?? 3002);
 const server = serve({ fetch: app.fetch, port }, (info) => {
   console.log(`Orders service listening on http://localhost:${info.port}`);
@@ -46,6 +66,7 @@ const server = serve({ fetch: app.fetch, port }, (info) => {
 
 const shutdown = async () => {
   server.close();
+  await worker.stop();
   await eventBus.close();
   await closeDb();
 };

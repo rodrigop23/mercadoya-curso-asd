@@ -19,7 +19,7 @@ Media procesa las imágenes en un pipeline local con cinco filtros:
 - `Validate` acepta JPG, PNG o WebP de hasta 2 MiB.
 - `Sanitize` elimina metadatos EXIF.
 - `Resize` produce la imagen completa y una miniatura.
-- `Persist` guarda ambos archivos en `apps/api/uploads/media/`.
+- `Persist` guarda ambos archivos en `apps/catalog-service/uploads/media/`.
 - `Attach` deriva las rutas y URLs locales.
 
 El upload llega en la solicitud de creación de producto a Catalog. Catalog llama a `MediaContract` y recibe `imagePath`, `thumbPath`, `imageUrl` y `thumbUrl`. La fila de producto guarda `imagePath`; la interfaz construye la URL pública a partir de esa ruta. Catalog no importa los filtros.
