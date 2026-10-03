@@ -1,13 +1,20 @@
 import { eq, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
-import type { CatalogStockContract, InventoryPort, ReservationResult } from '@mercadoya/contracts';
+import type {
+  CartItem,
+  CatalogStockContract,
+  InventoryPort,
+  ReservationResult,
+} from '@mercadoya/contracts';
 import { inventoryReservation } from './schema.js';
 
 export function createInventoryContract(catalog: CatalogStockContract): InventoryPort & {
-  release(orderId: string): Promise<{ productId: string; quantity: number } | null>;
+  release(
+    orderId: string,
+  ): Promise<{ productId: string; quantity: number; items?: CartItem[] } | null>;
 } {
   return {
-    async reserve({ orderId, productId, quantity }): Promise<ReservationResult> {
+    async reserve({ orderId, productId, quantity, items }): Promise<ReservationResult> {
       if (!Number.isSafeInteger(quantity) || quantity <= 0) {
         return { reserved: false, reason: 'invalid_quantity' };
       }
@@ -19,8 +26,27 @@ export function createInventoryContract(catalog: CatalogStockContract): Inventor
           .from(inventoryReservation)
           .where(eq(inventoryReservation.orderId, orderId));
         if (existing) {
-          if (existing.productId !== productId || existing.quantity !== quantity)
+          if (
+            existing.productId !== productId ||
+            existing.quantity !== quantity ||
+            JSON.stringify(existing.items?.map((item) => [item.productId, item.quantity])) !==
+              JSON.stringify(items?.map((item) => [item.productId, item.quantity]))
+          )
             throw new Error('Reserva incompatible con orderId.');
+          if (existing.releasedAt) throw new Error('La reserva ya fue liberada.');
+          return { reserved: true };
+        }
+        if (items) {
+          const adjustment = await catalog.adjustStockBatch({
+            operationId: `order:${orderId}:reserve`,
+            adjustments: items.map((item) => ({
+              productId: item.productId,
+              delta: -item.quantity,
+            })),
+          });
+          if (!adjustment.adjusted) return { reserved: false, reason: adjustment.reason };
+          // El ajuste remoto es idempotente. Si falla este insert, repetir no descuenta otra vez.
+          await tx.insert(inventoryReservation).values({ orderId, productId, quantity, items });
           return { reserved: true };
         }
         const availableStock = await catalog.getAvailableStock(productId);
@@ -65,7 +91,26 @@ export function createInventoryContract(catalog: CatalogStockContract): Inventor
           .select()
           .from(inventoryReservation)
           .where(eq(inventoryReservation.orderId, orderId));
-        if (!reservation) return null;
+        if (!reservation || reservation.releasedAt) return null;
+        if (reservation.items) {
+          const result = await catalog.adjustStockBatch({
+            operationId: `order:${orderId}:release`,
+            adjustments: reservation.items.map((item) => ({
+              productId: item.productId,
+              delta: item.quantity,
+            })),
+          });
+          if (!result.adjusted) throw new Error(`No se pudo liberar stock: ${result.reason}`);
+          await tx
+            .update(inventoryReservation)
+            .set({ releasedAt: new Date() })
+            .where(eq(inventoryReservation.orderId, orderId));
+          return {
+            productId: reservation.productId,
+            quantity: reservation.quantity,
+            items: reservation.items,
+          };
+        }
         const result = await catalog.adjustStock(reservation.productId, reservation.quantity);
         if (!result.adjusted) throw new Error(`No se pudo liberar stock: ${result.reason}`);
         await tx.delete(inventoryReservation).where(eq(inventoryReservation.orderId, orderId));

@@ -7,6 +7,10 @@ import { buttonVariants } from '@mercadoya/ui/components/button';
 import { Card, CardContent, CardDescription, CardHeader } from '@mercadoya/ui/components/card';
 import { checkoutQueryOptions, orderQueryOptions } from '@/lib/orders';
 import { productsQueryOptions } from '@/lib/products';
+import { useCart } from '@/features/cart/cart-context';
+import { OrderItems } from '@/features/cart/order-items';
+import { ProductThumbnail } from '@/features/cart/product-thumbnail';
+import { productThumbnailPath } from '@/lib/products';
 
 export const Route = createFileRoute('/orders/$orderId')({ component: OrderPage });
 
@@ -48,6 +52,7 @@ function formatDate(value: string) {
 function OrderPage() {
   const { orderId } = Route.useParams();
   const queryClient = useQueryClient();
+  const { completeOrder } = useCart();
   const orderQuery = useQuery(orderQueryOptions(orderId));
   const order = orderQuery.data;
   const checkoutQuery = useQuery({
@@ -60,9 +65,10 @@ function OrderPage() {
 
   useEffect(() => {
     if (order?.status === 'confirmed') {
+      completeOrder(order);
       void queryClient.invalidateQueries({ queryKey: productsQueryOptions.queryKey });
     }
-  }, [order?.status, queryClient]);
+  }, [order, completeOrder, queryClient]);
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-12">
@@ -187,27 +193,47 @@ function OrderPage() {
                 </div>
               )}
 
-              <dl className="mt-5 grid gap-x-6 gap-y-4 border-t border-border pt-5 sm:grid-cols-3">
-                <div className="min-w-0">
-                  <dt className="text-xs font-medium text-muted-foreground">Producto</dt>
-                  <dd className="mt-1 truncate text-sm font-semibold">
-                    {product?.title ?? 'Producto'}
-                  </dd>
-                  <dd className="mt-1 break-all font-mono text-[10px] leading-4 text-muted-foreground">
-                    {order.productId}
-                  </dd>
+              {order.items?.length ? (
+                <div className="mt-6">
+                  <OrderItems
+                    items={order.items}
+                    totalAmount={
+                      order.totalAmount ??
+                      order.items.reduce((sum, item) => sum + item.quantity * item.unitAmount, 0)
+                    }
+                  />
                 </div>
-                <div>
-                  <dt className="text-xs font-medium text-muted-foreground">Unidades</dt>
-                  <dd className="mt-1 text-sm font-semibold tabular-nums">{order.quantity}</dd>
+              ) : (
+                <div className="mt-5 flex flex-col gap-4">
+                  {product && (
+                    <ProductThumbnail
+                      path={productThumbnailPath(product.imagePath)}
+                      title={product.title}
+                    />
+                  )}
+                  <dl className="grid gap-x-6 gap-y-4 border-t border-border pt-5 sm:grid-cols-3">
+                    <div className="min-w-0">
+                      <dt className="text-xs font-medium text-muted-foreground">Producto</dt>
+                      <dd className="mt-1 truncate text-sm font-semibold">
+                        {product?.title ?? 'Producto'}
+                      </dd>
+                      <dd className="mt-1 break-all font-mono text-[10px] leading-4 text-muted-foreground">
+                        {order.productId}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium text-muted-foreground">Unidades</dt>
+                      <dd className="mt-1 text-sm font-semibold tabular-nums">{order.quantity}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium text-muted-foreground">Stock actual</dt>
+                      <dd className="mt-1 text-sm font-semibold tabular-nums">
+                        {product ? `${product.stock} unidades` : 'Sin datos'}
+                      </dd>
+                    </div>
+                  </dl>
                 </div>
-                <div>
-                  <dt className="text-xs font-medium text-muted-foreground">Stock actual</dt>
-                  <dd className="mt-1 text-sm font-semibold tabular-nums">
-                    {product ? `${product.stock} unidades` : 'Sin datos'}
-                  </dd>
-                </div>
-              </dl>
+              )}
             </CardContent>
           </Card>
         </>

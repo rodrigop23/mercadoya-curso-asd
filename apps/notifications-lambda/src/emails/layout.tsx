@@ -1,13 +1,20 @@
 import { Body, Container, Head, Heading, Html, Preview, Text } from '@react-email/components';
 import type { ReactNode } from 'react';
+import type { CartItem } from '@mercadoya/contracts';
 
-export type OrderEmailProps = { orderId: string; productId: string; quantity: number };
+export type OrderEmailProps = {
+  orderId: string;
+  productId: string;
+  quantity: number;
+  items?: CartItem[];
+};
 
 export function OrderEmailLayout({
   title,
   orderId,
   productId,
   quantity,
+  items,
   children,
 }: OrderEmailProps & { title: string; children: ReactNode }) {
   return (
@@ -22,8 +29,18 @@ export function OrderEmailLayout({
           </Heading>
           {children}
           <Text>Pedido: {orderId}</Text>
-          <Text>Producto: {productId}</Text>
-          <Text>Cantidad: {quantity}</Text>
+          {items ? (
+            items.map((item) => (
+              <Text key={item.productId}>
+                Producto: {item.productId}. Cantidad: {item.quantity}
+              </Text>
+            ))
+          ) : (
+            <>
+              <Text>Producto: {productId}</Text>
+              <Text>Cantidad: {quantity}</Text>
+            </>
+          )}
         </Container>
       </Body>
     </Html>

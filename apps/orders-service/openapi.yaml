@@ -2,7 +2,7 @@
 openapi: 3.1.0
 info:
   title: MercadoYa Orders
-  version: 2.2.0
+  version: 2.3.0
   description: Kong acepta sesión browser o JWT para pedidos y checkout. Orders directo requiere Bearer JWT verificado por JWKS. Health y webhook Polar públicos; webhook usa firma Standard Webhooks.
 servers:
   - url: http://localhost:8000
@@ -94,7 +94,7 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/CreateOrder"
-      description: buyerId procede del claim sub verificado. Con Polar, Catalog debe tener el producto sincronizado; 409 mientras se prepara y 503 si Catalog no responde. Orders guarda el precio PEN antes de publicar. Campos extra como moneda o importe se descartan.
+      description: buyerId procede del claim sub verificado. Acepta productId/quantity para pedidos anteriores, o items con hasta 20 productos distintos para un carrito. Catalog debe tener todos sincronizados. Orders guarda precios PEN, títulos y miniaturas antes de publicar. idempotencyKey permite recuperar el mismo pedido sin reservar o cobrar dos veces. Campos extra como moneda o importe se descartan.
   /api/orders/{orderId}:
     get:
       operationId: getOrder
@@ -147,6 +147,7 @@ paths:
             type: string
             format: uuid
             pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+      description: "Solo el comprador puede consultar el pedido y sus líneas. Cache-Control: no-store."
   /api/orders/{orderId}/checkout:
     get:
       operationId: getPaymentCheckout
@@ -308,6 +309,52 @@ components:
               type: integer
               minimum: -9007199254740991
               maximum: 9007199254740991
+            items:
+              anyOf:
+                - type: array
+                  items:
+                    type: object
+                    properties:
+                      productId:
+                        type: string
+                        format: uuid
+                        pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                      quantity:
+                        type: integer
+                        exclusiveMinimum: 0
+                        maximum: 2147483647
+                      title:
+                        type: string
+                      thumbnailPath:
+                        type:
+                          - string
+                          - "null"
+                      unitAmount:
+                        type: integer
+                        exclusiveMinimum: 0
+                        maximum: 9007199254740991
+                      currency:
+                        type: string
+                        const: pen
+                    required:
+                      - productId
+                      - quantity
+                      - title
+                      - thumbnailPath
+                      - unitAmount
+                      - currency
+                - type: "null"
+            totalAmount:
+              anyOf:
+                - type: integer
+                  exclusiveMinimum: 0
+                  maximum: 9007199254740991
+                - type: "null"
+            currency:
+              anyOf:
+                - type: string
+                  const: pen
+                - type: "null"
             buyerId:
               type:
                 - string
@@ -357,19 +404,50 @@ components:
       required:
         - error
     CreateOrder:
-      type: object
-      properties:
-        productId:
-          type: string
-          format: uuid
-          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
-        quantity:
-          type: integer
-          exclusiveMinimum: 0
-          maximum: 2147483647
-      required:
-        - productId
-        - quantity
+      anyOf:
+        - type: object
+          properties:
+            items:
+              minItems: 1
+              maxItems: 20
+              type: array
+              items:
+                type: object
+                properties:
+                  productId:
+                    type: string
+                    format: uuid
+                    pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                  quantity:
+                    type: integer
+                    exclusiveMinimum: 0
+                    maximum: 2147483647
+                required:
+                  - productId
+                  - quantity
+            idempotencyKey:
+              type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+          required:
+            - items
+        - type: object
+          properties:
+            productId:
+              type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+            quantity:
+              type: integer
+              exclusiveMinimum: 0
+              maximum: 2147483647
+            idempotencyKey:
+              type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+          required:
+            - productId
+            - quantity
     PaymentCheckoutResponse:
       type: object
       properties:

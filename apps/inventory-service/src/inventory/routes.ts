@@ -32,7 +32,8 @@ export function createInventoryRoutes(identity: IdentityContract) {
         .from(inventoryReservation)
         .where(eq(inventoryReservation.orderId, orderId.data))
         .limit(1);
-      if (!reservation) return c.json({ error: 'La reserva no existe.' }, 404);
+      if (!reservation || reservation.releasedAt)
+        return c.json({ error: 'La reserva no existe.' }, 404);
 
       const base = {
         id: reservation.id,

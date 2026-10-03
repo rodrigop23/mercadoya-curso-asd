@@ -7,6 +7,7 @@ import {
 } from '@mercadoya/contracts';
 import type {
   BillingProduct,
+  BillingOrderItem,
   InventoryReservedEvent,
   PaymentCheckoutResponse,
 } from '@mercadoya/contracts';
@@ -15,6 +16,7 @@ import { logEvent } from '../events/logger.js';
 import {
   CheckoutRateLimited,
   CheckoutRejected,
+  checkoutAmount,
   type Checkout,
   type PolarGateway,
 } from './polar.js';
@@ -30,11 +32,49 @@ type PaymentRow = {
   amount: number | null;
   currency: string | null;
   product: BillingProduct | null;
+  items: BillingOrderItem[] | null;
+  bundle_state: 'queued' | 'creating' | 'ready';
+  bundle_product_id: string | null;
 };
 
 export function createPaymentWorker(pool: Pool, eventBus: EventBus, gateway: PolarGateway) {
   let active: Promise<void> | undefined;
   let timer: ReturnType<typeof setInterval> | undefined;
+  // El advisory lock del worker serializa esta preparación entre pedidos y réplicas.
+  async function purchaseProduct(client: PoolClient): Promise<string | null> {
+    await client.query(
+      'INSERT INTO orders_payment_product(server) VALUES ($1) ON CONFLICT DO NOTHING',
+      [gateway.server],
+    );
+    const {
+      rows: [product],
+    } = await client.query<{
+      state: 'queued' | 'creating' | 'ready';
+      product_id: string | null;
+    }>('SELECT state, product_id FROM orders_payment_product WHERE server=$1', [gateway.server]);
+    if (product!.state === 'ready') return product!.product_id;
+    let productId = await gateway.findPurchaseProduct();
+    if (!productId && product!.state === 'queued') {
+      await client.query("UPDATE orders_payment_product SET state='creating' WHERE server=$1", [
+        gateway.server,
+      ]);
+      try {
+        productId = await gateway.createPurchaseProduct();
+      } catch (error) {
+        if (error instanceof CheckoutRateLimited || error instanceof CheckoutRejected)
+          await client.query("UPDATE orders_payment_product SET state='queued' WHERE server=$1", [
+            gateway.server,
+          ]);
+        throw error;
+      }
+    }
+    if (productId)
+      await client.query(
+        "UPDATE orders_payment_product SET state='ready', product_id=$2 WHERE server=$1",
+        [gateway.server, productId],
+      );
+    return productId;
+  }
   async function enqueue(event: PaymentOutcome) {
     await pool.query(
       'INSERT INTO orders_payment_webhook(event_id, outcome) VALUES ($1, $2) ON CONFLICT DO NOTHING',
@@ -48,9 +88,9 @@ export function createPaymentWorker(pool: Pool, eventBus: EventBus, gateway: Pol
       orderId,
     ]);
     if (
-      payment?.product &&
+      payment &&
       (checkout.currency !== 'pen' ||
-        checkout.amount !== payment.product.unitAmount * payment.reservation.quantity)
+        checkout.amount !== checkoutAmount(payment.reservation, payment.product, payment.items))
     )
       throw new Error('polar_checkout_price_mismatch');
     await client.query(
@@ -157,6 +197,28 @@ export function createPaymentWorker(pool: Pool, eventBus: EventBus, gateway: Pol
       const reservation = inventoryReservedEventSchema.parse(payment.reservation);
       try {
         if (payment.state === 'queued') {
+          if (reservation.items && payment.bundle_state !== 'ready') {
+            let bundleId: string | null;
+            checkoutAmount(reservation, payment.product, payment.items);
+            // Una creación anterior al producto compartido se recupera por el pedido original.
+            bundleId =
+              payment.bundle_state === 'creating'
+                ? await gateway.findBundle(reservation)
+                : await purchaseProduct(client);
+            if (!bundleId) {
+              await client.query(
+                "UPDATE orders_payment_checkout SET next_attempt_at=now()+interval '30 seconds' WHERE order_id=$1",
+                [payment.order_id],
+              );
+              logEvent({ type: 'payment.product_uncertain', orderId: payment.order_id });
+              return;
+            }
+            await client.query(
+              "UPDATE orders_payment_checkout SET bundle_state='ready', bundle_product_id=$2 WHERE order_id=$1",
+              [payment.order_id, bundleId],
+            );
+            payment.bundle_product_id = bundleId;
+          }
           // Persistir la intención antes de llamar a Polar. Nunca repetir un POST incierto.
           await client.query(
             `UPDATE orders_payment_checkout SET state='creating', next_attempt_at=now()+interval '30 seconds' WHERE order_id=$1`,
@@ -165,7 +227,12 @@ export function createPaymentWorker(pool: Pool, eventBus: EventBus, gateway: Pol
           await saveCheckout(
             client,
             payment.order_id,
-            await gateway.create(reservation, payment.product),
+            await gateway.create(
+              reservation,
+              payment.product,
+              payment.items,
+              payment.bundle_product_id,
+            ),
           );
         } else {
           const recovered = await gateway.find(reservation);
@@ -179,7 +246,7 @@ export function createPaymentWorker(pool: Pool, eventBus: EventBus, gateway: Pol
       } catch (error) {
         if (error instanceof CheckoutRateLimited) {
           await client.query(
-            "UPDATE orders_payment_checkout SET state='queued' WHERE order_id=$1",
+            "UPDATE orders_payment_checkout SET state='queued', bundle_state=CASE WHEN bundle_product_id IS NULL THEN 'queued' ELSE bundle_state END WHERE order_id=$1",
             [payment.order_id],
           );
         }
@@ -229,8 +296,8 @@ export function createPaymentWorker(pool: Pool, eventBus: EventBus, gateway: Pol
     async onInventoryReserved(payload: unknown) {
       const event = inventoryReservedEventSchema.parse(payload);
       await pool.query(
-        `INSERT INTO orders_payment_checkout(order_id, reservation, product)
-          SELECT id, $2, payment_product FROM orders_order WHERE id=$1 ON CONFLICT DO NOTHING`,
+        `INSERT INTO orders_payment_checkout(order_id, reservation, product, items)
+          SELECT id, $2, payment_product, items FROM orders_order WHERE id=$1 ON CONFLICT DO NOTHING`,
         [event.orderId, event],
       );
     },

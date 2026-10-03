@@ -13,6 +13,13 @@ import {
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import type { DesiredProduct } from './polar-gateway.js';
+import type { StockBatchRequest } from '@mercadoya/contracts';
+
+export const stockOperation = pgTable('catalog_stock_operation', {
+  id: text('id').primaryKey(),
+  adjustments: jsonb('adjustments').$type<StockBatchRequest['adjustments']>().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
 
 export const product = pgTable('product', {
   id: uuid('id').defaultRandom().primaryKey(),

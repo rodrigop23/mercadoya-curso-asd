@@ -42,7 +42,10 @@ export function createOrdersRoutes(
 
     try {
       const order = await orders.getOrder(parsedOrderId.data);
-      return order ? c.json({ order }, 200) : c.json({ error: 'El pedido no existe.' }, 404);
+      c.header('Cache-Control', 'no-store');
+      return order && order.buyerId === session.user.id
+        ? c.json({ order }, 200)
+        : c.json({ error: 'El pedido no existe.' }, 404);
     } catch (error) {
       console.error('No se pudo consultar el pedido:', error);
       return c.json({ error: 'No se pudo consultar el pedido.' }, 500);

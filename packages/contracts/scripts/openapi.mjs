@@ -34,6 +34,8 @@ const schemas = {
   StockResponse: contracts.stockResponseSchema,
   StockAdjustment: contracts.stockAdjustmentSchema,
   StockAdjustmentResponse: contracts.stockAdjustmentResponseSchema,
+  StockBatch: contracts.stockBatchSchema,
+  StockBatchResponse: contracts.stockBatchResponseSchema,
   ReservationResponse: contracts.reservationResponseSchema,
 };
 const allSchemas = Object.fromEntries(
@@ -158,7 +160,7 @@ documents.set(
   'apps/orders-service/openapi.yaml',
   doc(
     'Orders',
-    '2.2.0',
+    '2.3.0',
     {
       '/api/orders/health': {
         get: op('ordersHealth', 'Estado de Orders', { 200: health('orders') }),
@@ -175,7 +177,7 @@ documents.set(
             security: applicationAuth,
             requestBody: body('CreateOrder'),
             description:
-              'buyerId procede del claim sub verificado. Con Polar, Catalog debe tener el producto sincronizado; 409 mientras se prepara y 503 si Catalog no responde. Orders guarda el precio PEN antes de publicar. Campos extra como moneda o importe se descartan.',
+              'buyerId procede del claim sub verificado. Acepta productId/quantity para pedidos anteriores, o items con hasta 20 productos distintos para un carrito. Catalog debe tener todos sincronizados. Orders guarda precios PEN, títulos y miniaturas antes de publicar. idempotencyKey permite recuperar el mismo pedido sin reservar o cobrar dos veces. Campos extra como moneda o importe se descartan.',
           },
         ),
       },
@@ -187,7 +189,12 @@ documents.set(
             200: response('Pedido encontrado.', 'OrderResponse'),
             ...errors(400, 401, 404, 500, 502),
           },
-          { security: applicationAuth, parameters: [id('orderId')] },
+          {
+            security: applicationAuth,
+            parameters: [id('orderId')],
+            description:
+              'Solo el comprador puede consultar el pedido y sus líneas. Cache-Control: no-store.',
+          },
         ),
       },
       '/api/orders/{orderId}/checkout': {
@@ -378,7 +385,7 @@ documents.set(
   'apps/catalog-service/openapi/catalog.yaml',
   doc(
     'Catalog',
-    '1.2.0',
+    '1.3.0',
     {
       '/api/catalog/health': {
         get: op('catalogHealth', 'Estado de Catalog', { 200: health('catalog') }),
@@ -434,6 +441,21 @@ documents.set(
             ...errors(400, 401, 503),
           },
           { security: [{ catalogInternalToken: [] }], parameters: [id('id')] },
+        ),
+      },
+      '/api/internal/catalog/stock/adjust-batch': {
+        servers: [catalogDirect],
+        post: op(
+          'adjustStockBatch',
+          'Ajustar todos los productos de un carrito en una transacción',
+          {
+            200: response(
+              'Aplica todos los ajustes o ninguno. Repetir operationId y ajustes no modifica otra vez el stock.',
+              'StockBatchResponse',
+            ),
+            ...errors(400, 401, 503),
+          },
+          { security: [{ catalogInternalToken: [] }], requestBody: body('StockBatch') },
         ),
       },
       '/api/internal/catalog/products/{id}/billing': {

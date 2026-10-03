@@ -5,15 +5,38 @@ export const errorResponseSchema = z.object({
   error: z.string(),
   details: z.record(z.string(), z.array(z.string())).optional(),
 });
-export const createOrderSchema = z.object({
+export const cartItemSchema = z.object({
   productId: z.string().uuid(),
   quantity: z.number().int().positive().max(2_147_483_647),
 });
+export const cartItemsSchema = z
+  .array(cartItemSchema)
+  .min(1)
+  .max(20)
+  .refine(
+    (items) => new Set(items.map((item) => item.productId)).size === items.length,
+    'El carrito no debe repetir productos.',
+  );
+export type CartItem = z.infer<typeof cartItemSchema>;
+export const createOrderSchema = z.union([
+  z.object({ items: cartItemsSchema, idempotencyKey: uuidSchema.optional() }),
+  cartItemSchema.extend({ idempotencyKey: uuidSchema.optional() }),
+]);
+export const orderItemSchema = cartItemSchema.extend({
+  title: z.string(),
+  thumbnailPath: z.string().nullable(),
+  unitAmount: z.number().int().positive(),
+  currency: z.literal('pen'),
+});
+export type OrderItem = z.infer<typeof orderItemSchema>;
 export const orderResponseSchema = z.object({
   order: z.object({
     id: uuidSchema,
     productId: uuidSchema,
     quantity: z.number().int(),
+    items: z.array(orderItemSchema).nullable().optional(),
+    totalAmount: z.number().int().positive().nullable().optional(),
+    currency: z.literal('pen').nullable().optional(),
     buyerId: z.string().nullable(),
     status: z.enum(['pending', 'confirmed', 'rejected']),
     rejectionReason: z.string().nullable(),
@@ -41,7 +64,15 @@ export const billingProductSchema = z.object({
   polarProductId: uuidSchema,
   unitAmount: z.number().int().min(200).max(99_999_999),
   currency: z.literal('pen'),
+  title: z.string().optional(),
+  thumbnailPath: z.string().nullable().optional(),
 });
+export const billingOrderItemSchema = billingProductSchema.extend({
+  quantity: cartItemSchema.shape.quantity,
+  title: z.string(),
+  thumbnailPath: z.string().nullable(),
+});
+export type BillingOrderItem = z.infer<typeof billingOrderItemSchema>;
 export const catalogBillingResponseSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('ready'), product: billingProductSchema }),
   z.object({ status: z.literal('pending'), product: z.null() }),
@@ -169,6 +200,36 @@ export const stockAdjustmentResponseSchema = z.discriminatedUnion('adjusted', [
     reason: z.enum(['product_not_found', 'insufficient_stock', 'stock_limit']),
   }),
 ]);
+export const stockBatchSchema = z.object({
+  operationId: z.string().min(1).max(100),
+  adjustments: z
+    .array(
+      z.object({
+        productId: uuidSchema,
+        delta: z
+          .number()
+          .int()
+          .min(-2_147_483_647)
+          .max(2_147_483_647)
+          .refine((value) => value !== 0),
+      }),
+    )
+    .min(1)
+    .max(20)
+    .refine(
+      (items) => new Set(items.map((item) => item.productId)).size === items.length,
+      'No se deben repetir productos.',
+    ),
+});
+export const stockBatchResponseSchema = z.discriminatedUnion('adjusted', [
+  z.object({ adjusted: z.literal(true) }),
+  z.object({
+    adjusted: z.literal(false),
+    reason: z.enum(['product_not_found', 'insufficient_stock', 'stock_limit']),
+  }),
+]);
+export type StockBatchRequest = z.infer<typeof stockBatchSchema>;
+export type StockBatchResponse = z.infer<typeof stockBatchResponseSchema>;
 
 export type CreateOrderRequest = z.infer<typeof createOrderSchema>;
 export type OrderResponse = z.infer<typeof orderResponseSchema>;

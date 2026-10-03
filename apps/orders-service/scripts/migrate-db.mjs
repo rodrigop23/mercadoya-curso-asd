@@ -12,6 +12,10 @@ try {
   await client.query('SELECT pg_advisory_xact_lock(406030)');
   await client.query(await readFile(new URL('../db/0001_payments.sql', import.meta.url), 'utf8'));
   await client.query(await readFile(new URL('../db/0002_pricing.sql', import.meta.url), 'utf8'));
+  await client.query(await readFile(new URL('../db/0003_cart.sql', import.meta.url), 'utf8'));
+  await client.query(
+    await readFile(new URL('../db/0004_purchase_product.sql', import.meta.url), 'utf8'),
+  );
   await client.query('COMMIT');
 } catch (error) {
   await client.query('ROLLBACK');

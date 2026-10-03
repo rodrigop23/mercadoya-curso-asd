@@ -1,4 +1,10 @@
 import { z } from 'zod';
+import {
+  cartItemsSchema,
+  type CartItem,
+  type StockBatchRequest,
+  type StockBatchResponse,
+} from './http.js';
 
 export const eventSubjects = {
   ordersPlaced: 'orders.placed',
@@ -16,6 +22,7 @@ export const orderPlacedEventSchema = z.object({
   orderId: z.string().uuid(),
   productId: z.string().uuid(),
   quantity: z.number().int().positive(),
+  items: cartItemsSchema.optional(),
   buyerId: z.string().nullable(),
   occurredAt: z.string().datetime(),
 });
@@ -34,6 +41,7 @@ const inventoryReservationResult = {
   orderId: z.string().uuid(),
   productId: z.string().uuid(),
   quantity: z.number().int().positive(),
+  items: cartItemsSchema.optional(),
   buyerId: z.string().nullable(),
   occurredAt: z.string().datetime(),
 };
@@ -92,6 +100,7 @@ export interface InventoryPort {
     orderId: string;
     productId: string;
     quantity: number;
+    items?: CartItem[];
   }): Promise<ReservationResult>;
 }
 
@@ -100,6 +109,7 @@ export type StockAdjustmentResult = import('./http.js').StockAdjustmentResponse;
 export interface CatalogStockContract {
   getAvailableStock(productId: string): Promise<number | null>;
   adjustStock(productId: string, delta: number): Promise<StockAdjustmentResult>;
+  adjustStockBatch(input: StockBatchRequest): Promise<StockBatchResponse>;
 }
 
 export * from './http.js';

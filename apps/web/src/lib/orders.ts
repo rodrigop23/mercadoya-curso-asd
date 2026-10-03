@@ -1,5 +1,9 @@
 import { queryOptions } from '@tanstack/react-query';
-import { paymentCheckoutResponseSchema } from '@mercadoya/contracts';
+import {
+  paymentCheckoutResponseSchema,
+  type CreateOrderRequest,
+  type OrderItem,
+} from '@mercadoya/contracts';
 
 import { API_BASE_URL } from './products';
 
@@ -9,6 +13,9 @@ export type Order = {
   id: string;
   productId: string;
   quantity: number;
+  items?: OrderItem[] | null;
+  totalAmount?: number | null;
+  currency?: 'pen' | null;
   buyerId: string | null;
   status: OrderStatus;
   rejectionReason: string | null;
@@ -19,12 +26,21 @@ export type Order = {
 type OrderResponse = { order: Order };
 type ApiErrorResponse = { error?: string };
 
-async function readApiError(response: Response, fallback: string) {
-  const data = (await response.json().catch(() => null)) as ApiErrorResponse | null;
-  return new Error(data?.error ?? fallback);
+export class OrderRequestError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+  }
 }
 
-export async function createOrder(input: { productId: string; quantity: number }) {
+async function readApiError(response: Response, fallback: string) {
+  const data = (await response.json().catch(() => null)) as ApiErrorResponse | null;
+  return new OrderRequestError(data?.error ?? fallback, response.status);
+}
+
+export async function createOrder(input: CreateOrderRequest) {
   const response = await fetch(`${API_BASE_URL}/api/orders`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

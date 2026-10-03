@@ -47,6 +47,16 @@ for (const name of ['product', 'orders_order', 'inventory_reservations']) {
 await pool.query('CREATE UNIQUE INDEX inventory_order_unique ON inventory_reservations(order_id)');
 await pool.query(await readFile(new URL('../db/0001_payments.sql', import.meta.url), 'utf8'));
 await pool.query(await readFile(new URL('../db/0002_pricing.sql', import.meta.url), 'utf8'));
+await pool.query(await readFile(new URL('../db/0003_cart.sql', import.meta.url), 'utf8'));
+await pool.query(
+  await readFile(new URL('../db/0004_purchase_product.sql', import.meta.url), 'utf8'),
+);
+await pool.query(
+  await readFile(
+    new URL('../../catalog-service/drizzle/0003_cart_stock.sql', import.meta.url),
+    'utf8',
+  ),
+);
 await pool.query(
   await readFile(
     new URL('../../catalog-service/drizzle/0001_polar_products.sql', import.meta.url),
@@ -71,7 +81,7 @@ const { createProductSyncWorker } =
   await import('../../catalog-service/dist/modules/catalog/polar-worker.js');
 const { createCatalogHttpClient } = await import('../../inventory-service/dist/catalog/http.js');
 const catalog = createCatalogContract({
-  processProductImage: async () => ({ imagePath: 'media/test.png' }),
+  processProductImage: async () => ({ imagePath: 'media/test-full.webp' }),
   deleteProductImage: async () => {},
 });
 const catalogRoutes = createCatalogRoutes(
@@ -107,21 +117,44 @@ const identity = {
 };
 const stock = new Map();
 const sessions = new Map();
+const bundles = new Map();
+const purchaseProducts = new Map();
+let productCreations = 0;
+let uncertainProduct = false;
+let hiddenProduct = false;
 let creations = 0;
 let uncertain = false;
 let rejected = false;
 let failPublish = false;
 const gateway = {
-  async create(event, product) {
+  server: 'sandbox',
+  async createPurchaseProduct() {
+    productCreations++;
+    const id = randomUUID();
+    purchaseProducts.set(this.server, id);
+    if (uncertainProduct) throw new Error('product_network_uncertain');
+    return id;
+  },
+  async findPurchaseProduct() {
+    return hiddenProduct ? null : (purchaseProducts.get(this.server) ?? null);
+  },
+  async findBundle(event) {
+    return bundles.get(event.orderId)?.id ?? null;
+  },
+  async create(event, product, items, bundleId) {
     assert.equal(product.currency, 'pen');
     assert.equal(product.productId, event.productId);
+    if (event.items)
+      assert.equal(bundleId, bundles.get(event.orderId)?.id ?? purchaseProducts.get(this.server));
     creations++;
     if (rejected) throw new CheckoutRejected('polar_checkout_rejected');
     const session = {
       id: randomUUID(),
       url: 'https://sandbox.polar.sh/checkout/test',
       expires_at: new Date(Date.now() + 3600000).toISOString(),
-      amount: product.unitAmount * event.quantity,
+      amount: event.items
+        ? items.reduce((sum, item) => sum + item.unitAmount * item.quantity, 0)
+        : product.unitAmount * event.quantity,
       currency: 'pen',
       status: 'open',
     };
@@ -155,6 +188,12 @@ const orders = createOrdersModule(
 const service = createOrdersService(bus, catalogBilling);
 const inventory = createInventoryModule(
   {
+    async adjustStockBatch(input) {
+      const result = await catalogStock.adjustStockBatch(input);
+      for (const item of input.adjustments)
+        stock.set(item.productId, await catalogStock.getAvailableStock(item.productId));
+      return result;
+    },
     async getAvailableStock(productId) {
       return catalogStock.getAvailableStock(productId);
     },
@@ -246,6 +285,49 @@ async function createOrder(quantity = 2) {
   await worker.tick();
   return order;
 }
+async function cartProducts() {
+  const products = [];
+  for (const [title, price] of [
+    ['Palta de prueba', 10],
+    ['Tomate de prueba', 7],
+  ]) {
+    const product = await catalog.createProduct({
+      title,
+      description: 'Producto de carrito',
+      price,
+      stock: 10,
+      image: new File(['fixture'], 'test.png'),
+    });
+    products.push(product);
+    await productWorker.tick();
+  }
+  return products;
+}
+async function postCart(items, idempotencyKey = randomUUID()) {
+  const response = await app.request('/api/orders', {
+    method: 'POST',
+    headers: { authorization: 'Bearer buyer', 'content-type': 'application/json' },
+    body: JSON.stringify({ items, idempotencyKey, totalAmount: 1, currency: 'usd' }),
+  });
+  assert.equal(response.status, 202);
+  return (await response.json()).order;
+}
+async function createCart(quantities = [2, 3], beforeTick = async () => {}) {
+  const products = await cartProducts();
+  const items = products.map((product, index) => ({
+    productId: product.id,
+    quantity: quantities[index],
+  }));
+  const order = await postCart(items);
+  await until(
+    async () =>
+      (await pool.query('SELECT 1 FROM orders_payment_checkout WHERE order_id=$1', [order.id]))
+        .rowCount === 1,
+  );
+  await beforeTick(order);
+  await worker.tick();
+  return { order, products, items };
+}
 function eventFor(order, type, status) {
   const session = sessions.get(order.id);
   return {
@@ -286,6 +368,182 @@ const outcomes = (orderId, subject) =>
 
 test('Polar, PostgreSQL, NATS, Inventory y Notifications completan la saga', async (t) => {
   try {
+    await t.test(
+      'respuesta perdida del producto compartido bloquea nuevos POST y recupera dos pedidos con importes distintos',
+      async () => {
+        uncertainProduct = true;
+        hiddenProduct = true;
+        const first = await createCart();
+        uncertainProduct = false;
+        const second = await createCart([1, 1]);
+        assert.equal(productCreations, 1);
+        assert.equal((await worker.getCheckout(first.order.id)).checkout, null);
+        assert.equal((await worker.getCheckout(second.order.id)).checkout, null);
+        hiddenProduct = false;
+        await pool.query(
+          'UPDATE orders_payment_checkout SET next_attempt_at=now() WHERE order_id=ANY($1::uuid[])',
+          [[first.order.id, second.order.id]],
+        );
+        worker = createPaymentWorker(pool, publisher, gateway);
+        const replica = createPaymentWorker(pool, publisher, gateway);
+        await Promise.all([worker.tick(), replica.tick()]);
+        await worker.tick();
+        assert.equal((await worker.getCheckout(first.order.id)).checkout.amount, 4100);
+        assert.equal((await worker.getCheckout(second.order.id)).checkout.amount, 1700);
+        assert.equal(productCreations, 1);
+        const references = await pool.query(
+          'SELECT bundle_product_id FROM orders_payment_checkout WHERE order_id=ANY($1::uuid[])',
+          [[first.order.id, second.order.id]],
+        );
+        assert.deepEqual(
+          references.rows.map((row) => row.bundle_product_id),
+          [purchaseProducts.get('sandbox'), purchaseProducts.get('sandbox')],
+        );
+      },
+    );
+    await t.test(
+      'carrito conserva desglose y miniaturas, cobra todo y confirma una sola orden',
+      async () => {
+        const { order, products, items } = await createCart();
+        assert.equal(order.totalAmount, 4100);
+        assert.equal(order.items.length, 2);
+        assert.equal(order.items[0].thumbnailPath, 'media/test-thumb.webp');
+        assert.equal('polarProductId' in order.items[0], false);
+        assert.equal((await worker.getCheckout(order.id)).checkout.amount, 4100);
+        assert.equal(await catalog.getAvailableStock(products[0].id), 8);
+        assert.equal(await catalog.getAvailableStock(products[1].id), 7);
+        const reserved = outcomes(order.id, eventSubjects.inventoryReserved)[0].payload;
+        await inventory.onOrderPlaced({ ...reserved });
+        await catalog.updateProduct(products[0].id, {
+          title: 'Título cambiado',
+          description: 'Cambió',
+          price: 15,
+          stock: 8,
+        });
+        await productWorker.tick();
+        const again = await postCart(items, order.id);
+        assert.equal(again.id, order.id);
+        assert.equal(again.totalAmount, 4100);
+        assert.equal(again.items[0].title, 'Palta de prueba');
+        assert.equal(await catalog.getAvailableStock(products[0].id), 8);
+        await deliver(eventFor(order, 'order.paid', 'paid'));
+        await worker.tick();
+        await until(async () => (await service.getOrder(order.id)).status === 'confirmed');
+        assert.deepEqual(
+          outcomes(order.id, eventSubjects.paymentSucceeded)[0].payload.items,
+          items,
+        );
+        assert.equal((await service.getOrder(order.id)).items[0].unitAmount, 1000);
+        const other = createOrdersModule(
+          bus,
+          { getSession: async () => ({ user: { id: 'other' } }) },
+          worker,
+          catalogBilling,
+        ).routes;
+        assert.equal((await other.request(`/${order.id}`)).status, 404);
+        assert.equal((await other.request(`/${order.id}/checkout`)).status, 404);
+      },
+    );
+    await t.test('sin stock en una línea no reserva ningún producto del carrito', async () => {
+      const products = await cartProducts();
+      const order = await postCart([
+        { productId: products[0].id, quantity: 2 },
+        { productId: products[1].id, quantity: 11 },
+      ]);
+      await until(async () => (await service.getOrder(order.id)).status === 'rejected');
+      for (const product of products) assert.equal(await catalog.getAvailableStock(product.id), 10);
+      assert.equal((await worker.getCheckout(order.id)).checkout, null);
+      assert.equal(outcomes(order.id, eventSubjects.inventoryReserved).length, 0);
+    });
+    await t.test(
+      'fallo de carrito restaura todas las líneas una sola vez y no vuelve a reservar',
+      async () => {
+        const { order, products } = await createCart();
+        const failure = eventFor(order, 'checkout.expired', 'expired');
+        await deliver(failure);
+        await worker.tick();
+        await until(
+          async () =>
+            (await service.getOrder(order.id)).status === 'rejected' &&
+            (await catalog.getAvailableStock(products[0].id)) === 10,
+        );
+        await inventory.onPaymentFailed(outcomes(order.id, eventSubjects.paymentFailed)[0].payload);
+        for (const product of products)
+          assert.equal(await catalog.getAvailableStock(product.id), 10);
+        assert.equal(outcomes(order.id, eventSubjects.inventoryReleased).length, 1);
+        await assert.rejects(
+          inventory.onOrderPlaced(outcomes(order.id, eventSubjects.inventoryReserved)[0].payload),
+          /liberada/,
+        );
+        for (const product of products)
+          assert.equal(await catalog.getAvailableStock(product.id), 10);
+      },
+    );
+    await t.test(
+      'producto privado de un pedido anterior se recupera sin crear otro producto',
+      async () => {
+        const beforeProducts = productCreations;
+        const legacyProductId = randomUUID();
+        const { order } = await createCart([2, 3], async (order) => {
+          bundles.set(order.id, { id: legacyProductId });
+          await pool.query(
+            "UPDATE orders_payment_checkout SET bundle_state='creating' WHERE order_id=$1",
+            [order.id],
+          );
+        });
+        assert.equal(productCreations, beforeProducts);
+        assert.equal((await worker.getCheckout(order.id)).checkout.amount, 4100);
+        const reference = await pool.query(
+          'SELECT bundle_product_id FROM orders_payment_checkout WHERE order_id=$1',
+          [order.id],
+        );
+        assert.equal(reference.rows[0].bundle_product_id, legacyProductId);
+      },
+    );
+    await t.test('sandbox y producción conservan referencias de producto separadas', async () => {
+      const beforeProducts = productCreations;
+      try {
+        const { order } = await createCart([1, 1], async () => {
+          worker = createPaymentWorker(pool, publisher, { ...gateway, server: 'production' });
+        });
+        assert.equal((await worker.getCheckout(order.id)).checkout.amount, 1700);
+        assert.equal(productCreations, beforeProducts + 1);
+        assert.notEqual(purchaseProducts.get('sandbox'), purchaseProducts.get('production'));
+        const registry = await pool.query('SELECT server, product_id FROM orders_payment_product');
+        assert.equal(registry.rows.length, 2);
+        for (const row of registry.rows)
+          assert.equal(row.product_id, purchaseProducts.get(row.server));
+      } finally {
+        worker = createPaymentWorker(pool, publisher, gateway);
+      }
+    });
+    await t.test(
+      'ajuste de carrito es atómico e idempotente también con llamadas concurrentes',
+      async () => {
+        const products = await cartProducts();
+        const adjustments = products.map((product) => ({ productId: product.id, delta: -7 }));
+        const operationId = `cart-test:${randomUUID()}`;
+        const results = await Promise.all(
+          Array.from({ length: 3 }, () =>
+            catalogStock.adjustStockBatch({ operationId, adjustments }),
+          ),
+        );
+        assert.ok(results.every((result) => result.adjusted));
+        for (const product of products)
+          assert.equal(await catalog.getAvailableStock(product.id), 3);
+        const competing = await Promise.all(
+          Array.from({ length: 2 }, () =>
+            catalogStock.adjustStockBatch({
+              operationId: randomUUID(),
+              adjustments: adjustments.map((item) => ({ ...item, delta: -2 })),
+            }),
+          ),
+        );
+        assert.equal(competing.filter((result) => result.adjusted).length, 1);
+        for (const product of products)
+          assert.equal(await catalog.getAvailableStock(product.id), 1);
+      },
+    );
     await t.test(
       'Catalog pendiente impide reservar; edición posterior no cambia el precio guardado',
       async () => {

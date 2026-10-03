@@ -43,6 +43,7 @@ export function createInventoryModule(
         orderId: event.orderId,
         productId: event.productId,
         quantity: event.quantity,
+        items: event.items,
       });
       const occurredAt = new Date().toISOString();
 
@@ -52,6 +53,7 @@ export function createInventoryModule(
           orderId: event.orderId,
           productId: event.productId,
           quantity: event.quantity,
+          items: event.items,
           buyerId: event.buyerId,
           occurredAt,
         });
@@ -74,6 +76,7 @@ export function createInventoryModule(
         quantity: event.quantity,
         buyerId: event.buyerId,
         reason: result.reason,
+        items: event.items,
         occurredAt,
       });
       await eventBus.publish(eventSubjects.inventoryRejected, rejectionEvent);

@@ -8,6 +8,7 @@ import {
   CheckoutRateLimited,
   CheckoutRejected,
   createPolarGateway,
+  checkoutAmount,
 } from '../dist/payment/polar.js';
 import { createPolarWebhookRoutes, mapPolarEvent } from '../dist/payment/webhook.js';
 
@@ -254,6 +255,148 @@ test('SDK 1.0.1 fija API 2026-04, sandbox, precio total y correlación server-si
   }
 });
 
+test('SDK usa un producto privado genérico y fija el importe de cada checkout sin cambiarlo', async () => {
+  const items = [
+    {
+      productId: randomUUID(),
+      polarProductId: randomUUID(),
+      title: 'Palta',
+      quantity: 2,
+      unitAmount: 1025,
+      currency: 'pen',
+      thumbnailPath: 'media/palta-thumb.webp',
+    },
+    {
+      productId: randomUUID(),
+      polarProductId: randomUUID(),
+      title: 'Tomate',
+      quantity: 3,
+      unitAmount: 700,
+      currency: 'pen',
+      thumbnailPath: 'media/tomate-thumb.webp',
+    },
+  ];
+  const event = {
+    version: 1,
+    orderId,
+    productId: items[0].productId,
+    quantity: 2,
+    items: items.map(({ productId, quantity }) => ({ productId, quantity })),
+    buyerId: 'buyer',
+    occurredAt: timestamp,
+  };
+  const bundleId = randomUUID();
+  const gateway = createPolarGateway({
+    accessToken: randomBytes(32).toString('base64url'),
+    webhookSecret: secret,
+    server: 'sandbox',
+    webOrigin: 'http://localhost:5173',
+  });
+  const originalFetch = globalThis.fetch;
+  let products = 0;
+  let checkouts = 0;
+  try {
+    globalThis.fetch = async (url, init) => {
+      const body = JSON.parse(init.body);
+      if (url.endsWith('/products/')) {
+        products++;
+        assert.equal(body.name, 'Compra en MercadoYa');
+        assert.equal(body.visibility, 'private');
+        assert.equal(body.organization_id, undefined);
+        assert.deepEqual(body.metadata, { mercadoya_checkout: 'purchase' });
+        assert.doesNotMatch(body.description, /Palta|Tomate|41.50/);
+        assert.deepEqual(body.prices, [
+          {
+            amount_type: 'custom',
+            price_currency: 'pen',
+            minimum_amount: 200,
+            tax_behavior: 'exclusive',
+          },
+        ]);
+        return Response.json({ id: bundleId }, { status: 201 });
+      }
+      checkouts++;
+      assert.equal(init.method, 'POST');
+      assert.equal(new URL(url).pathname, '/v1/checkouts/');
+      assert.deepEqual(body.products, [bundleId]);
+      const amount = checkouts === 1 ? 4150 : 1725;
+      assert.equal(body.prices[bundleId][0].price_amount, amount);
+      assert.equal(body.prices[bundleId][0].amount_type, 'fixed');
+      assert.equal(body.return_url, 'http://localhost:5173/cart');
+      assert.equal(
+        body.success_url,
+        `http://localhost:5173/orders/${orderId}?checkout_id={CHECKOUT_ID}`,
+      );
+      return Response.json(
+        {
+          id: checkoutId,
+          url: 'https://sandbox.polar.sh/checkout/test',
+          expires_at: timestamp,
+          amount,
+          currency: 'pen',
+          status: 'open',
+        },
+        { status: 201 },
+      );
+    };
+    assert.equal(checkoutAmount(event, items[0], items), 4150);
+    assert.equal(gateway.server, 'sandbox');
+    assert.equal(await gateway.createPurchaseProduct(), bundleId);
+    assert.equal((await gateway.create(event, items[0], items, bundleId)).amount, 4150);
+    const secondItems = items.map((item) => ({ ...item, quantity: 1 }));
+    const secondEvent = { ...event, items: event.items.map((item) => ({ ...item, quantity: 1 })) };
+    assert.equal((await gateway.create(secondEvent, items[0], secondItems, bundleId)).amount, 1725);
+    await assert.rejects(gateway.create(event, items[0], items), CheckoutRejected);
+    assert.throws(
+      () => checkoutAmount(event, items[0], [{ ...items[0], quantity: 1 }, items[1]]),
+      CheckoutRejected,
+    );
+    assert.equal(products, 1);
+    assert.equal(checkouts, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('recupera el producto compartido por metadata y rechaza duplicados o productos inválidos', async () => {
+  const gateway = createPolarGateway({
+    accessToken: randomBytes(32).toString('base64url'),
+    webhookSecret: secret,
+    server: 'sandbox',
+    webOrigin: 'http://localhost:5173',
+  });
+  const product = {
+    id: randomUUID(),
+    metadata: { mercadoya_checkout: 'purchase' },
+    is_recurring: false,
+    is_archived: false,
+    visibility: 'private',
+  };
+  let items = [product];
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async (url, init) => {
+      assert.equal(init.method, 'GET');
+      assert.equal(new URL(url).searchParams.get('metadata[mercadoya_checkout]'), 'purchase');
+      return Response.json({ items, pagination: { max_page: 1, total_count: items.length } });
+    };
+    assert.equal(await gateway.findPurchaseProduct(), product.id);
+    for (const invalid of [
+      [product, { ...product, id: randomUUID() }],
+      [{ ...product, is_recurring: true }],
+      [{ ...product, is_archived: true }],
+      [{ ...product, visibility: 'public' }],
+    ]) {
+      items = invalid;
+      await assert.rejects(gateway.findPurchaseProduct(), /polar_purchase_product_invalid/);
+    }
+    items = [{ ...product, metadata: { mercadoya_order_id: orderId } }];
+    assert.equal(await gateway.findPurchaseProduct(), null);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('Kong expone solo el webhook POST sin identity-auth y no reescribe su URL', async () => {
   const config = await readFile(new URL('../../../infra/kong/kong.yml', import.meta.url), 'utf8');
   const route = config.split('- name: polar-webhook-public')[1].split('- name: orders-health')[0];
@@ -295,7 +438,14 @@ test('Checkout API separa rechazo, rate limit y resultado incierto sin revelar s
           unitAmount: 1200,
           currency: 'pen',
         }),
-        (error) => error instanceof expected && !error.message.includes(secret),
+        (error) =>
+          error.constructor === expected &&
+          !error.message.includes(secret) &&
+          (status !== 500 || error.message === 'polar_checkout_uncertain'),
+      );
+      await assert.rejects(
+        gateway.createPurchaseProduct(),
+        (error) => error.constructor === expected && !error.message.includes(secret),
       );
     }
   } finally {

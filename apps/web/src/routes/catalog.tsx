@@ -1,23 +1,21 @@
-import { useState } from 'react';
-import { useMutation, useSuspenseQuery } from '@tanstack/react-query';
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
-import { ArrowRight, LoaderCircle, PackageOpen, ShoppingCart } from 'lucide-react';
+import { useSuspenseQuery } from '@tanstack/react-query';
+import { createFileRoute, Link } from '@tanstack/react-router';
+import { ArrowRight, PackageOpen, ShoppingCart } from 'lucide-react';
 
 import { Button, buttonVariants } from '@mercadoya/ui/components/button';
 import { Card, CardContent } from '@mercadoya/ui/components/card';
-import { Input } from '@mercadoya/ui/components/input';
-import { Label } from '@mercadoya/ui/components/label';
-import { createOrder } from '@/lib/orders';
-import { productImageUrl, productsQueryOptions, type Product } from '@/lib/products';
+import { useCart } from '@/features/cart/cart-context';
+import { QuantityControl } from '@/features/cart/quantity-control';
+import {
+  priceFormatter,
+  productImageUrl,
+  productsQueryOptions,
+  type Product,
+} from '@/lib/products';
 
 export const Route = createFileRoute('/catalog')({
   loader: ({ context: { queryClient } }) => queryClient.ensureQueryData(productsQueryOptions),
   component: CatalogPage,
-});
-
-const priceFormatter = new Intl.NumberFormat('es-PE', {
-  style: 'currency',
-  currency: 'PEN',
 });
 
 function CatalogPage() {
@@ -65,16 +63,8 @@ function CatalogPage() {
 }
 
 function ProductCard({ product }: { product: Product }) {
-  const [quantity, setQuantity] = useState('1');
-  const navigate = useNavigate();
-  const mutation = useMutation({
-    mutationFn: () => createOrder({ productId: product.id, quantity: Number(quantity) }),
-    onSuccess: (order) => navigate({ to: '/orders/$orderId', params: { orderId: order.id } }),
-  });
-  const numericQuantity = Number(quantity);
-  const quantityIsValid =
-    Number.isInteger(numericQuantity) && numericQuantity > 0 && numericQuantity <= product.stock;
-  const quantityInputId = `quantity-${product.id}`;
+  const cart = useCart();
+  const quantity = cart.items.find((item) => item.productId === product.id)?.quantity ?? 0;
 
   return (
     <Card className="h-full shadow-sm">
@@ -97,51 +87,37 @@ function ProductCard({ product }: { product: Product }) {
         <p className="text-xs font-medium text-muted-foreground">
           {product.stock > 0 ? `${product.stock} unidades disponibles` : 'Sin stock por ahora'}
         </p>
-        <form
-          className="flex items-end gap-3 border-t border-border pt-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (quantityIsValid && !mutation.isPending) mutation.mutate();
-          }}
-        >
-          <div className="w-24 shrink-0 space-y-1.5">
-            <Label htmlFor={quantityInputId} className="text-xs text-muted-foreground">
-              Unidades
-            </Label>
-            <Input
-              id={quantityInputId}
-              type="number"
-              min={1}
-              max={product.stock}
-              step={1}
-              value={quantity}
-              disabled={product.stock === 0 || mutation.isPending}
-              aria-invalid={quantity.length > 0 && !quantityIsValid}
-              onChange={(event) => setQuantity(event.currentTarget.value)}
-              className="h-9 text-center tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+        <div className="pt-2">
+          {quantity > 0 ? (
+            <QuantityControl
+              title={product.title}
+              quantity={quantity}
+              className="w-full"
+              disabled={cart.locked}
+              increaseDisabled={quantity >= product.stock}
+              onDecrease={() =>
+                quantity === 1 ? cart.remove(product.id) : cart.setQuantity(product, quantity - 1)
+              }
+              onIncrease={() => cart.setQuantity(product, quantity + 1)}
             />
-          </div>
-          <Button
-            type="submit"
-            className="h-9 flex-1"
-            disabled={product.stock === 0 || !quantityIsValid || mutation.isPending}
-          >
-            {mutation.isPending ? (
-              <LoaderCircle
-                data-icon="inline-start"
-                className="animate-spin motion-reduce:animate-none"
-              />
-            ) : (
+          ) : (
+            <Button
+              type="button"
+              size="lg"
+              className="w-full"
+              disabled={product.stock === 0 || cart.locked || cart.items.length >= 20}
+              onClick={() => cart.setQuantity(product, 1)}
+            >
               <ShoppingCart data-icon="inline-start" />
-            )}
-            {mutation.isPending ? 'Creando pedido…' : 'Comprar'}
-          </Button>
-        </form>
-        {mutation.error && (
-          <p role="alert" className="text-xs leading-5 text-destructive">
-            {mutation.error.message}
-          </p>
-        )}
+              Agregar al carrito
+            </Button>
+          )}
+          {quantity > product.stock && (
+            <p role="alert" className="mt-2 text-xs text-destructive">
+              Solo quedan {product.stock} unidades. Ajusta la cantidad en el carrito.
+            </p>
+          )}
+        </div>
       </CardContent>
     </Card>
   );

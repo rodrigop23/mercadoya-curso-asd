@@ -1,9 +1,9 @@
 import type { QueryClient } from '@tanstack/react-query';
 import { Link, Outlet, createRootRouteWithContext } from '@tanstack/react-router';
-import { ChevronDownIcon, LogOutIcon } from 'lucide-react';
+import { ChevronDownIcon, LogOutIcon, ShoppingCart } from 'lucide-react';
 
 import { Avatar, AvatarFallback } from '@mercadoya/ui/components/avatar';
-import { Button } from '@mercadoya/ui/components/button';
+import { Button, buttonVariants } from '@mercadoya/ui/components/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,6 +14,8 @@ import {
   DropdownMenuTrigger,
 } from '@mercadoya/ui/components/dropdown-menu';
 import { authClient } from '@/lib/auth-client';
+import { CartProvider, useCart } from '@/features/cart/cart-context';
+import { cn } from '@mercadoya/ui/lib/utils';
 import '../styles.css';
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
@@ -22,6 +24,17 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootLayout() {
   const { data: session, isPending } = authClient.useSession();
+  const owner = isPending ? 'loading' : (session?.user.id ?? 'guest');
+  return (
+    <CartProvider key={owner} owner={owner}>
+      <RootShell />
+    </CartProvider>
+  );
+}
+
+function RootShell() {
+  const { data: session, isPending } = authClient.useSession();
+  const cart = useCart();
   const isAdmin = session
     ? (session.user as typeof session.user & { role?: string | null }).role === 'admin'
     : false;
@@ -64,7 +77,19 @@ function RootLayout() {
             )}
           </nav>
 
-          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+          <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
+            <Link
+              to="/cart"
+              aria-label={`Abrir carrito, ${cart.count} unidades`}
+              className={cn(buttonVariants({ variant: 'ghost', size: 'lg' }), 'gap-2')}
+            >
+              <ShoppingCart data-icon="inline-start" />
+              {cart.count > 0 && (
+                <span className="tabular-nums" aria-hidden="true">
+                  {cart.count > 99 ? '99+' : cart.count}
+                </span>
+              )}
+            </Link>
             {isPending ? (
               <span className="hidden text-sm text-muted-foreground sm:inline">
                 Revisando sesión…
