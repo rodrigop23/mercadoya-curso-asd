@@ -1,0 +1,287 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "MercadoYa · Frontend, Kong y microservicios",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1390,
+      815
+    ]
+  },
+  "components": [
+    {
+      "id": "web-host",
+      "type": "frontend",
+      "label": "Frontend web",
+      "sublabel": "Host React · :5173",
+      "pos": [
+        40,
+        310
+      ],
+      "size": [
+        220,
+        80
+      ]
+    },
+    {
+      "id": "catalog-remote",
+      "type": "frontend",
+      "label": "Microfrontend catálogo",
+      "sublabel": "Module Federation · :5174",
+      "pos": [
+        40,
+        520
+      ],
+      "size": [
+        220,
+        80
+      ]
+    },
+    {
+      "id": "kong-gateway",
+      "type": "security",
+      "label": "Kong",
+      "sublabel": "API Gateway · :8000",
+      "tag": "CORS · identity-auth",
+      "pos": [
+        410,
+        380
+      ],
+      "size": [
+        210,
+        90
+      ]
+    },
+    {
+      "id": "identity-service",
+      "type": "backend",
+      "label": "Identity",
+      "sublabel": "Sesión, JWT y JWKS · :3006",
+      "pos": [
+        800,
+        70
+      ],
+      "size": [
+        240,
+        80
+      ]
+    },
+    {
+      "id": "catalog-service",
+      "type": "backend",
+      "label": "Catalog/Media",
+      "sublabel": "Productos e imágenes · :3007",
+      "pos": [
+        800,
+        230
+      ],
+      "size": [
+        240,
+        80
+      ]
+    },
+    {
+      "id": "orders-service",
+      "type": "backend",
+      "label": "Orders",
+      "sublabel": "Pedidos y worker Polar · :3002",
+      "pos": [
+        800,
+        390
+      ],
+      "size": [
+        240,
+        80
+      ]
+    },
+    {
+      "id": "inventory-service",
+      "type": "backend",
+      "label": "Inventory",
+      "sublabel": "Reserva y compensación · :3003",
+      "pos": [
+        800,
+        550
+      ],
+      "size": [
+        240,
+        80
+      ]
+    },
+    {
+      "id": "notifications-bridge",
+      "type": "backend",
+      "label": "Notifications bridge",
+      "sublabel": "Invoca handler local/Lambda · :3004",
+      "pos": [
+        800,
+        710
+      ],
+      "size": [
+        240,
+        80
+      ]
+    },
+    {
+      "id": "nats-broker",
+      "type": "messagebus",
+      "label": "NATS",
+      "sublabel": "Eventos asíncronos · :4222",
+      "pos": [
+        1190,
+        550
+      ],
+      "size": [
+        190,
+        80
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "host-api",
+      "from": "web-host",
+      "to": "kong-gateway",
+      "label": "HTTP + cookie",
+      "variant": "emphasis"
+    },
+    {
+      "id": "federated-import",
+      "from": "web-host",
+      "to": "catalog-remote",
+      "label": "Import ESM",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        150,
+        455
+      ]
+    },
+    {
+      "id": "remote-api",
+      "from": "catalog-remote",
+      "to": "kong-gateway",
+      "label": "HTTP + cookie",
+      "variant": "emphasis"
+    },
+    {
+      "id": "gateway-identity",
+      "from": "kong-gateway",
+      "to": "identity-service",
+      "label": "Sesión / verify",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        755,
+        95
+      ]
+    },
+    {
+      "id": "gateway-catalog",
+      "from": "kong-gateway",
+      "to": "catalog-service",
+      "label": "HTTP / JWT",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        755,
+        255
+      ]
+    },
+    {
+      "id": "gateway-orders",
+      "from": "kong-gateway",
+      "to": "orders-service",
+      "label": "HTTP / JWT",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        755,
+        413
+      ]
+    },
+    {
+      "id": "gateway-inventory",
+      "from": "kong-gateway",
+      "to": "inventory-service",
+      "label": "HTTP / JWT",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        755,
+        575
+      ]
+    },
+    {
+      "id": "gateway-notifications",
+      "from": "kong-gateway",
+      "to": "notifications-bridge",
+      "label": "HTTP health",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        755,
+        735
+      ]
+    },
+    {
+      "id": "orders-events",
+      "from": "orders-service",
+      "to": "nats-broker",
+      "label": "Publica / consume",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "inventory-events",
+      "from": "inventory-service",
+      "to": "nats-broker",
+      "label": "Publica / consume",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        1115,
+        615
+      ]
+    },
+    {
+      "id": "notification-events",
+      "from": "nats-broker",
+      "to": "notifications-bridge",
+      "label": "Entrega eventos",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "right"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Frontend y microfrontend",
+      "items": [
+        "El host carga catalog/AdminProducts en /admin/products.",
+        "El módulo hace fetch a Kong desde el documento del host."
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Publicación y consumo NATS",
+      "items": [
+        "Orders publica orders.placed y payment.succeeded/failed; consume inventory.reserved/rejected/released.",
+        "Inventory consume orders.placed y payment.failed; publica inventory.reserved/rejected/released."
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Alcance del diagrama",
+      "items": [
+        "Notifications consume payment.succeeded, payment.failed e inventory.rejected.",
+        "Identity y Catalog no usan NATS. Se omiten persistencia, proveedores externos y llamadas internas entre servicios."
+      ]
+    }
+  ]
+}
