@@ -15,6 +15,25 @@ export function createOrdersRoutes(
 
   routes.get('/health', (c) => c.json({ module: 'orders', ok: true }));
 
+  routes.get('/', async (c) => {
+    c.header('Cache-Control', 'no-store');
+    let session: Awaited<ReturnType<IdentityContract['getSession']>>;
+    try {
+      session = await identity.getSession(c.req.raw.headers);
+    } catch (error) {
+      console.error('No se pudo validar la sesión del historial:', error);
+      return c.json({ error: 'No se pudo validar la sesión.' }, 502);
+    }
+    if (!session) return c.json({ error: 'Inicia sesión para ver tus pedidos.' }, 401);
+
+    try {
+      return c.json({ orders: await orders.listOrders(session.user.id) });
+    } catch (error) {
+      console.error('No se pudo consultar el historial de pedidos:', error);
+      return c.json({ error: 'No se pudieron consultar tus pedidos.' }, 500);
+    }
+  });
+
   routes.get('/:orderId/checkout', async (c) => {
     const session = await identity.getSession(c.req.raw.headers);
     if (!session) return c.json({ error: 'Unauthorized' }, 401);

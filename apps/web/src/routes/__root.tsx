@@ -1,6 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query';
 import { Link, Outlet, createRootRouteWithContext } from '@tanstack/react-router';
-import { ChevronDownIcon, LogOutIcon, ShoppingCart } from 'lucide-react';
+import { ChevronDownIcon, LogOutIcon, PackageIcon, ShoppingCart } from 'lucide-react';
 
 import { Avatar, AvatarFallback } from '@mercadoya/ui/components/avatar';
 import { Button, buttonVariants } from '@mercadoya/ui/components/button';
@@ -126,6 +126,10 @@ function RootShell() {
                   </DropdownMenuGroup>
                   <DropdownMenuSeparator />
                   <DropdownMenuGroup>
+                    <DropdownMenuItem render={<Link to="/orders" />} className="cursor-pointer">
+                      <PackageIcon data-icon="inline-start" />
+                      Mis pedidos
+                    </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={() => void authClient.signOut()}
                       className="cursor-pointer"

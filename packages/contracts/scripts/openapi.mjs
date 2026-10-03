@@ -19,6 +19,7 @@ const schemas = {
   Error: contracts.errorResponseSchema,
   CreateOrder: contracts.createOrderSchema,
   OrderResponse: contracts.orderResponseSchema,
+  OrdersResponse: contracts.ordersResponseSchema,
   PaymentCheckoutResponse: contracts.paymentCheckoutResponseSchema,
   CatalogBillingResponse: contracts.catalogBillingResponseSchema,
   SignUp: contracts.signUpSchema,
@@ -166,6 +167,22 @@ documents.set(
         get: op('ordersHealth', 'Estado de Orders', { 200: health('orders') }),
       },
       '/api/orders': {
+        get: op(
+          'listOrders',
+          'Consultar el historial de pedidos del comprador',
+          {
+            200: response(
+              'Pedidos del comprador, del más reciente al más antiguo.',
+              'OrdersResponse',
+            ),
+            ...errors(401, 500, 502),
+          },
+          {
+            security: applicationAuth,
+            description:
+              'El comprador procede de la sesión verificada. Incluye pedidos pendientes, confirmados y rechazados, ordenados por createdAt descendente y por id descendente en caso de empate. No acepta un buyerId del cliente. Cache-Control: no-store.',
+          },
+        ),
         post: op(
           'createOrder',
           'Crear un pedido pendiente y publicar orders.placed',

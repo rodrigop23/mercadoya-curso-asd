@@ -45,6 +45,10 @@ export const orderResponseSchema = z.object({
   }),
 });
 
+export const ordersResponseSchema = z.object({
+  orders: z.array(orderResponseSchema.shape.order),
+});
+
 export const paymentCheckoutResponseSchema = z.object({
   provider: z.literal('polar'),
   checkout: z

@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import {
   eventSubjects,
   orderPlacedEventSchema,
@@ -110,6 +110,16 @@ export function createOrdersService(eventBus: EventBus, catalog: CatalogBillingP
       await eventBus.publish(eventSubjects.ordersPlaced, event);
 
       return { order: publicOrder(createdOrder) };
+    },
+
+    async listOrders(buyerId: string) {
+      const orders = await db
+        .select()
+        .from(orderRecord)
+        .where(eq(orderRecord.buyerId, buyerId))
+        .orderBy(desc(orderRecord.createdAt), desc(orderRecord.id));
+
+      return orders.map(publicOrder);
     },
 
     async getOrder(orderId: string) {

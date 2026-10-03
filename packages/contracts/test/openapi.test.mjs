@@ -48,6 +48,14 @@ test('Inventory anuncia un despliegue y un contrato sin deprecaciones', () => {
 });
 
 test('los bordes documentados distinguen sesión browser, JWT y token interno de stock', () => {
+  assert.deepEqual(orders.paths['/api/orders'].get.security, [
+    { betterAuthSession: [] },
+    { applicationJWT: [] },
+  ]);
+  assert.equal(
+    orders.paths['/api/orders'].get.responses[200].content['application/json'].schema.$ref,
+    '#/components/schemas/OrdersResponse',
+  );
   assert.deepEqual(orders.paths['/api/orders/{orderId}'].get.security, [
     { betterAuthSession: [] },
     { applicationJWT: [] },

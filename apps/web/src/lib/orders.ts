@@ -1,6 +1,7 @@
 import { queryOptions } from '@tanstack/react-query';
 import {
   paymentCheckoutResponseSchema,
+  ordersResponseSchema,
   type CreateOrderRequest,
   type OrderItem,
 } from '@mercadoya/contracts';
@@ -74,6 +75,22 @@ export function orderQueryOptions(orderId: string) {
     queryKey: ['orders', orderId],
     queryFn: () => getOrder(orderId),
     refetchInterval: (query) => (query.state.data?.status === 'pending' ? 750 : false),
+  });
+}
+
+export function ordersQueryOptions(buyerId: string) {
+  return queryOptions({
+    queryKey: ['orders', 'list', buyerId],
+    queryFn: async ({ signal }): Promise<Order[]> => {
+      const response = await fetch(`${API_BASE_URL}/api/orders`, {
+        credentials: 'include',
+        signal,
+      });
+      if (!response.ok) throw await readApiError(response, 'No se pudieron consultar tus pedidos.');
+      return ordersResponseSchema.parse(await response.json()).orders;
+    },
+    retry: (failureCount, error) =>
+      !(error instanceof OrderRequestError && error.status === 401) && failureCount < 2,
   });
 }
 

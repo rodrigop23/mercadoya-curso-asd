@@ -33,6 +33,38 @@ paths:
                     type: boolean
                     const: true
   /api/orders:
+    get:
+      operationId: listOrders
+      summary: Consultar el historial de pedidos del comprador
+      security:
+        - betterAuthSession: []
+        - applicationJWT: []
+      responses:
+        "200":
+          description: Pedidos del comprador, del más reciente al más antiguo.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrdersResponse"
+        "401":
+          description: Falta una sesión o credencial válida.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Falló la operación.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: El servicio remoto no está disponible.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      description: "El comprador procede de la sesión verificada. Incluye pedidos pendientes, confirmados y rechazados, ordenados por createdAt descendente y por id descendente en caso de empate. No acepta un buyerId del cliente. Cache-Control: no-store."
     post:
       operationId: createOrder
       summary: Crear un pedido pendiente y publicar orders.placed
@@ -291,6 +323,120 @@ components:
       name: better-auth.session_token
       description: Cookie Better Auth local. En HTTPS puede usar el prefijo __Secure-. No es Bearer JWT.
   schemas:
+    OrdersResponse:
+      type: object
+      properties:
+        orders:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+                pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+              productId:
+                type: string
+                format: uuid
+                pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+              quantity:
+                type: integer
+                minimum: -9007199254740991
+                maximum: 9007199254740991
+              items:
+                anyOf:
+                  - type: array
+                    items:
+                      type: object
+                      properties:
+                        productId:
+                          type: string
+                          format: uuid
+                          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                        quantity:
+                          type: integer
+                          exclusiveMinimum: 0
+                          maximum: 2147483647
+                        title:
+                          type: string
+                        thumbnailPath:
+                          type:
+                            - string
+                            - "null"
+                        unitAmount:
+                          type: integer
+                          exclusiveMinimum: 0
+                          maximum: 9007199254740991
+                        currency:
+                          type: string
+                          const: pen
+                      required:
+                        - productId
+                        - quantity
+                        - title
+                        - thumbnailPath
+                        - unitAmount
+                        - currency
+                  - type: "null"
+              totalAmount:
+                anyOf:
+                  - type: integer
+                    exclusiveMinimum: 0
+                    maximum: 9007199254740991
+                  - type: "null"
+              currency:
+                anyOf:
+                  - type: string
+                    const: pen
+                  - type: "null"
+              buyerId:
+                type:
+                  - string
+                  - "null"
+              status:
+                type: string
+                enum:
+                  - pending
+                  - confirmed
+                  - rejected
+              rejectionReason:
+                type:
+                  - string
+                  - "null"
+              createdAt:
+                type: string
+                format: date-time
+                pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$
+              updatedAt:
+                type: string
+                format: date-time
+                pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$
+            required:
+              - id
+              - productId
+              - quantity
+              - buyerId
+              - status
+              - rejectionReason
+              - createdAt
+              - updatedAt
+      required:
+        - orders
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        details:
+          type: object
+          propertyNames:
+            type: string
+          additionalProperties:
+            type: array
+            items:
+              type: string
+      required:
+        - error
     OrderResponse:
       type: object
       properties:
@@ -388,21 +534,6 @@ components:
             - updatedAt
       required:
         - order
-    Error:
-      type: object
-      properties:
-        error:
-          type: string
-        details:
-          type: object
-          propertyNames:
-            type: string
-          additionalProperties:
-            type: array
-            items:
-              type: string
-      required:
-        - error
     CreateOrder:
       anyOf:
         - type: object
