@@ -30,7 +30,16 @@ def test_model_receives_prompt_history_and_no_credentials(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test-key-not-real")
     observed = {}
 
+    async def fake_tools():
+        return [object()]
+
+    monkeypatch.setattr(graph_module, "get_tools", fake_tools)
+
     class FakeModel:
+        def bind_tools(self, tools):
+            observed["tools"] = tools
+            return self
+
         async def ainvoke(self, messages, config):
             observed.update(messages=messages, config=config)
             return AIMessage(content="respuesta")

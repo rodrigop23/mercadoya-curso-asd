@@ -10,6 +10,11 @@ import type { CatalogBillingResponse } from '@mercadoya/contracts';
 
 export function createCatalogContract(media: MediaContract): CatalogContract {
   return {
+    async getProduct(id) {
+      const [found] = await db.select().from(product).where(eq(product.id, id)).limit(1);
+      return found ?? null;
+    },
+
     async listProducts(filters = {}) {
       const conditions = [];
       if (filters.q) {

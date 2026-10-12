@@ -90,6 +90,18 @@ export function createCatalogRoutes(identity: AdminAuthorizer, catalogContract: 
     return c.json({ products });
   });
 
+  routes.get('/api/products/:id', async (c) => {
+    const id = z.uuid().safeParse(c.req.param('id'));
+    if (!id.success) return c.json({ error: 'Identificador de producto inválido.' }, 400);
+    try {
+      const product = await catalogContract.getProduct(id.data);
+      if (!product) return c.json({ error: 'Producto no encontrado.' }, 404);
+      return c.json({ product });
+    } catch {
+      return c.json({ error: 'No se pudo consultar el producto.' }, 503);
+    }
+  });
+
   routes.post('/api/products', async (c) => {
     const authorization = await identity.requireAdmin(c.req.raw.headers);
 

@@ -31,3 +31,15 @@ test('listado combina filtros inclusivos y escapa comodines con parámetros SQL'
   assert.doesNotMatch(queries[2].text, /ilike|<=/);
   assert.deepEqual(queries[2].params, ['0']);
 });
+
+test('detalle usa id parametrizado, límite uno y devuelve null para ausencia', async (t) => {
+  const queries = [];
+  t.mock.method(pool, 'query', async (query, params) => {
+    queries.push({ text: query.text, params });
+    return { rows: [] };
+  });
+  const id = '00000000-0000-4000-8000-000000000001';
+  assert.equal(await catalog.getProduct(id), null);
+  assert.match(queries[0].text, /where "product"\."id" = \$1 limit \$2/);
+  assert.deepEqual(queries[0].params, [id, 1]);
+});

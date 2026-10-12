@@ -2,7 +2,7 @@
 
 Proceso Hono en `:3007`, detrás de Kong `:8000`. Catalog posee el CRUD y stock; Media procesa imágenes en el mismo proceso. [ADR 0018](../../docs/adr/0018-catalog-media-kong.md) explica la decisión y la base compartida.
 
-Desde la raíz, configura `.env` siguiendo `.env.example` y ejecuta `pnpm demo:infra`. Después `pnpm dev` inicia web `:5173` y MF admin `:5174`. Ambos llaman a Kong con sesión cookie; Kong la convierte en JWT. Catalog verifica RS256/JWKS y exige admin en POST, PUT y DELETE. Directo al servicio, una cookie sola devuelve 401. GET de productos, health de Catalog/Media y `/uploads/*` son públicos.
+Desde la raíz, configura `.env` siguiendo `.env.example` y ejecuta `pnpm demo:infra`. Después `pnpm dev` inicia web `:5173` y MF admin `:5174`. Ambos llaman a Kong con sesión cookie; Kong la convierte en JWT. Catalog verifica RS256/JWKS y exige admin en POST, PUT y DELETE. Directo al servicio, una cookie sola devuelve 401. GET de productos, incluido `/api/products/{id}`, health de Catalog/Media y `/uploads/*` son públicos.
 
 Inventory usa `CATALOG_URL=http://catalog:3007` en Compose y `http://localhost:3007` en host. Conserva `x-catalog-internal-token`, `/api/internal/catalog/products/:id/stock` y `/api/internal/catalog/products/:id/adjust-stock`. Kong responde 404 para stock interno; la URL de Kong no sirve como `CATALOG_URL`.
 
@@ -63,3 +63,11 @@ PRODUCTS_TEST_DATABASE_URL=<url-test> pnpm --filter @mercadoya/catalog-service t
 ```
 
 CI cubre solicitudes SDK, PEN, límites, secretos, transacciones, productos existentes, edición concurrente, réplica, reinicio, creación incierta y archivado. [ADR 0021](../../docs/adr/0021-polar-catalog-sync-pen.md) documenta la integración y sus límites. Documentación oficial verificada el 1 de octubre de 2026: [crear](https://polar.sh/docs/api-reference/products/create), [actualizar](https://polar.sh/docs/api-reference/products/update), [metadata](https://polar.sh/docs/api-reference/2026-04/products/list-products), [monedas](https://polar.sh/docs/features/products) y [organización](https://polar.sh/docs/api-reference/organizations/update).
+
+## Detalle público para consultas MCP
+
+OpenAPI Catalog 1.5.0 documenta `GET /api/products/{id}` sin autenticación.
+Valida UUID, devuelve `{ product }`, 400 para id inválido, 404 para ausencia y 503
+para fallo de lectura. Usa una consulta por id con límite uno. Kong ya permite
+GET bajo `/api/products` mediante `catalog-public`; no cambian las mutaciones.
+El MCP de lectura usa este endpoint para detalle y stock, sin token interno.

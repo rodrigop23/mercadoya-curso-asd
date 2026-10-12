@@ -423,7 +423,7 @@ documents.set(
   'apps/catalog-service/openapi/catalog.yaml',
   doc(
     'Catalog',
-    '1.4.0',
+    '1.5.0',
     {
       '/api/catalog/health': {
         get: op('catalogHealth', 'Estado de Catalog', { 200: health('catalog') }),
@@ -472,6 +472,15 @@ documents.set(
         ),
       },
       '/api/products/{id}': {
+        get: op(
+          'getProduct',
+          'Consultar producto por id',
+          {
+            200: response('Producto encontrado.', 'ProductResponse'),
+            ...errors(400, 404, 503),
+          },
+          { parameters: [id('id')] },
+        ),
         put: op(
           'updateProduct',
           'Actualizar producto; la imagen es opcional',

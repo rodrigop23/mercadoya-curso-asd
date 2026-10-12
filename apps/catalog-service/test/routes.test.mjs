@@ -3,7 +3,11 @@ import { test, after } from 'node:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { productsResponseSchema, stockAdjustmentResponseSchema } from '@mercadoya/contracts';
+import {
+  productResponseSchema,
+  productsResponseSchema,
+  stockAdjustmentResponseSchema,
+} from '@mercadoya/contracts';
 
 const uploads = await mkdtemp(join(tmpdir(), 'catalog-media-'));
 process.env.UPLOADS_DIR = uploads;
@@ -49,6 +53,7 @@ function app(authorization = { allowed: true }, overrides = {}) {
   return createCatalogRoutes(
     { requireAdmin: async () => authorization },
     {
+      getProduct: async () => product,
       listProducts: async () => [product],
       createProduct: async () => product,
       updateProduct: async () => product,
@@ -110,6 +115,7 @@ test('listado entrega filtros parseados y conserva la llamada sin filtros', asyn
   const routes = app(
     { allowed: true },
     {
+      getProduct: async () => product,
       listProducts: async (...args) => {
         calls.push(args);
         return [product];
@@ -133,6 +139,7 @@ test('listado rechaza filtros inválidos antes de llamar al contrato', async () 
   const routes = app(
     { allowed: true },
     {
+      getProduct: async () => product,
       listProducts: async () => {
         throw new Error('No debe consultar');
       },
@@ -261,4 +268,27 @@ test('el proceso directo limita multipart completo y cuerpos sin Content-Length'
   } finally {
     await closeDb();
   }
+});
+
+test('GET público por id valida UUID, contrato, ausencia y fallo remoto', async () => {
+  const routes = app({ allowed: false, status: 401 });
+  const response = await routes.request(`/api/products/${id}`);
+  assert.equal(response.status, 200);
+  const body = productResponseSchema.parse(await response.json());
+  assert.equal(body.product.id, id);
+  assert.equal((await routes.request('/api/products/invalid')).status, 400);
+  assert.equal(
+    (await app(undefined, { getProduct: async () => null }).request(`/api/products/${id}`)).status,
+    404,
+  );
+  assert.equal(
+    (
+      await app(undefined, {
+        getProduct: async () => {
+          throw new Error('db');
+        },
+      }).request(`/api/products/${id}`)
+    ).status,
+    503,
+  );
 });

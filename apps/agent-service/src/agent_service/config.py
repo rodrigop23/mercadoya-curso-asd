@@ -11,11 +11,15 @@ class Settings:
     model_provider: str
     jwks_url: str
     issuer: str
+    mcp_url: str
+    mcp_internal_token: str
     audience: str
 
 
 def settings() -> Settings:
     return Settings(
+        mcp_url=os.getenv("MCP_URL", "http://localhost:8080/mcp"),
+        mcp_internal_token=os.getenv("MCP_INTERNAL_TOKEN", ""),
         model=os.getenv("AGENT_MODEL", "gpt-6-luna"),
         reasoning_effort=os.getenv("AGENT_REASONING_EFFORT", "low"),
         model_provider=os.getenv("AGENT_MODEL_PROVIDER", "openai"),

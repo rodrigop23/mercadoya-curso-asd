@@ -9,7 +9,7 @@ import { Separator } from '@mercadoya/ui/components/separator';
 import { Spinner } from '@mercadoya/ui/components/spinner';
 import { Textarea } from '@mercadoya/ui/components/textarea';
 import { cn } from '@mercadoya/ui/lib/utils';
-import { messageText } from '@/lib/agent-messages';
+import { messageText, pendingToolLabel } from '@/lib/agent-messages';
 import { savedThreadFetch } from '@/lib/agent-thread';
 import { API_BASE_URL } from '@/lib/products';
 
@@ -113,6 +113,7 @@ function ChatPanel({
   });
   // Futuras confirmaciones: stream.interrupts y
   // stream.respond({ aprobado }, { interruptId: item.id }). Aún no hay acciones.
+  const toolLabel = pendingToolLabel(stream.messages);
   const busy = stream.isLoading || stream.isThreadLoading;
   const error = localError || !!stream.error;
   const messages = stream.messages
@@ -179,8 +180,8 @@ function ChatPanel({
           <li className="my-auto flex flex-col gap-2 py-6 text-sm leading-relaxed">
             <p className="font-medium">¿Qué tienes en mente para tu próxima compra?</p>
             <p className="text-muted-foreground">
-              Puedo ayudarte a organizar ideas. Aún no tengo acceso a productos, precios ni stock, y
-              no puedo modificar tu carrito o tus pedidos.
+              Puedo consultar productos, precios, stock y tus pedidos. Todavía no puedo modificar tu
+              carrito o tus pedidos.
             </p>
           </li>
         )}
@@ -208,7 +209,9 @@ function ChatPanel({
         {busy && (
           <span className="flex items-center gap-2">
             <Spinner />
-            {stream.isThreadLoading ? 'Cargando conversación…' : 'Recibiendo respuesta…'}
+            {stream.isThreadLoading
+              ? 'Cargando conversación…'
+              : (toolLabel ?? 'Recibiendo respuesta…')}
           </span>
         )}
         {!busy && messages.length > 0 && !error && 'Respuesta recibida.'}

@@ -29,6 +29,7 @@ export type CreateProductInput = {
 export type UpdateProductInput = Omit<CreateProductInput, 'image'> & { image?: File };
 
 export interface CatalogContract {
+  getProduct(id: string): Promise<CatalogProduct | null>;
   listProducts(filters?: ProductsQuery): Promise<CatalogProduct[]>;
   createProduct(input: CreateProductInput): Promise<CatalogProduct>;
   updateProduct(id: string, input: UpdateProductInput): Promise<CatalogProduct | null>;

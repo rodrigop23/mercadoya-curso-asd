@@ -166,8 +166,6 @@ Polar puede reintentar entregas hasta diez veces, aplica timeout de diez segundo
 
 ```sh
 pnpm exec turbo run test --filter=@mercadoya/orders-service --filter=@mercadoya/contracts
-# PostgreSQL y NATS dedicados; la suite crea y elimina su propio schema.
-PAYMENTS_TEST_DATABASE_URL=<url-test> PAYMENTS_TEST_NATS_URL=<url-test> pnpm --filter @mercadoya/orders-service test:integration
 ```
 
 CI ejecuta firma actual y legacy, raw body alterado, timestamps, payload inválido, solicitud SDK y configuración exclusiva de Polar. El job `polar-saga` usa Catalog con su API interna HTTP, PostgreSQL/NATS reales y gateways Polar de prueba: verifica sincronización, precio PEN guardado ante cambios posteriores, éxito, fallo, expiración, anulación, duplicados, importe/correlación, reinicio del worker, creación incierta, compensación y el handler real de Notifications en modo stub. No usa credenciales Polar ni cobra contra sandbox. El smoke de Kong verifica el rechazo sin producto Polar sincronizado; su fixture de CI devuelve 401 al SDK de Catalog.
@@ -193,3 +191,20 @@ Los checkouts y productos de pedidos anteriores mantienen su referencia. Una cre
 La web conserva el carrito mientras el pago está pendiente, permite retomarlo al regresar de Polar y lo limpia cuando el servidor confirma el cobro. El regreso del navegador no acredita el pago. El carrito y el desglose del pedido solicitan archivos `-thumb`; si un producto histórico no tiene miniatura, muestran un marcador sin descargar su imagen full.
 
 Las migraciones `Catalog 0003_cart_stock`, `Orders 0003_cart` y `Orders 0004_purchase_product` son aditivas. Ejecuta `pnpm --filter @mercadoya/orders-service db:migrate` antes de levantar la versión con el producto compartido. Los pedidos anteriores y el cuerpo HTTP de un producto siguen funcionando. Los eventos v1 añaden `items`; despliega Catalog, Inventory, Orders y Notifications con los contratos actualizados antes de habilitar la web con carrito. Un consumidor anterior que descarta `items` no puede gestionar una compra de varias líneas. [Decisión y límites](../../docs/adr/0022-shopping-cart.md).
+
+### NATS dedicado para las pruebas de saga
+
+La suite `test:integration` requiere PostgreSQL de pruebas y un NATS dedicado.
+Crea y elimina su propio schema y configura su handler de Notifications con
+`EMAIL_MODE=stub` para no enviar correos, aunque `.env` configure envío real.
+Rechaza el NATS del `.env` local antes de publicar eventos para evitar activar
+los consumidores del stack.
+
+```sh
+docker run --rm -d --name mercadoya-test-nats -p 127.0.0.1:14222:4222 nats:2-alpine
+PAYMENTS_TEST_DATABASE_URL=<base-dedicada> \
+  PAYMENTS_TEST_NATS_URL=nats://localhost:14222 pnpm --filter @mercadoya/orders-service test:integration
+docker stop mercadoya-test-nats
+```
+
+CI usa su NATS de job y no carga un `.env` de demostración.

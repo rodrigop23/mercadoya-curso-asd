@@ -1,12 +1,14 @@
 # Asistente de compras de MercadoYa
 
-Servicio Python 3.12, separado de pnpm y Turbo. El grafo `agent` solo conversa en
-español. No consulta catálogo o stock, no modifica carrito o pedidos y no incluye
-herramientas, MCP, confirmaciones, memoria de largo plazo ni multiagente.
+Servicio Python 3.12, separado de pnpm y Turbo. El grafo `agent` conversa en español y consulta
+catálogo, stock y pedidos propios mediante cinco herramientas del servidor
+[mercadoya-mcp](../mcp-server/README.md). No modifica carrito o pedidos ni incluye
+confirmaciones, memoria de largo plazo o multiagente.
 
 ## Arranque local con Postgres
 
 Desde la raíz del repo, primero levanta el stack habitual con `pnpm demo:infra`.
+Genera `MCP_INTERNAL_TOKEN` con `openssl rand -hex 32` para el perfil agent.
 Configura una `LANGSMITH_API_KEY` válida en el entorno de Compose o en tu `.env`.
 `OPENAI_API_KEY` permite respuestas del modelo; sin ella el nodo devuelve un mensaje
 claro en español. No se construye ningún cliente OpenAI al importar el grafo.
@@ -16,7 +18,7 @@ pnpm demo:agent
 curl --fail http://localhost:8000/api/agent/ok
 ```
 
-`demo:agent` construye la imagen, levanta `agent-service` y sus dependencias del perfil
+`demo:agent` construye las imágenes del agente y MCP, levanta `agent-service` y sus dependencias del perfil
 `agent`, espera su health y reinicia Kong. Requiere Docker y uv. El comando de build
 equivalente, desde este directorio, fija también el Python del CLI:
 
@@ -52,7 +54,10 @@ Compose inyecta las variables. `langgraph.json` no carga ningún `.env`.
 - `REDIS_URI`: `redis://redis:6379`.
 - `JWKS_URL`: `http://identity:3006/api/auth/jwks` en Docker.
 - `JWT_ISSUER`: `http://localhost:8000`; `JWT_AUDIENCE`: `mercadoya-services`.
-- `AGENT_MODEL_PROVIDER`: `openai` por defecto, o `echo` para respuesta determinista.
+- `AGENT_MODEL_PROVIDER`: `openai` por defecto, `echo` para respuesta determinista
+  o `scripted` para ejecutar `/tool nombre {json}` sin modelo ni claves.
+- `MCP_URL`: `http://localhost:8080/mcp` local, `http://mcp-server:8080/mcp` en Compose.
+- `MCP_INTERNAL_TOKEN`: token de proceso compartido con MCP; no es el JWT del comprador.
 - `AGENT_MODEL`: `gpt-6-luna` por defecto.
 - `AGENT_REASONING_EFFORT`: `low` por defecto. Se pasa solo mediante `reasoning`.
 - `OPENAI_API_KEY`: requerida para llamar OpenAI. No se fija un `max_tokens` bajo.
@@ -92,8 +97,11 @@ y runs. Ni un `owner` enviado por el cliente ni conocer el UUID de otro comprado
 dan acceso a un hilo ajeno; la lectura directa responde 404.
 
 El token se entrega por `config["configurable"]["langgraph_auth_user"]`.
-El grafo base no necesita leerlo. Las futuras acciones con confirmación deben seguir
-este orden **dentro del mismo nodo de confirmación**:
+El interceptor `forward_user_jwt` lo lee en el ToolRuntime de cada llamada de
+pedidos y lo reenvía como Authorization. No se agrega a las herramientas públicas.
+El cliente no guarda JWT ni headers de usuario. Las futuras acciones con
+confirmación todavía no están implementadas. Deben seguir este orden dentro del
+mismo nodo de confirmación:
 
 ```python
 # Patrón futuro, no está implementado en el grafo base.
@@ -157,6 +165,7 @@ uv sync --locked
 uv run ruff check
 uv run pytest
 uv run python scripts/smoke.py
+uv run python scripts/smoke.py --tools
 ```
 
 El smoke genera una clave RSA, sirve un JWKS local y arranca en segundo plano
@@ -221,3 +230,52 @@ el entorno de Compose. También pasaron las verificaciones del monorepo, 27 prue
 de federación en cada variante dev, preview y manifest, el smoke existente de identity/Kong sin claves de IA y las
 regresiones de Polar con Postgres/NATS dedicados. Estos resultados son locales;
 el job nuevo queda listo para la siguiente ejecución de GitHub Actions.
+
+## Bucle MCP de lectura
+
+`StateGraph` alterna assistant y tools con `ToolNode` y `tools_condition`.
+Cuenta hasta seis iteraciones de tools desde el último HumanMessage. Después
+responde con los datos obtenidos, sin herramientas enlazadas al modelo.
+`create_model().bind_tools(tools)` mantiene Responses API con gpt-6-luna y recibe
+solo callbacks, sin configurable. Sin OPENAI_API_KEY se conserva MISSING_KEY_MESSAGE.
+[La documentación oficial de GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna)
+indica usar Responses para function calling con razonamiento.
+
+`mcp_tools.py` crea un MultiServerMCPClient por proceso con el token interno del
+MCP y un interceptor. La carga async es perezosa y cachea únicamente las tools.
+Si MCP no responde, el run devuelve un mensaje de indisponibilidad y la siguiente
+consulta reintenta la carga. Cada ejecución abre su sesión; el JWT se lee del
+runtime de ese run y nunca se añade a argumentos, estado, metadata o caché.
+Las pruebas confirman runtime presente, dos usuarios seguidos y trazas locales
+sin tokens. No hizo falta sustituir ToolNode por un ejecutor propio.
+
+Versiones verificadas en PyPI con uv el 2026-10-12: adapters 0.3.2 y MCP cliente
+1.30.0, sin cambios respecto a lo solicitado. El servidor usa MCP 2.3.0 en otro
+entorno. El test de la app MCP negocia 2025-11-25 con initialize y llama herramientas
+con los adapters reales. No se instala MCP 2.x en esta app.
+
+`--tools` arranca stubs Catalog/Orders junto al JWKS, MCP en otro proceso y
+langgraph dev con scripted, mediante un config temporal que sustituye echo.
+Comprueba productos, pedidos propios de A y B, JWT exacto recibido por Orders,
+404 ajeno como ToolMessage de error, acceso interno del MCP y estados/logs sin
+JWT. Ambos procesos se terminan al salir. CI ejecuta también el smoke echo original.
+Los tests unitarios cubren seis consultas por turno, carga perezosa, reintento y
+fallos sin abortar el run.
+
+La web muestra "Consultando catálogo…" o "Consultando tus pedidos…" mientras
+hay tool_calls pendientes. Oculta los ToolMessages y argumentos. La línea usa
+el status aria-live existente. Las pruebas Vitest incluyen ejecución parcial y
+fin de llamada con error.
+
+El MCP no se publica por Kong. `/api/mcp` responde 404 y el `/mcp` del Agent Server
+permanece deshabilitado. Véase [ADR 0025](../../docs/adr/0025-herramientas-mcp-lectura.md).
+
+Verificación local del cambio 05, el 2026-10-12: locks, ruff y pytest de ambas
+apps; smokes echo y scripted con MCP; typecheck, lint, tests, build y OpenAPI del
+monorepo; identity/Kong; federación dev, preview y manifest; diez pruebas persistentes de
+Catalog y 38 de saga con NATS dedicado. `demo:infra` y `demo:agent` arrancaron.
+Con gpt-6-luna real se verificaron productos y stock en el chat, indicador durante
+la consulta, dos compradores aislados y un pedido ajeno como error. Se consultaron
+27 runs del proyecto LangSmith y los logs Docker, sin JWT ni headers Authorization.
+La comprobación visual cubrió escritorio y móvil sin overflow horizontal.
+Estos resultados son locales; no se ejecutó GitHub Actions desde esta rama sin commit.

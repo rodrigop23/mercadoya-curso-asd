@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   agent-smoke:
-    name: Agent auth, isolation and echo smoke
+    name: Agent auth, isolation and MCP tools smoke
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     defaults:
@@ -27,10 +27,23 @@ jobs:
         with:
           version: "0.13.0"
           enable-cache: true
-          cache-dependency-glob: apps/agent-service/uv.lock
+          cache-dependency-glob: |
+            apps/agent-service/uv.lock
+            apps/mcp-server/uv.lock
+      - run: uv sync --locked
+        working-directory: apps/mcp-server
+      - run: uv run ruff check
+        working-directory: apps/mcp-server
       - run: uv sync --locked
       - run: uv run ruff check
       - run: uv run pytest
+      - run: uv run pytest
+        working-directory: apps/mcp-server
+      - name: MCP and scripted agent without API keys
+        env:
+          OPENAI_API_KEY: ""
+          LANGSMITH_API_KEY: ""
+        run: uv run python scripts/smoke.py --tools
       - name: Dev server without API keys, local RSA JWKS and echo run
         env:
           OPENAI_API_KEY: ""
@@ -102,6 +115,8 @@ jobs:
     name: Polar signature, inbox and NATS saga
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    env:
+      EMAIL_MODE: stub
     services:
       postgres:
         image: postgres:18
@@ -162,7 +177,7 @@ jobs:
           node --input-type=module <<'JS'
           import { randomBytes } from 'node:crypto';
           import { writeFileSync } from 'node:fs';
-          const names = ['BETTER_AUTH_SECRET', 'CATALOG_INTERNAL_TOKEN', 'NOTIFICATIONS_INVOKE_TOKEN', 'POLAR_WEBHOOK_SECRET'];
+          const names = ['BETTER_AUTH_SECRET', 'CATALOG_INTERNAL_TOKEN', 'MCP_INTERNAL_TOKEN', 'NOTIFICATIONS_INVOKE_TOKEN', 'POLAR_WEBHOOK_SECRET'];
           const values = names.map(name => `${name}=${randomBytes(48).toString('base64url')}`);
           writeFileSync('.env', values.join('\n') + '\nPAYMENT_PROVIDER=polar\nPOLAR_ACCESS_TOKEN=ci-unavailable\nDATABASE_URL=postgresql://mercadoya:mercadoya_local@localhost:5432/mercadoya\n', { mode: 0o600 });
           JS
