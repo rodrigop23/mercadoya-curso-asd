@@ -1,17 +1,28 @@
 import { queryOptions } from '@tanstack/react-query';
-import { paymentCheckoutResponseSchema } from '@mercadoya/contracts';
+import {
+  paymentCheckoutResponseSchema,
+  ordersResponseSchema,
+  orderResponseSchema,
+  type CreateOrderRequest,
+  type OrderItem,
+} from '@mercadoya/contracts';
 
 import { API_BASE_URL } from './products';
 
-export type OrderStatus = 'pending' | 'confirmed' | 'rejected';
+export type OrderStatus = 'pending' | 'confirmed' | 'rejected' | 'cancelled' | 'expired';
 
 export type Order = {
   id: string;
   productId: string;
   quantity: number;
+  items?: OrderItem[] | null;
+  totalAmount?: number | null;
+  currency?: 'pen' | null;
   buyerId: string | null;
   status: OrderStatus;
   rejectionReason: string | null;
+  expiresAt?: string | null;
+  cancelledAt?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -19,12 +30,21 @@ export type Order = {
 type OrderResponse = { order: Order };
 type ApiErrorResponse = { error?: string };
 
-async function readApiError(response: Response, fallback: string) {
-  const data = (await response.json().catch(() => null)) as ApiErrorResponse | null;
-  return new Error(data?.error ?? fallback);
+export class OrderRequestError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+  }
 }
 
-export async function createOrder(input: { productId: string; quantity: number }) {
+async function readApiError(response: Response, fallback: string) {
+  const data = (await response.json().catch(() => null)) as ApiErrorResponse | null;
+  return new OrderRequestError(data?.error ?? fallback, response.status);
+}
+
+export async function createOrder(input: CreateOrderRequest) {
   const response = await fetch(`${API_BASE_URL}/api/orders`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -53,11 +73,37 @@ export async function getOrder(orderId: string): Promise<Order> {
   return data.order;
 }
 
+export async function cancelOrder(orderId: string): Promise<Order> {
+  const response = await fetch(`${API_BASE_URL}/api/orders/${encodeURIComponent(orderId)}/cancel`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (!response.ok)
+    throw await readApiError(response, 'No se pudo cancelar el pedido. Inténtalo de nuevo.');
+  return orderResponseSchema.parse(await response.json()).order;
+}
+
 export function orderQueryOptions(orderId: string) {
   return queryOptions({
     queryKey: ['orders', orderId],
     queryFn: () => getOrder(orderId),
     refetchInterval: (query) => (query.state.data?.status === 'pending' ? 750 : false),
+  });
+}
+
+export function ordersQueryOptions(buyerId: string) {
+  return queryOptions({
+    queryKey: ['orders', 'list', buyerId],
+    queryFn: async ({ signal }): Promise<Order[]> => {
+      const response = await fetch(`${API_BASE_URL}/api/orders`, {
+        credentials: 'include',
+        signal,
+      });
+      if (!response.ok) throw await readApiError(response, 'No se pudieron consultar tus pedidos.');
+      return ordersResponseSchema.parse(await response.json()).orders;
+    },
+    retry: (failureCount, error) =>
+      !(error instanceof OrderRequestError && error.status === 401) && failureCount < 2,
   });
 }
 

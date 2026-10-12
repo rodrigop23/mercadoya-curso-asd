@@ -35,7 +35,9 @@ Health es público y devuelve `{"module":"inventory","ok":true}`. Docker consult
 
 ## Saga y pruebas
 
-Inventory registra un handler por subject de entrada. La reserva y la liberación conservan el lock por pedido. Una liberación duplicada no restaura stock ni publica otra liberación cuando ya no existe reserva. NATS Core no retiene eventos ni garantiza reintentos duraderos.
+Inventory registra un handler por subject de entrada. La reserva y la liberación conservan el lock por pedido. Todas las reservas liberadas, tanto de carrito como de producto único, permanecen con `releasedAt`. Una liberación duplicada no restaura stock ni publica otra liberación. Un `orders.placed` republicado o tardío sobre esa marca termina como un no-op registrado con `inventory.reservation_ignored` y `reservation_released`; no vuelve a reservar ni envía un rechazo engañoso. NATS Core no retiene eventos ni garantiza reintentos duraderos.
+
+`payment.failed` con reason `order_cancelled` u `order_expired` usa la misma compensación. Orders encola esos outcomes al cancelar o vencer, también si `inventory.reserved` llega después del cierre. No hay subjects nuevos. Consulta [ADR 0023](../../docs/adr/0023-vencimiento-cancelacion-pedidos.md) para el plazo y los pagos tardíos.
 
 `pnpm --filter @mercadoya/inventory-service test` comprueba rutas, autenticación, DTO y registro de suscripciones. La integración de Orders prueba reserva, rechazo, compensación y duplicados con PostgreSQL y NATS dedicados, sin credenciales Polar. Consulta [Orders](../orders-service/README.md) y [ADR 0015](../../docs/adr/0015-saga-coreografia-compensacion.md).
 

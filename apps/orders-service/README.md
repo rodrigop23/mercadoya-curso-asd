@@ -1,10 +1,24 @@
 # Orders y pagos Polar
 
-Orders es un proceso Node/Hono en `:3002`. Publica `orders.placed`, crea el checkout al recibir `inventory.reserved` y mantiene el pedido en `pending` hasta recibir `payment.succeeded` o un rechazo. Polar es el único proveedor, con sandbox por defecto.
+Orders es un proceso Node/Hono en `:3002`. Publica `orders.placed` y crea el checkout al recibir `inventory.reserved`. Un pedido pasa de `pending` a `confirmed`, `rejected`, `cancelled` o `expired`. Polar es el único proveedor, con sandbox por defecto.
+
+## Vencimiento y cancelación
+
+Ejecuta `pnpm --filter @mercadoya/orders-service db:migrate` antes de desplegar esta versión. `0005_order_lifecycle.sql` añade el plazo del pedido y rellena los pendientes anteriores con su fecha de creación más el TTL. Si ese plazo ya pasó, el worker los cerrará al arrancar. La migración es aditiva e idempotente.
+
+`ORDER_PENDING_TTL_MINUTES` define el plazo inicial, con 15 minutos por defecto. `ORDER_EXPIRY_GRACE_SECONDS` añade 120 segundos por defecto al vencimiento absoluto del checkout Polar. El worker existente cierra un pendiente vencido por tick sin depender de `checkout.expired`, incluidos los pedidos sin reserva y los checkouts `creating` inciertos.
+
+El comprador puede llamar a `POST /api/orders/:orderId/cancel` a través de Kong, sin cuerpo. Recibe 202 con el pedido cancelado, o 200 si ya estaba cancelado. Un UUID inválido responde 400; sin sesión, 401; pedido ajeno o ausente, 404. Otros estados finales responden 409. Consulta Polar antes de abrir la transacción y sin bloquear filas, con el timeout `POLAR_GET_TIMEOUT_MS`, de 5000 ms por defecto. Si Polar indica que el pago está en proceso, devuelve 409 "El pago se está procesando". Si la consulta falla o vence el timeout, devuelve 503 sin modificar el pedido. Dentro de la transacción verifica otra vez el pedido y el ID y estado del checkout; si el checkout cambió, devuelve 409 y permite reintentar.
+
+El barrido excluye los pedidos cuyo checkout local ya está `succeeded`, aunque sigan pendientes. Registra `order.expiry_skipped_paid` para reparación manual y continúa venciendo los demás; no confirma esos pedidos automáticamente.
+
+El cierre encola `payment.failed` con reason `order_cancelled` u `order_expired` en la outbox. Inventory devuelve el stock y Notifications omite el correo de pago fallido. Una reserva posterior al cierre encola la misma compensación. Los reintentos de creación republican `orders.placed` mientras el pedido siga pendiente, no haya vencido y no tenga checkout local. Si publicar falla, el HTTP responde 503 y permite reintentar la misma clave.
+
+Un pago válido posterior al cierre queda en `orders_payment_checkout.late_payment` y en el log `payment.late_after_close`, sin confirmar el pedido. El reembolso queda a cargo del operador: consulta `late_payment IS NOT NULL`, verifica providerOrderId e importe en Polar y registra la referencia del reembolso manual. No hay integración de refunds. Consulta la [decisión y los límites de transporte](../../docs/adr/0023-vencimiento-cancelacion-pedidos.md).
 
 ## Preparar sandbox
 
-Crea una organización dedicada a MercadoYa en [Polar sandbox](https://sandbox.polar.sh). Sus productos, tokens y webhooks son independientes de producción. Configura el `.env` de la raíz siguiendo [`.env.example`](../../.env.example), con `PAYMENT_PROVIDER=polar`, `POLAR_SERVER=sandbox`, `POLAR_WEB_ORIGIN=http://localhost:5173` y tu `POLAR_ACCESS_TOKEN` de organización sandbox. El token necesita `products:write`, `organizations:write` y `checkouts:read/write`. El secreto del webhook se obtiene en el paso 2. Todos los comandos siguientes se ejecutan desde la raíz del repositorio.
+Crea una organización dedicada a MercadoYa en [Polar sandbox](https://sandbox.polar.sh). Sus productos, tokens y webhooks son independientes de producción. Configura el `.env` de la raíz siguiendo [`.env.example`](../../.env.example), con `PAYMENT_PROVIDER=polar`, `POLAR_SERVER=sandbox`, `POLAR_WEB_ORIGIN=http://localhost:5173` y tu `POLAR_ACCESS_TOKEN` de organización sandbox. El token necesita `products:read/write`, `organizations:write` y `checkouts:read/write`. Orders reutiliza un producto privado para cobrar todos los carritos. El secreto del webhook se obtiene en el paso 2. Todos los comandos siguientes se ejecutan desde la raíz del repositorio.
 
 ### 1. Levantar Cloudflare Tunnel hacia Kong
 
@@ -68,7 +82,7 @@ docker compose up -d --force-recreate --no-deps orders
 
 ### 4. Comprar con la tarjeta de prueba
 
-Crea un producto desde el admin y espera a que termine su sincronización con Polar. Compra desde el catálogo y pulsa **Pagar en Polar** en la página del pedido, después de la reserva y la creación del checkout. La [documentación oficial de sandbox](https://polar.sh/docs/integrate/sandbox) indica estos datos para probar un pago exitoso:
+Crea un producto desde el admin y espera a que termine su sincronización con Polar. Agrega productos desde el catálogo, abre el carrito junto al avatar y pulsa **Pagar**. La web reserva todas las líneas, prepara un checkout único y abre Polar. Al completar el pago, Polar vuelve a la página del pedido con el desglose. La [documentación oficial de sandbox](https://polar.sh/docs/integrate/sandbox) indica estos datos para probar un pago exitoso:
 
 | Dato        | Valor de prueba                             |
 | ----------- | ------------------------------------------- |
@@ -86,16 +100,16 @@ Como alternativa al túnel, Polar CLI puede reenviar a `http://localhost:8000/ap
 
 ## Configuración del servidor
 
-| Variable                                     | Uso                                                                                                                                |
-| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `PAYMENT_PROVIDER`                           | Solo `polar`, por defecto; cualquier otro valor impide arrancar.                                                                   |
-| `POLAR_SERVER`                               | `sandbox` por defecto; `production` es una selección explícita.                                                                    |
-| `POLAR_ACCESS_TOKEN`                         | Token de organización para Catalog y Orders con products:write, organizations:write y checkouts:read/write. Solo env del servidor. |
-| `POLAR_WEBHOOK_SECRET`                       | Secreto del endpoint o del forwarder. Se pasa literalmente al SDK.                                                                 |
-| `POLAR_WEB_ORIGIN`                           | Origen de la web para success/return, por defecto `http://localhost:5173`.                                                         |
-| `DATABASE_URL`                               | PostgreSQL compartido con Catalog/Inventory.                                                                                       |
-| `EVENT_BUS`, `NATS_URL`                      | `nats`, por defecto `nats://localhost:4222`.                                                                                       |
-| `IDENTITY_URL`, `JWT_ISSUER`, `JWT_AUDIENCE` | Verificación JWKS, igual que los demás servicios.                                                                                  |
+| Variable                                     | Uso                                                                                                                                     |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `PAYMENT_PROVIDER`                           | Solo `polar`, por defecto; cualquier otro valor impide arrancar.                                                                        |
+| `POLAR_SERVER`                               | `sandbox` por defecto; `production` es una selección explícita.                                                                         |
+| `POLAR_ACCESS_TOKEN`                         | Token de organización para Catalog y Orders con products:read/write, organizations:write y checkouts:read/write. Solo env del servidor. |
+| `POLAR_WEBHOOK_SECRET`                       | Secreto del endpoint o del forwarder. Se pasa literalmente al SDK.                                                                      |
+| `POLAR_WEB_ORIGIN`                           | Origen de la web para success/return, por defecto `http://localhost:5173`.                                                              |
+| `DATABASE_URL`                               | PostgreSQL compartido con Catalog/Inventory.                                                                                            |
+| `EVENT_BUS`, `NATS_URL`                      | `nats`, por defecto `nats://localhost:4222`.                                                                                            |
+| `IDENTITY_URL`, `JWT_ISSUER`, `JWT_AUDIENCE` | Verificación JWKS, igual que los demás servicios.                                                                                       |
 
 Catalog sincroniza automáticamente con Polar al crear, actualizar o eliminar un producto en el aplicativo. La sincronización ocurre en segundo plano: crea o actualiza título, descripción y precio; al eliminar, archiva el equivalente en Polar. Guarda la relación en PostgreSQL por sandbox/producción y recupera productos existentes al iniciar. No necesitas crear los productos manualmente en Polar ni declarar un JSON en variables de entorno. [Detalles de sincronización y recuperación](../catalog-service/README.md#sincronización-con-polar).
 
@@ -105,7 +119,7 @@ El cliente oficial está fijado a `@polar-sh/sdk@1.0.1`. Importa `createPolar` y
 
 ## HTTP y persistencia
 
-- `POST /api/orders` acepta producto y cantidad autenticados, devuelve `202` y el pedido. Descarta cualquier importe, moneda o metadata del cliente. Consulta Catalog por HTTP interno y guarda el precio PEN antes de publicar. Producto inexistente devuelve 404, sincronización pendiente/fallida o importe excesivo devuelve 409 y Catalog inaccesible devuelve 503. Estos rechazos no reservan stock.
+- `POST /api/orders` acepta `productId` y `quantity`, o `items` con hasta 20 productos distintos y una `idempotencyKey` opcional, devuelve `202` y el pedido. Descarta cualquier importe, moneda o metadata del cliente. Consulta Catalog por HTTP interno y guarda el precio PEN antes de publicar. Producto inexistente devuelve 404, sincronización pendiente/fallida o importe excesivo devuelve 409 y Catalog inaccesible devuelve 503. Estos rechazos no reservan stock.
 - `GET /api/orders/:orderId/checkout` requiere sesión/JWT y ser el comprador. Devuelve `202` con `checkout: null` mientras se prepara, o `200` con ID, URL, expiración, importe y moneda. Usa `Cache-Control: no-store`. Otro comprador recibe `404`.
 - `POST /api/payments/polar/webhook` es público en Kong y Orders. Verifica firma y timestamp sobre el cuerpo original antes de parsear. Una firma inválida devuelve `403`, un payload inválido `400` y un cuerpo mayor de 256 KiB `413`.
 - Un evento aceptado devuelve `202` después de persistir su resultado normalizado en el inbox. Si PostgreSQL no lo acepta, devuelve `503` para permitir reentrega. La respuesta no espera checkout, NATS, Inventory ni correo.
@@ -125,6 +139,8 @@ pnpm --filter @mercadoya/orders-service db:migrate
 
 Los subjects y `version: 1` se conservan. Los resultados de pago y `inventory.released` añaden campos opcionales `provider: "polar"`, `eventId`, `checkoutId` y `providerOrderId`. `eventId` viene de **webhook-id**, que se repite en reintentos; no es `event.data.id`. Polar recibe `metadata.order_id`, que identifica el pedido local, y `order.paid.data.checkout_id` identifica la sesión Polar. Inventory libera usando el `orderId` actual y conserva la correlación en `inventory.released`. Notifications sigue validando los contratos v1 y enviando por desenlace.
 
+`processOutcome` confirma el pedido en la misma transacción que guarda el pago exitoso. La confirmación ya no depende de que llegue `payment.succeeded` al consumidor NATS de Orders; ese consumidor conserva su guarda idempotente. El evento sigue notificando a los demás consumidores. Este cambio al flujo del ADR 0019 evita que una cancelación cierre el pedido antes de que el consumidor confirme. Consulta [ADR 0023](../../docs/adr/0023-vencimiento-cancelacion-pedidos.md).
+
 | Entrada Polar                                                                                  | Resultado saga                                                      |
 | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | `order.paid`, con `paid=true`, estado `paid`, checkout e importe/moneda coincidentes           | `payment.succeeded`; Orders confirma y conserva el stock reservado. |
@@ -134,7 +150,7 @@ Los subjects y `version: 1` se conservan. Los resultados de pago y `inventory.re
 | Rechazo definitivo de Checkout API                                                             | `payment.failed`, con razón de creación; Inventory compensa.        |
 | `checkout.updated`, estado `open`, `confirmed` o `succeeded`; órdenes pendientes y demás tipos | Sin confirmación ni compensación. Se espera `order.paid`.           |
 
-Todos los fallos terminales activan la regla existente de Inventory: restaurar stock una vez, eliminar la reserva y publicar `inventory.released`. El rechazo y el correo pueden aparecer antes de la liberación. Polar no define `checkout.canceled`: volver al comercio o cerrar la pestaña mantiene la reserva hasta la expiración; una orden anulada usa `void`. Cancelaciones de suscripciones y reembolsos posteriores al pago no representan un fallo de esta compra única.
+Todos los fallos terminales activan la compensación de Inventory. Los carritos restauran todas las líneas mediante el ajuste idempotente de Catalog. Tanto carritos como productos únicos conservan la reserva marcada como liberada para ignorar un `orders.placed` tardío. Ambos publican `inventory.released`. El cierre y el correo de un fallo de pago pueden aparecer antes de la liberación; las cancelaciones y los vencimientos del pedido no envían ese correo. Polar no define `checkout.canceled`: regresar o cerrar la pestaña conserva la reserva hasta el vencimiento en servidor o la cancelación explícita del comprador. Una orden anulada en Polar usa `void`. Cancelaciones de suscripciones y reembolsos posteriores al pago no representan un fallo de esta compra única.
 
 ## Reintentos y límites
 
@@ -142,7 +158,7 @@ El inbox deduplica por event id en PostgreSQL, también después de reiniciar y 
 
 El worker publica antes del commit y reintenta los fallos de publicación desde el inbox. Una caída después de publicar y antes del commit puede repetir el mismo evento con el mismo `eventId`. Orders y la compensación de Inventory ya son idempotentes. Esta es entrega **at-least-once desde el inbox al publisher**, no una garantía de recepción para consumidores desconectados. NATS Core no guarda ni reproduce mensajes; `flush()` no es un ACK del consumidor. Tampoco recupera automáticamente `orders.placed`/`inventory.reserved` perdidos durante una desconexión. No se añadió outbox ni JetStream.
 
-Una creación de checkout con error de red/5xx puede haber completado en Polar. Orders conserva `creating` y busca la sesión por `metadata.order_id` cada 30 segundos, sin emitir un segundo POST ni liberar una reserva que todavía podría cobrarse. Si la llamada nunca llegó a Polar, un operador debe comprobarlo antes de reactivar ese intento. `payment.checkout_uncertain` identifica el pedido que requiere esa comprobación; no incluye secretos. Si falta la entrega de un webhook, reenvíala desde el dashboard con el mismo event id. Supervisa `payment.webhook_retry` y `payment.outcome_ignored`.
+Una creación de checkout con error de red/5xx puede haber completado en Polar. Orders conserva `creating` y busca la sesión por `metadata.order_id` cada 30 segundos, sin emitir un segundo POST, hasta que el pedido vence o se cancela. El cierre devuelve el stock aunque la creación siga incierta. Un operador debe revisar el checkout remoto antes de reactivar ese intento; podría recibir un pago después del cierre. `payment.checkout_uncertain` identifica el pedido que requiere esa comprobación; no incluye secretos. Si falta la entrega de un webhook, reenvíala desde el dashboard con el mismo event id. Supervisa `payment.webhook_retry`, `payment.outcome_ignored` y `payment.late_after_close`.
 
 Polar puede reintentar entregas hasta diez veces, aplica timeout de diez segundos y recomienda responder antes de dos segundos. Diez entregas consecutivas fallidas pueden deshabilitar el endpoint. El worker conserva los eventos ya aceptados independientemente de esos reintentos.
 
@@ -161,3 +177,19 @@ El [CLI de demo](../../scripts/README.md) crea pedidos por Kong, muestra el chec
 ## Documentación oficial verificada
 
 Consultada el 1 de octubre de 2026 y contrastada con el SDK instalado: [endpoints](https://polar.sh/docs/integrate/webhooks/endpoints), [delivery y firmas](https://polar.sh/docs/integrate/webhooks/delivery), [eventos](https://polar.sh/docs/integrate/webhooks/events), [SDK TypeScript](https://polar.sh/docs/integrate/sdk/typescript), [Checkout API 2026-04](https://polar.sh/docs/api-reference/2026-04/checkouts/create-checkout-session), [sandbox](https://polar.sh/docs/integrate/sandbox) y [Standard Webhooks](https://github.com/standard-webhooks/standard-webhooks/blob/main/spec/standard-webhooks.md).
+
+## Carrito de compras
+
+La web guarda el carrito por comprador en `localStorage` y transfiere el carrito de invitado al iniciar sesión. Comparte cantidades entre catálogo, cabecera y `/cart`. Agregar no crea una orden ni reserva stock. El selector muestra un número fijo, papelera con una unidad y menos desde dos. El carrito permite cambiar cantidades o eliminar líneas antes de iniciar el pago.
+
+Orders obtiene de Catalog los precios, títulos y rutas de miniaturas, y guarda las líneas como snapshot. El cliente envía solo IDs, cantidades y la clave de reintento. Inventory usa `/api/internal/catalog/stock/adjust-batch`, con una clave por pedido y operación. Catalog bloquea las filas en orden, comprueba todos los stocks y aplica todos los cambios o ninguno. Guarda la operación para que una respuesta HTTP perdida no duplique el ajuste.
+
+Polar no suma los IDs de `products`; ofrece productos alternativos para escoger uno. Orders crea automáticamente un único producto privado de pago único llamado **Compra en MercadoYa** y lo reutiliza para los carritos. El precio de catálogo es variable, pero cada checkout usa un precio ad-hoc fijo con el total del pedido guardado en PEN. El comprador no puede modificar ese importe. Polar muestra el nombre genérico y el total; el desglose con nombres, cantidades y miniaturas se conserva en MercadoYa.
+
+La migración `Orders 0004_purchase_product` añade `orders_payment_product`, con una referencia independiente para sandbox y producción. El worker comparte su advisory lock entre réplicas y guarda la intención de crear el producto antes del POST. Si se pierde la respuesta o Polar devuelve 5xx, todos los pedidos buscan el producto por `mercadoya_checkout=purchase` sin repetir la creación. Si la base pierde la referencia, Orders busca primero ese mismo producto en Polar. Un resultado incierto que no aparece en Polar requiere comprobación del operador antes de devolver el registro a `queued`. Los checkouts se recuperan por `order_id`, como antes.
+
+Los checkouts y productos de pedidos anteriores mantienen su referencia. Una creación antigua pendiente se recupera por `mercadoya_order_id`. No se archivan ni eliminan esos productos, porque pueden tener pagos abiertos o formar parte del historial.
+
+La web conserva el carrito mientras el pago está pendiente, permite retomarlo al regresar de Polar y lo limpia cuando el servidor confirma el cobro. El regreso del navegador no acredita el pago. El carrito y el desglose del pedido solicitan archivos `-thumb`; si un producto histórico no tiene miniatura, muestran un marcador sin descargar su imagen full.
+
+Las migraciones `Catalog 0003_cart_stock`, `Orders 0003_cart` y `Orders 0004_purchase_product` son aditivas. Ejecuta `pnpm --filter @mercadoya/orders-service db:migrate` antes de levantar la versión con el producto compartido. Los pedidos anteriores y el cuerpo HTTP de un producto siguen funcionando. Los eventos v1 añaden `items`; despliega Catalog, Inventory, Orders y Notifications con los contratos actualizados antes de habilitar la web con carrito. Un consumidor anterior que descarta `items` no puede gestionar una compra de varias líneas. [Decisión y límites](../../docs/adr/0022-shopping-cart.md).

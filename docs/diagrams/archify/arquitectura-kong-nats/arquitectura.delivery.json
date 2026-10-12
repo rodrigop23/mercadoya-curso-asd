@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/Users/rodrigo/dev/solucionatica/mercadoya-curso-asd/docs/diagrams/archify/arquitectura-kong-nats/arquitectura.architecture.json",
+  "output": "/Users/rodrigo/dev/solucionatica/mercadoya-curso-asd/docs/diagrams/archify/arquitectura-kong-nats/arquitectura.html",
+  "specification": {
+    "sha256": "7117efc32d4acd4dff95100134975da08abe3414b93093a2214979de3f5aaa18",
+    "bytes": 5893
+  },
+  "artifact": {
+    "sha256": "b926f96d6490df17df6b53f82faf10a8df8b12d6f8f550105182acd08bfd54f2",
+    "bytes": 811029
+  },
+  "validation": {
+    "checksPassed": 9,
+    "checkCount": 9,
+    "compositionProfile": "showcase",
+    "compositionStatus": "pass",
+    "errors": 0,
+    "warnings": 0
+  }
+}

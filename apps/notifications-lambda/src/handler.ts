@@ -77,6 +77,20 @@ export async function handler(event: HttpEvent) {
     return { statusCode: 400, body: JSON.stringify({ error: 'Evento inválido.' }) };
   }
   const { subject, payload } = parsed.data;
+  if (
+    subject === 'payment.failed' &&
+    (payload.reason === 'order_cancelled' || payload.reason === 'order_expired')
+  ) {
+    console.info(
+      JSON.stringify({
+        step: 'notification.ignored',
+        subject,
+        orderId: payload.orderId,
+        reason: payload.reason,
+      }),
+    );
+    return { statusCode: 202, body: JSON.stringify({ ok: true, ignored: true }) };
+  }
   const email = emailFor(parsed.data);
   const html = await render(email.component);
   const body = toPlainText(html);

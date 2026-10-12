@@ -9,6 +9,23 @@ const orders = generatedDocuments.get('apps/orders-service/openapi.yaml');
 const identity = generatedDocuments.get('apps/identity-service/openapi.yaml');
 const catalog = generatedDocuments.get('apps/catalog-service/openapi/catalog.yaml');
 
+test('cancelación sin cuerpo documenta sesión, UUID, estado actualizado y conflictos', () => {
+  const cancel = orders.paths['/api/orders/{orderId}/cancel'].post;
+  assert.deepEqual(cancel.security, [{ betterAuthSession: [] }, { applicationJWT: [] }]);
+  assert.equal(cancel.requestBody, undefined);
+  assert.equal(cancel.parameters[0].name, 'orderId');
+  for (const status of [200, 202, 400, 401, 404, 409, 503]) assert.ok(cancel.responses[status]);
+  const kong = parse(
+    readFileSync(new URL('../../../infra/kong/kong.yml', import.meta.url), 'utf8'),
+  );
+  const route = kong.services
+    .find((service) => service.name === 'orders')
+    .routes.find((route) => route.name === 'orders-protected');
+  assert.deepEqual(route.paths, ['/api/orders']);
+  assert.equal(route.methods, undefined);
+  assert.equal(route.plugins[0].name, 'identity-auth');
+});
+
 test('checkout requiere auth y webhook documenta firma pública y ACK async', () => {
   const checkout = orders.paths['/api/orders/{orderId}/checkout'].get;
   assert.deepEqual(checkout.security, [{ betterAuthSession: [] }, { applicationJWT: [] }]);
@@ -48,6 +65,14 @@ test('Inventory anuncia un despliegue y un contrato sin deprecaciones', () => {
 });
 
 test('los bordes documentados distinguen sesión browser, JWT y token interno de stock', () => {
+  assert.deepEqual(orders.paths['/api/orders'].get.security, [
+    { betterAuthSession: [] },
+    { applicationJWT: [] },
+  ]);
+  assert.equal(
+    orders.paths['/api/orders'].get.responses[200].content['application/json'].schema.$ref,
+    '#/components/schemas/OrdersResponse',
+  );
   assert.deepEqual(orders.paths['/api/orders/{orderId}'].get.security, [
     { betterAuthSession: [] },
     { applicationJWT: [] },

@@ -1,0 +1,15 @@
+{
+  "diagram_type": "architecture",
+  "output": "/Users/rodrigo/dev/solucionatica/mercadoya-curso-asd/docs/diagrams/archify/arquitectura-kong-nats/arquitectura.html",
+  "specification_sha256": "7117efc32d4acd4dff95100134975da08abe3414b93093a2214979de3f5aaa18",
+  "specification_bytes": 5893,
+  "artifact_sha256": "b926f96d6490df17df6b53f82faf10a8df8b12d6f8f550105182acd08bfd54f2",
+  "artifact_bytes": 811029,
+  "validation": "9/9 showcase, 0 errors, 0 warnings",
+  "browser_evidence": "passed",
+  "visual_review": "passed",
+  "correction_rounds": 1,
+  "visual_review_scope": "Capturas finales 1440x900 light y 2048x1320 dark; etiquetas, conexiones y contenido sin recortes.",
+  "authored_language": "es",
+  "viewer_ui_language": "en"
+}

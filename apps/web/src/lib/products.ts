@@ -7,6 +7,16 @@ export function productImageUrl(imagePath: string) {
   return `${API_BASE_URL}/uploads/${encodedPath}`;
 }
 
+export function productThumbnailPath(imagePath: string): string | null {
+  if (/-thumb\.[^.]+$/.test(imagePath)) return imagePath;
+  return /-full\.[^.]+$/.test(imagePath) ? imagePath.replace(/-full\.([^.]+)$/, '-thumb.$1') : null;
+}
+
+export const priceFormatter = new Intl.NumberFormat('es-PE', {
+  style: 'currency',
+  currency: 'PEN',
+});
+
 export type Product = {
   id: string;
   title: string;

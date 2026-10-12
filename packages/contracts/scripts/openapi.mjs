@@ -19,6 +19,7 @@ const schemas = {
   Error: contracts.errorResponseSchema,
   CreateOrder: contracts.createOrderSchema,
   OrderResponse: contracts.orderResponseSchema,
+  OrdersResponse: contracts.ordersResponseSchema,
   PaymentCheckoutResponse: contracts.paymentCheckoutResponseSchema,
   CatalogBillingResponse: contracts.catalogBillingResponseSchema,
   SignUp: contracts.signUpSchema,
@@ -34,6 +35,8 @@ const schemas = {
   StockResponse: contracts.stockResponseSchema,
   StockAdjustment: contracts.stockAdjustmentSchema,
   StockAdjustmentResponse: contracts.stockAdjustmentResponseSchema,
+  StockBatch: contracts.stockBatchSchema,
+  StockBatchResponse: contracts.stockBatchResponseSchema,
   ReservationResponse: contracts.reservationResponseSchema,
 };
 const allSchemas = Object.fromEntries(
@@ -158,12 +161,28 @@ documents.set(
   'apps/orders-service/openapi.yaml',
   doc(
     'Orders',
-    '2.2.0',
+    '2.4.0',
     {
       '/api/orders/health': {
         get: op('ordersHealth', 'Estado de Orders', { 200: health('orders') }),
       },
       '/api/orders': {
+        get: op(
+          'listOrders',
+          'Consultar el historial de pedidos del comprador',
+          {
+            200: response(
+              'Pedidos del comprador, del más reciente al más antiguo.',
+              'OrdersResponse',
+            ),
+            ...errors(401, 500, 502),
+          },
+          {
+            security: applicationAuth,
+            description:
+              'El comprador procede de la sesión verificada. Incluye pedidos pendientes, confirmados, rechazados, cancelados y vencidos, ordenados por createdAt descendente y por id descendente en caso de empate. No acepta un buyerId del cliente. Cache-Control: no-store.',
+          },
+        ),
         post: op(
           'createOrder',
           'Crear un pedido pendiente y publicar orders.placed',
@@ -175,7 +194,7 @@ documents.set(
             security: applicationAuth,
             requestBody: body('CreateOrder'),
             description:
-              'buyerId procede del claim sub verificado. Con Polar, Catalog debe tener el producto sincronizado; 409 mientras se prepara y 503 si Catalog no responde. Orders guarda el precio PEN antes de publicar. Campos extra como moneda o importe se descartan.',
+              'buyerId procede del claim sub verificado. Acepta productId/quantity para pedidos anteriores, o items con hasta 20 productos distintos para un carrito. Catalog debe tener todos sincronizados. Orders guarda precios PEN, títulos y miniaturas antes de publicar. idempotencyKey permite recuperar el mismo pedido sin reservar o cobrar dos veces. Campos extra como moneda o importe se descartan.',
           },
         ),
       },
@@ -187,7 +206,33 @@ documents.set(
             200: response('Pedido encontrado.', 'OrderResponse'),
             ...errors(400, 401, 404, 500, 502),
           },
-          { security: applicationAuth, parameters: [id('orderId')] },
+          {
+            security: applicationAuth,
+            parameters: [id('orderId')],
+            description:
+              'Solo el comprador puede consultar el pedido y sus líneas. Cache-Control: no-store.',
+          },
+        ),
+      },
+      '/api/orders/{orderId}/cancel': {
+        post: op(
+          'cancelOrder',
+          'Cancelar un pedido pendiente del comprador',
+          {
+            202: response(
+              'Pedido cancelado; la devolución de stock continúa por la outbox.',
+              'OrderResponse',
+            ),
+            200: response('El pedido ya estaba cancelado.', 'OrderResponse'),
+            ...errors(400, 401, 404, 502, 503),
+            409: response('El pedido ya finalizó o el pago se está procesando.', 'Error'),
+          },
+          {
+            security: applicationAuth,
+            parameters: [id('orderId')],
+            description:
+              'Sin cuerpo. Solo el comprador puede cancelar. Consulta Polar antes de cerrar un checkout abierto. Un fallo remoto devuelve 503 sin cancelar. Cache-Control: no-store.',
+          },
         ),
       },
       '/api/orders/{orderId}/checkout': {
@@ -378,7 +423,7 @@ documents.set(
   'apps/catalog-service/openapi/catalog.yaml',
   doc(
     'Catalog',
-    '1.2.0',
+    '1.3.0',
     {
       '/api/catalog/health': {
         get: op('catalogHealth', 'Estado de Catalog', { 200: health('catalog') }),
@@ -434,6 +479,21 @@ documents.set(
             ...errors(400, 401, 503),
           },
           { security: [{ catalogInternalToken: [] }], parameters: [id('id')] },
+        ),
+      },
+      '/api/internal/catalog/stock/adjust-batch': {
+        servers: [catalogDirect],
+        post: op(
+          'adjustStockBatch',
+          'Ajustar todos los productos de un carrito en una transacción',
+          {
+            200: response(
+              'Aplica todos los ajustes o ninguno. Repetir operationId y ajustes no modifica otra vez el stock.',
+              'StockBatchResponse',
+            ),
+            ...errors(400, 401, 503),
+          },
+          { security: [{ catalogInternalToken: [] }], requestBody: body('StockBatch') },
         ),
       },
       '/api/internal/catalog/products/{id}/billing': {

@@ -1,5 +1,12 @@
 import { z } from 'zod';
 
+export function polarGetTimeoutMs(env: NodeJS.ProcessEnv = process.env) {
+  const timeout = Number(env.POLAR_GET_TIMEOUT_MS ?? 5000);
+  if (!Number.isSafeInteger(timeout) || timeout <= 0 || timeout > 2_147_483_647)
+    throw new Error('POLAR_GET_TIMEOUT_MS debe ser un entero entre 1 y 2147483647.');
+  return timeout;
+}
+
 export function paymentProvider(env: NodeJS.ProcessEnv = process.env) {
   return z.literal('polar').parse(env.PAYMENT_PROVIDER?.trim() || 'polar');
 }

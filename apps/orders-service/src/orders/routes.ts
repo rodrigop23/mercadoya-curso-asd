@@ -5,15 +5,68 @@ import { createOrderSchema, type PaymentCheckoutResponse } from '@mercadoya/cont
 import type { IdentityContract } from '../identity/contract.js';
 import type { createOrdersService } from './service.js';
 import { CatalogBillingError } from '../catalog/http.js';
+import type { CancelResult } from './lifecycle.js';
+
+export type OrdersPaymentPort = {
+  getCheckout(orderId: string): Promise<PaymentCheckoutResponse>;
+  cancelOrder(orderId: string, buyerId: string): Promise<CancelResult>;
+};
 
 export function createOrdersRoutes(
   orders: ReturnType<typeof createOrdersService>,
   identity: IdentityContract,
-  payments: { getCheckout(orderId: string): Promise<PaymentCheckoutResponse> },
+  payments: OrdersPaymentPort,
 ) {
   const routes = new Hono({ strict: false });
 
   routes.get('/health', (c) => c.json({ module: 'orders', ok: true }));
+
+  routes.post('/:orderId/cancel', async (c) => {
+    c.header('Cache-Control', 'no-store');
+    let session: Awaited<ReturnType<IdentityContract['getSession']>>;
+    try {
+      session = await identity.getSession(c.req.raw.headers);
+    } catch {
+      return c.json({ error: 'No se pudo validar la sesión.' }, 502);
+    }
+    if (!session) return c.json({ error: 'Inicia sesión para cancelar tu pedido.' }, 401);
+    const orderId = z.uuid().safeParse(c.req.param('orderId'));
+    if (!orderId.success)
+      return c.json({ error: 'El identificador del pedido no es válido.' }, 400);
+    try {
+      const result = await payments.cancelOrder(orderId.data, session.user.id);
+      if (result === 'not_found') return c.json({ error: 'El pedido no existe.' }, 404);
+      if (result === 'conflict')
+        return c.json({ error: 'El pedido ya finalizó y no se puede cancelar.' }, 409);
+      return c.json(
+        { order: await orders.getOrder(orderId.data) },
+        result === 'cancelled' ? 202 : 200,
+      );
+    } catch (error) {
+      if (error instanceof CatalogBillingError)
+        return c.json({ error: error.message }, error.status);
+      return c.json({ error: 'No se pudo cancelar el pedido. Inténtalo de nuevo.' }, 503);
+    }
+  });
+
+  routes.get('/', async (c) => {
+    c.header('Cache-Control', 'no-store');
+    let session: Awaited<ReturnType<IdentityContract['getSession']>>;
+    try {
+      session = await identity.getSession(c.req.raw.headers);
+    } catch (error) {
+      console.error('No se pudo validar la sesión del historial:', error);
+      return c.json({ error: 'No se pudo validar la sesión.' }, 502);
+    }
+    if (!session) return c.json({ error: 'Inicia sesión para ver tus pedidos.' }, 401);
+
+    try {
+      return c.json({ orders: await orders.listOrders(session.user.id) });
+    } catch (error) {
+      console.error('No se pudo consultar el historial de pedidos:', error);
+      return c.json({ error: 'No se pudieron consultar tus pedidos.' }, 500);
+    }
+  });
 
   routes.get('/:orderId/checkout', async (c) => {
     const session = await identity.getSession(c.req.raw.headers);
@@ -42,7 +95,10 @@ export function createOrdersRoutes(
 
     try {
       const order = await orders.getOrder(parsedOrderId.data);
-      return order ? c.json({ order }, 200) : c.json({ error: 'El pedido no existe.' }, 404);
+      c.header('Cache-Control', 'no-store');
+      return order && order.buyerId === session.user.id
+        ? c.json({ order }, 200)
+        : c.json({ error: 'El pedido no existe.' }, 404);
     } catch (error) {
       console.error('No se pudo consultar el pedido:', error);
       return c.json({ error: 'No se pudo consultar el pedido.' }, 500);

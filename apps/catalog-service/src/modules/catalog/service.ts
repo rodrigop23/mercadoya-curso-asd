@@ -100,7 +100,8 @@ export function createCatalogContract(media: MediaContract): CatalogContract {
     },
 
     async getBillingProduct(productId): Promise<CatalogBillingResponse | null> {
-      const result = await db.execute(sql`SELECT p.id, round(p.price*100)::bigint AS unit_amount,
+      const result =
+        await db.execute(sql`SELECT p.id, p.title, p.image_path, round(p.price*100)::bigint AS unit_amount,
         s.polar_product_id, s.state, s.version, s.synced_version, s.error_code, s.next_attempt_at
         FROM product p LEFT JOIN catalog_polar_product s ON s.product_id=p.id AND s.server=${polarServer()}
         WHERE p.id=${productId}`);
@@ -114,6 +115,10 @@ export function createCatalogContract(media: MediaContract): CatalogContract {
             polarProductId: String(row.polar_product_id),
             unitAmount: Number(row.unit_amount),
             currency: 'pen',
+            title: String(row.title),
+            thumbnailPath: /-full\.[^.]+$/.test(String(row.image_path))
+              ? String(row.image_path).replace(/-full\.([^.]+)$/, '-thumb.$1')
+              : null,
           },
         };
       }
@@ -130,6 +135,41 @@ export function createCatalogContract(media: MediaContract): CatalogContract {
         .limit(1);
 
       return result?.stock ?? null;
+    },
+
+    async adjustStockBatch({ operationId, adjustments }) {
+      const ordered = [...adjustments].sort((a, b) => a.productId.localeCompare(b.productId));
+      return db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${operationId}, 1))`);
+        const previous = await tx.execute(
+          sql`SELECT adjustments = ${JSON.stringify(ordered)}::jsonb AS matches FROM catalog_stock_operation WHERE id=${operationId}`,
+        );
+        if (previous.rows[0]) {
+          if (!previous.rows[0].matches) throw new Error('Operación de stock incompatible.');
+          return { adjusted: true as const };
+        }
+        // Bloqueamos en el mismo orden para evitar deadlocks entre carritos concurrentes.
+        for (const item of ordered) {
+          const result = await tx.execute(
+            sql`SELECT stock FROM product WHERE id=${item.productId} FOR UPDATE`,
+          );
+          const row = result.rows[0];
+          if (!row) return { adjusted: false as const, reason: 'product_not_found' as const };
+          const next = Number(row.stock) + item.delta;
+          if (next < 0) return { adjusted: false as const, reason: 'insufficient_stock' as const };
+          if (next > 2_147_483_647)
+            return { adjusted: false as const, reason: 'stock_limit' as const };
+        }
+        for (const item of ordered)
+          await tx
+            .update(product)
+            .set({ stock: sql`${product.stock} + ${item.delta}`, updatedAt: new Date() })
+            .where(eq(product.id, item.productId));
+        await tx.execute(
+          sql`INSERT INTO catalog_stock_operation(id, adjustments) VALUES (${operationId}, ${JSON.stringify(ordered)}::jsonb)`,
+        );
+        return { adjusted: true as const };
+      });
     },
 
     async adjustStock(productId, delta) {

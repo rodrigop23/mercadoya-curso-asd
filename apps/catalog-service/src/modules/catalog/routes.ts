@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { fileURLToPath } from 'node:url';
 import { timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
-import { productFormSchema, stockAdjustmentSchema } from '@mercadoya/contracts';
+import { productFormSchema, stockAdjustmentSchema, stockBatchSchema } from '@mercadoya/contracts';
 
 import type { AdminAuthorizer } from '../../auth.js';
 import { InvalidMediaError } from '../media/contract.js';
@@ -29,6 +29,12 @@ export function createCatalogRoutes(identity: AdminAuthorizer, catalogContract: 
     if (!id.success) return c.json({ error: 'Identificador de producto inválido.' }, 400);
     const availableStock = await catalogContract.getAvailableStock(id.data);
     return c.json({ availableStock });
+  });
+
+  routes.post('/api/internal/catalog/stock/adjust-batch', async (c) => {
+    const parsed = stockBatchSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'El ajuste de carrito no es válido.' }, 400);
+    return c.json(await catalogContract.adjustStockBatch(parsed.data));
   });
 
   routes.get('/api/internal/catalog/products/:id/billing', async (c) => {

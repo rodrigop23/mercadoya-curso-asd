@@ -170,3 +170,13 @@ test('acepta body base64 de Function URL', async () => {
     202,
   );
 });
+
+for (const reason of ['order_cancelled', 'order_expired']) {
+  test(`${reason} no envía un correo de pago fallido`, async () => {
+    const result = await invoke('payment.failed', { reason });
+    assert.equal(result.statusCode, 202);
+    assert.deepEqual(JSON.parse(result.body), { ok: true, ignored: true });
+    assert.equal(calls.length, 0);
+    assert.equal(notifications.length, 0);
+  });
+}
