@@ -6,6 +6,21 @@ services:
       - name: identity-public
         paths: ['/api/auth', '/api/me', '~/api/identity/health$']
         strip_path: false
+  - name: agent-health
+    url: http://agent-service:8000/ok
+    routes:
+      - name: agent-health-public
+        paths: ['~/api/agent/ok$']
+        strip_path: true
+  - name: agent
+    url: http://agent-service:8000
+    routes:
+      - name: agent-protected
+        paths: ['/api/agent']
+        strip_path: true
+        plugins:
+          - name: identity-auth
+            config: { verify_url: 'http://identity:3006/api/identity/verify' }
   - name: orders
     url: http://orders:3002
     routes:

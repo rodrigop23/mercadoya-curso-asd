@@ -14,6 +14,9 @@
     "smoke:federation": "playwright test"
   },
   "dependencies": {
+    "@langchain/core": "1.2.1",
+    "@langchain/langgraph-sdk": "1.12.3",
+    "@langchain/react": "1.2.3",
     "@mercadoya/contracts": "workspace:*",
     "@mercadoya/ui": "workspace:*",
     "@tanstack/react-form": "^1.33.5",

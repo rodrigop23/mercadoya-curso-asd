@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from '@mercadoya/ui/components/dropdown-menu';
 import { authClient } from '@/lib/auth-client';
+import { AgentChat } from '@/components/agent-chat';
 import { CartProvider, useCart } from '@/features/cart/cart-context';
 import { cn } from '@mercadoya/ui/lib/utils';
 import '../styles.css';
@@ -28,6 +29,7 @@ function RootLayout() {
   return (
     <CartProvider key={owner} owner={owner}>
       <RootShell />
+      {!isPending && session && <AgentChat key={session.user.id} userId={session.user.id} />}
     </CartProvider>
   );
 }
