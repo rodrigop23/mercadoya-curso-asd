@@ -24,7 +24,13 @@ test('PostgreSQL filtra comprador, ordena todo el historial y conserva la consul
       'utf8',
     );
     await pool.query(baseline.match(/CREATE TABLE "orders_order" \([\s\S]*?\n\);/)[0]);
-    for (const file of ['0001_payments.sql', '0002_pricing.sql', '0003_cart.sql']) {
+    for (const file of [
+      '0001_payments.sql',
+      '0002_pricing.sql',
+      '0003_cart.sql',
+      '0004_purchase_product.sql',
+      '0005_order_lifecycle.sql',
+    ]) {
       await pool.query(await readFile(new URL(`../db/${file}`, import.meta.url), 'utf8'));
     }
     const productId = randomUUID();

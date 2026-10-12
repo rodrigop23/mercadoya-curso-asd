@@ -467,7 +467,8 @@
       "reason": {
         "type": "string",
         "minLength": 1,
-        "maxLength": 160
+        "maxLength": 160,
+        "description": "Motivo de compensación, incluidos order_cancelled y order_expired. Estos cierres no notifican un pago fallido."
       }
     },
     "required": [

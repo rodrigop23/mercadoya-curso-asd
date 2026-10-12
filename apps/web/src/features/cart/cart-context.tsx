@@ -16,6 +16,7 @@ const cartSchema = z.object({
   pendingOrderId: z.uuid().nullable(),
   redirected: z.boolean(),
   failureReason: z.string().nullable().default(null),
+  failureKind: z.enum(['closed', 'error']).default('error'),
 });
 type CartState = z.infer<typeof cartSchema>;
 export type CartEntry = z.infer<typeof entrySchema>;
@@ -25,6 +26,7 @@ const emptyCart: CartState = {
   pendingOrderId: null,
   redirected: false,
   failureReason: null,
+  failureKind: 'error',
 };
 const storageKey = (owner: string) => `mercadoya:cart:v1:${owner}`;
 
@@ -57,6 +59,7 @@ type CartContextValue = CartState & {
   markRedirected(): void;
   releaseCheckout(reason?: string): void;
   completeOrder(order: Order): void;
+  releaseClosedOrder(order: Order): void;
 };
 const CartContext = createContext<CartContextValue | null>(null);
 
@@ -99,6 +102,7 @@ export function CartProvider({ owner, children }: { owner: string; children: Rea
         pendingOrderId: null,
         redirected: false,
         failureReason: reason ?? current.failureReason,
+        failureKind: reason ? 'error' : current.failureKind,
       })),
     [],
   );
@@ -122,6 +126,23 @@ export function CartProvider({ owner, children }: { owner: string; children: Rea
         }))
         .filter((item) => item.quantity > 0);
       return { ...emptyCart, items };
+    });
+  }, []);
+  const releaseClosedOrder = useCallback((order: Order) => {
+    if (order.status !== 'cancelled' && order.status !== 'expired') return;
+    setState((current) => {
+      if (current.pendingOrderId !== order.id && current.checkoutKey !== order.id) return current;
+      return {
+        ...current,
+        checkoutKey: null,
+        pendingOrderId: null,
+        redirected: false,
+        failureKind: 'closed',
+        failureReason:
+          order.status === 'cancelled'
+            ? 'Cancelaste el pedido. Tus productos siguen en el carrito para volver a comprar.'
+            : 'El pedido venció. Tus productos siguen en el carrito para volver a comprar.',
+      };
     });
   }, []);
   return (
@@ -165,7 +186,12 @@ export function CartProvider({ owner, children }: { owner: string; children: Rea
         },
         beginCheckout() {
           const key = state.checkoutKey ?? crypto.randomUUID();
-          const next = { ...state, checkoutKey: key, failureReason: null };
+          const next: CartState = {
+            ...state,
+            checkoutKey: key,
+            failureReason: null,
+            failureKind: 'error',
+          };
           // Guardar antes del POST permite recuperar una respuesta perdida o un cierre de pestaña.
           persistCart(owner, next);
           setState(next);
@@ -179,6 +205,7 @@ export function CartProvider({ owner, children }: { owner: string; children: Rea
         },
         releaseCheckout,
         completeOrder,
+        releaseClosedOrder,
       }}
     >
       {children}

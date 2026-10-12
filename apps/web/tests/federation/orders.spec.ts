@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { Order } from '../../src/lib/orders';
+import { rejectionReasons } from '../../src/lib/order-status';
 
 const timestamp = '2026-10-03T12:00:00.000Z';
 const productId = 'd1d1392e-c696-4ac9-957f-57354bb3c200';
@@ -7,15 +8,24 @@ const orderIds = [
   'e9ac6bbd-a36a-4ac8-9803-04cfc6e29b81',
   '26600c9b-41ac-427a-a0ae-61e06a4d6c69',
   'b5f0dd8c-f544-477b-8f70-4ec3a0e13527',
+  '62188607-28f8-48f2-89c4-4a444f33bcce',
+  'ebed7bc8-4b31-499d-a8b5-6cabd3f3b4c5',
 ];
 const ordersFixture: Order[] = orderIds.map((id, index) => ({
   id,
   productId,
   quantity: 2,
   buyerId: 'buyer-a',
-  status: (['confirmed', 'pending', 'rejected'] as const)[index]!,
-  rejectionReason: index === 2 ? 'insufficient_stock' : null,
-  createdAt: `2026-10-0${3 - index}T12:00:00.000Z`,
+  status: (['confirmed', 'pending', 'rejected', 'cancelled', 'expired'] as const)[index]!,
+  rejectionReason:
+    index === 2
+      ? 'insufficient_stock'
+      : index === 3
+        ? 'order_cancelled'
+        : index === 4
+          ? 'order_expired'
+          : null,
+  createdAt: new Date(Date.parse(timestamp) - index * 86400000).toISOString(),
   updatedAt: timestamp,
   items:
     index === 2
@@ -39,6 +49,7 @@ async function gateway(page: Page, initialBuyer: string | null = 'buyer-a') {
     buyer: initialBuyer,
     orders: structuredClone(ordersFixture),
     status: 200,
+    cancellations: 0,
     reads: [] as { buyer: string | null; method: string; cookie?: string }[],
   };
   const user = () => ({
@@ -87,6 +98,13 @@ async function gateway(page: Page, initialBuyer: string | null = 'buyer-a') {
         status === 200
           ? { orders: state.orders }
           : { error: 'No se pudieron consultar tus pedidos.' };
+    } else if (path.endsWith('/cancel')) {
+      state.cancellations++;
+      const order = state.orders.find((order) => order.id === path.split('/').at(-2))!;
+      order.status = 'cancelled';
+      order.rejectionReason = 'order_cancelled';
+      body = { order };
+      status = 202;
     } else if (path.endsWith('/checkout')) body = { provider: 'polar', checkout: null };
     else if (path.startsWith('/api/orders/')) {
       const order = state.orders.find((order) => order.id === path.split('/').at(-1));
@@ -124,10 +142,10 @@ test('avatar abre el historial con estados, orden recibido y enlaces a la págin
   await expect(page.getByRole('menu')).toBeHidden();
   await expect(page.getByRole('heading', { name: 'Mis pedidos' })).toBeVisible();
   const links = page.getByRole('list', { name: 'Historial de pedidos' }).getByRole('link');
-  await expect(links).toHaveCount(3);
+  await expect(links).toHaveCount(5);
   for (const [index, id] of orderIds.entries())
     await expect(links.nth(index)).toHaveAttribute('href', `/orders/${id}`);
-  for (const status of ['Confirmado', 'Pendiente', 'Rechazado'])
+  for (const status of ['Confirmado', 'Pendiente', 'Rechazado', 'Cancelado', 'Vencido'])
     await expect(page.getByText(status, { exact: true })).toBeVisible();
   await expect(page.getByText('Importe no disponible')).toBeVisible();
   expect(
@@ -189,7 +207,7 @@ test('fallo del historial permite reintentar y recuperar los pedidos', async ({ 
   await page.getByRole('button', { name: 'Reintentar', exact: true }).click();
   await expect(
     page.getByRole('list', { name: 'Historial de pedidos' }).getByRole('link'),
-  ).toHaveCount(3);
+  ).toHaveCount(5);
 });
 
 test('cerrar sesión oculta el historial y otra cuenta obtiene su propia consulta', async ({
@@ -212,4 +230,45 @@ test('cerrar sesión oculta el historial y otra cuenta obtiene su propia consult
   await expect(page.getByText('Todavía no tienes pedidos')).toBeVisible();
   expect(state.reads.map((read) => read.buyer)).toContain('buyer-b');
   await expect(page.getByText(`Pedido #${orderIds[0]!.slice(0, 8)}`)).toHaveCount(0);
+});
+
+test('solo pending permite cancelar y el detalle explica cancelación y vencimiento', async ({
+  page,
+}, testInfo) => {
+  const state = await gateway(page);
+  for (const order of state.orders) {
+    await page.goto(`/orders/${order.id}`);
+    await expect(page.getByRole('heading', { name: 'Estado del pedido' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Cancelar pedido', exact: true })).toHaveCount(
+      order.status === 'pending' ? 1 : 0,
+    );
+    if (order.status === 'cancelled' || order.status === 'expired') {
+      await expect(
+        page.getByText(order.status === 'cancelled' ? 'Cancelado' : 'Vencido', { exact: true }),
+      ).toBeVisible();
+      await expect(page.getByRole('status')).toContainText(
+        rejectionReasons[order.rejectionReason!]!,
+      );
+    }
+  }
+  await page.screenshot({ path: testInfo.outputPath('order-expired-desktop.png'), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
+    .toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('order-expired-mobile.png'), fullPage: true });
+  await page.goto(`/orders/${orderIds[1]}`);
+  await page.getByRole('button', { name: 'Cancelar pedido', exact: true }).click();
+  await page.getByRole('button', { name: 'Sí, cancelar pedido' }).click();
+  await expect(page.getByText('Cancelado', { exact: true })).toBeVisible();
+  expect(state.cancellations).toBe(1);
+});
+
+test('reasons de cierre explican devolución de stock y permiten reintentar', () => {
+  expect(rejectionReasons.order_cancelled).toContain('Cancelaste el pedido');
+  expect(rejectionReasons.order_expired).toContain('El plazo para pagar terminó');
+  for (const reason of ['order_cancelled', 'order_expired']) {
+    expect(rejectionReasons[reason]).toContain('devolviendo las unidades al stock');
+    expect(rejectionReasons[reason]).toContain('volver a comprar');
+  }
 });

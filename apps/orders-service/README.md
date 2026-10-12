@@ -1,6 +1,20 @@
 # Orders y pagos Polar
 
-Orders es un proceso Node/Hono en `:3002`. Publica `orders.placed`, crea el checkout al recibir `inventory.reserved` y mantiene el pedido en `pending` hasta recibir `payment.succeeded` o un rechazo. Polar es el único proveedor, con sandbox por defecto.
+Orders es un proceso Node/Hono en `:3002`. Publica `orders.placed` y crea el checkout al recibir `inventory.reserved`. Un pedido pasa de `pending` a `confirmed`, `rejected`, `cancelled` o `expired`. Polar es el único proveedor, con sandbox por defecto.
+
+## Vencimiento y cancelación
+
+Ejecuta `pnpm --filter @mercadoya/orders-service db:migrate` antes de desplegar esta versión. `0005_order_lifecycle.sql` añade el plazo del pedido y rellena los pendientes anteriores con su fecha de creación más el TTL. Si ese plazo ya pasó, el worker los cerrará al arrancar. La migración es aditiva e idempotente.
+
+`ORDER_PENDING_TTL_MINUTES` define el plazo inicial, con 15 minutos por defecto. `ORDER_EXPIRY_GRACE_SECONDS` añade 120 segundos por defecto al vencimiento absoluto del checkout Polar. El worker existente cierra un pendiente vencido por tick sin depender de `checkout.expired`, incluidos los pedidos sin reserva y los checkouts `creating` inciertos.
+
+El comprador puede llamar a `POST /api/orders/:orderId/cancel` a través de Kong, sin cuerpo. Recibe 202 con el pedido cancelado, o 200 si ya estaba cancelado. Un UUID inválido responde 400; sin sesión, 401; pedido ajeno o ausente, 404. Otros estados finales responden 409. Consulta Polar antes de abrir la transacción y sin bloquear filas, con el timeout `POLAR_GET_TIMEOUT_MS`, de 5000 ms por defecto. Si Polar indica que el pago está en proceso, devuelve 409 "El pago se está procesando". Si la consulta falla o vence el timeout, devuelve 503 sin modificar el pedido. Dentro de la transacción verifica otra vez el pedido y el ID y estado del checkout; si el checkout cambió, devuelve 409 y permite reintentar.
+
+El barrido excluye los pedidos cuyo checkout local ya está `succeeded`, aunque sigan pendientes. Registra `order.expiry_skipped_paid` para reparación manual y continúa venciendo los demás; no confirma esos pedidos automáticamente.
+
+El cierre encola `payment.failed` con reason `order_cancelled` u `order_expired` en la outbox. Inventory devuelve el stock y Notifications omite el correo de pago fallido. Una reserva posterior al cierre encola la misma compensación. Los reintentos de creación republican `orders.placed` mientras el pedido siga pendiente, no haya vencido y no tenga checkout local. Si publicar falla, el HTTP responde 503 y permite reintentar la misma clave.
+
+Un pago válido posterior al cierre queda en `orders_payment_checkout.late_payment` y en el log `payment.late_after_close`, sin confirmar el pedido. El reembolso queda a cargo del operador: consulta `late_payment IS NOT NULL`, verifica providerOrderId e importe en Polar y registra la referencia del reembolso manual. No hay integración de refunds. Consulta la [decisión y los límites de transporte](../../docs/adr/0023-vencimiento-cancelacion-pedidos.md).
 
 ## Preparar sandbox
 
@@ -125,6 +139,8 @@ pnpm --filter @mercadoya/orders-service db:migrate
 
 Los subjects y `version: 1` se conservan. Los resultados de pago y `inventory.released` añaden campos opcionales `provider: "polar"`, `eventId`, `checkoutId` y `providerOrderId`. `eventId` viene de **webhook-id**, que se repite en reintentos; no es `event.data.id`. Polar recibe `metadata.order_id`, que identifica el pedido local, y `order.paid.data.checkout_id` identifica la sesión Polar. Inventory libera usando el `orderId` actual y conserva la correlación en `inventory.released`. Notifications sigue validando los contratos v1 y enviando por desenlace.
 
+`processOutcome` confirma el pedido en la misma transacción que guarda el pago exitoso. La confirmación ya no depende de que llegue `payment.succeeded` al consumidor NATS de Orders; ese consumidor conserva su guarda idempotente. El evento sigue notificando a los demás consumidores. Este cambio al flujo del ADR 0019 evita que una cancelación cierre el pedido antes de que el consumidor confirme. Consulta [ADR 0023](../../docs/adr/0023-vencimiento-cancelacion-pedidos.md).
+
 | Entrada Polar                                                                                  | Resultado saga                                                      |
 | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | `order.paid`, con `paid=true`, estado `paid`, checkout e importe/moneda coincidentes           | `payment.succeeded`; Orders confirma y conserva el stock reservado. |
@@ -134,7 +150,7 @@ Los subjects y `version: 1` se conservan. Los resultados de pago y `inventory.re
 | Rechazo definitivo de Checkout API                                                             | `payment.failed`, con razón de creación; Inventory compensa.        |
 | `checkout.updated`, estado `open`, `confirmed` o `succeeded`; órdenes pendientes y demás tipos | Sin confirmación ni compensación. Se espera `order.paid`.           |
 
-Todos los fallos terminales activan la compensación de Inventory. Los pedidos de un producto conservan la liberación anterior; los carritos restauran todas las líneas en una transacción idempotente y conservan la reserva marcada como liberada para ignorar una reserva tardía. Ambos publican `inventory.released`. El rechazo y el correo pueden aparecer antes de la liberación. Polar no define `checkout.canceled`: volver al comercio o cerrar la pestaña mantiene la reserva hasta la expiración; una orden anulada usa `void`. Cancelaciones de suscripciones y reembolsos posteriores al pago no representan un fallo de esta compra única.
+Todos los fallos terminales activan la compensación de Inventory. Los carritos restauran todas las líneas mediante el ajuste idempotente de Catalog. Tanto carritos como productos únicos conservan la reserva marcada como liberada para ignorar un `orders.placed` tardío. Ambos publican `inventory.released`. El cierre y el correo de un fallo de pago pueden aparecer antes de la liberación; las cancelaciones y los vencimientos del pedido no envían ese correo. Polar no define `checkout.canceled`: regresar o cerrar la pestaña conserva la reserva hasta el vencimiento en servidor o la cancelación explícita del comprador. Una orden anulada en Polar usa `void`. Cancelaciones de suscripciones y reembolsos posteriores al pago no representan un fallo de esta compra única.
 
 ## Reintentos y límites
 
@@ -142,7 +158,7 @@ El inbox deduplica por event id en PostgreSQL, también después de reiniciar y 
 
 El worker publica antes del commit y reintenta los fallos de publicación desde el inbox. Una caída después de publicar y antes del commit puede repetir el mismo evento con el mismo `eventId`. Orders y la compensación de Inventory ya son idempotentes. Esta es entrega **at-least-once desde el inbox al publisher**, no una garantía de recepción para consumidores desconectados. NATS Core no guarda ni reproduce mensajes; `flush()` no es un ACK del consumidor. Tampoco recupera automáticamente `orders.placed`/`inventory.reserved` perdidos durante una desconexión. No se añadió outbox ni JetStream.
 
-Una creación de checkout con error de red/5xx puede haber completado en Polar. Orders conserva `creating` y busca la sesión por `metadata.order_id` cada 30 segundos, sin emitir un segundo POST ni liberar una reserva que todavía podría cobrarse. Si la llamada nunca llegó a Polar, un operador debe comprobarlo antes de reactivar ese intento. `payment.checkout_uncertain` identifica el pedido que requiere esa comprobación; no incluye secretos. Si falta la entrega de un webhook, reenvíala desde el dashboard con el mismo event id. Supervisa `payment.webhook_retry` y `payment.outcome_ignored`.
+Una creación de checkout con error de red/5xx puede haber completado en Polar. Orders conserva `creating` y busca la sesión por `metadata.order_id` cada 30 segundos, sin emitir un segundo POST, hasta que el pedido vence o se cancela. El cierre devuelve el stock aunque la creación siga incierta. Un operador debe revisar el checkout remoto antes de reactivar ese intento; podría recibir un pago después del cierre. `payment.checkout_uncertain` identifica el pedido que requiere esa comprobación; no incluye secretos. Si falta la entrega de un webhook, reenvíala desde el dashboard con el mismo event id. Supervisa `payment.webhook_retry`, `payment.outcome_ignored` y `payment.late_after_close`.
 
 Polar puede reintentar entregas hasta diez veces, aplica timeout de diez segundos y recomienda responder antes de dos segundos. Diez entregas consecutivas fallidas pueden deshabilitar el endpoint. El worker conserva los eventos ya aceptados independientemente de esos reintentos.
 

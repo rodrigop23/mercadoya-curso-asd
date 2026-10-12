@@ -2,7 +2,7 @@
 openapi: 3.1.0
 info:
   title: MercadoYa Orders
-  version: 2.3.0
+  version: 2.4.0
   description: Kong acepta sesión browser o JWT para pedidos y checkout. Orders directo requiere Bearer JWT verificado por JWKS. Health y webhook Polar públicos; webhook usa firma Standard Webhooks.
 servers:
   - url: http://localhost:8000
@@ -64,7 +64,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-      description: "El comprador procede de la sesión verificada. Incluye pedidos pendientes, confirmados y rechazados, ordenados por createdAt descendente y por id descendente en caso de empate. No acepta un buyerId del cliente. Cache-Control: no-store."
+      description: "El comprador procede de la sesión verificada. Incluye pedidos pendientes, confirmados, rechazados, cancelados y vencidos, ordenados por createdAt descendente y por id descendente en caso de empate. No acepta un buyerId del cliente. Cache-Control: no-store."
     post:
       operationId: createOrder
       summary: Crear un pedido pendiente y publicar orders.placed
@@ -180,6 +180,71 @@ paths:
             format: uuid
             pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
       description: "Solo el comprador puede consultar el pedido y sus líneas. Cache-Control: no-store."
+  /api/orders/{orderId}/cancel:
+    post:
+      operationId: cancelOrder
+      summary: Cancelar un pedido pendiente del comprador
+      security:
+        - betterAuthSession: []
+        - applicationJWT: []
+      responses:
+        "200":
+          description: El pedido ya estaba cancelado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderResponse"
+        "202":
+          description: Pedido cancelado; la devolución de stock continúa por la outbox.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderResponse"
+        "400":
+          description: Solicitud inválida.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Falta una sesión o credencial válida.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: El pedido ya finalizó o el pago se está procesando.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: El servicio remoto no está disponible.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Servicio no disponible o configuración incompleta.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+      description: "Sin cuerpo. Solo el comprador puede cancelar. Consulta Polar antes de cerrar un checkout abierto. Un fallo remoto devuelve 503 sin cancelar. Cache-Control: no-store."
   /api/orders/{orderId}/checkout:
     get:
       operationId: getPaymentCheckout
@@ -399,10 +464,24 @@ components:
                   - pending
                   - confirmed
                   - rejected
+                  - cancelled
+                  - expired
               rejectionReason:
                 type:
                   - string
                   - "null"
+              expiresAt:
+                anyOf:
+                  - type: string
+                    format: date-time
+                    pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$
+                  - type: "null"
+              cancelledAt:
+                anyOf:
+                  - type: string
+                    format: date-time
+                    pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$
+                  - type: "null"
               createdAt:
                 type: string
                 format: date-time
@@ -511,10 +590,24 @@ components:
                 - pending
                 - confirmed
                 - rejected
+                - cancelled
+                - expired
             rejectionReason:
               type:
                 - string
                 - "null"
+            expiresAt:
+              anyOf:
+                - type: string
+                  format: date-time
+                  pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$
+                - type: "null"
+            cancelledAt:
+              anyOf:
+                - type: string
+                  format: date-time
+                  pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$
+                - type: "null"
             createdAt:
               type: string
               format: date-time

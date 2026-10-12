@@ -39,7 +39,7 @@ test('Orders mantiene límites HTTP y descarta importes del cliente', () => {
     createdAt: date,
     updatedAt: date,
   };
-  for (const status of ['pending', 'confirmed', 'rejected'])
+  for (const status of ['pending', 'confirmed', 'rejected', 'cancelled', 'expired'])
     assert.equal(orderResponseSchema.safeParse({ order: { ...order, status } }).success, true);
   assert.equal(
     orderResponseSchema.safeParse({ order: { ...order, status: 'paid' } }).success,

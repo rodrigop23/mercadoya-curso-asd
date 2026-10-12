@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { ArrowLeft, ArrowRight, CheckCircle2, CircleAlert, Clock } from 'lucide-react';
+import { ArrowLeft, ArrowRight } from 'lucide-react';
 
 import { Button, buttonVariants } from '@mercadoya/ui/components/button';
 import {
@@ -14,6 +14,7 @@ import { Separator } from '@mercadoya/ui/components/separator';
 import { Spinner } from '@mercadoya/ui/components/spinner';
 import { authClient } from '@/lib/auth-client';
 import { OrderRequestError, ordersQueryOptions, type Order } from '@/lib/orders';
+import { OrderStatusBadge } from '@/features/cart/order-status-badge';
 import { priceFormatter } from '@/lib/products';
 
 export const Route = createFileRoute('/orders/')({ component: OrdersPage });
@@ -22,12 +23,6 @@ const dateFormatter = new Intl.DateTimeFormat('es-PE', {
   dateStyle: 'medium',
   timeStyle: 'short',
 });
-
-const statuses = {
-  pending: { label: 'Pendiente', icon: Clock },
-  confirmed: { label: 'Confirmado', icon: CheckCircle2 },
-  rejected: { label: 'Rechazado', icon: CircleAlert },
-};
 
 function OrdersPage() {
   const { data: session, isPending: sessionPending } = authClient.useSession();
@@ -124,8 +119,6 @@ function LoadingOrders({ label }: { label: string }) {
 }
 
 function OrderRow({ order }: { order: Order }) {
-  const status = statuses[order.status];
-  const StatusIcon = status.icon;
   const quantity = order.items?.reduce((sum, item) => sum + item.quantity, 0) ?? order.quantity;
   const title = order.items?.length
     ? order.items.map((item) => item.title).join(', ')
@@ -144,10 +137,7 @@ function OrderRow({ order }: { order: Order }) {
           {dateFormatter.format(new Date(order.createdAt))}
         </time>
       </div>
-      <span className="flex items-center gap-2 text-sm">
-        <StatusIcon className="size-4 shrink-0" aria-hidden="true" />
-        {status.label}
-      </span>
+      <OrderStatusBadge status={order.status} />
       <div className="flex items-center justify-between gap-4 sm:justify-end">
         <span className="text-sm font-semibold tabular-nums">
           {order.totalAmount != null

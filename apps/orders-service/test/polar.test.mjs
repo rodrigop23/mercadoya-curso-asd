@@ -3,7 +3,7 @@ import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import { Hono } from 'hono';
-import { paymentProvider, polarConfig } from '../dist/payment/config.js';
+import { paymentProvider, polarConfig, polarGetTimeoutMs } from '../dist/payment/config.js';
 import {
   CheckoutRateLimited,
   CheckoutRejected,
@@ -197,6 +197,13 @@ test('Polar es el único proveedor y exige credenciales', () => {
   );
 });
 
+test('el timeout de GET Polar es configurable y valida un plazo positivo', () => {
+  assert.equal(polarGetTimeoutMs({}), 5000);
+  assert.equal(polarGetTimeoutMs({ POLAR_GET_TIMEOUT_MS: '80' }), 80);
+  for (const value of ['', '0', '-1', '1.5', 'bad', '2147483648'])
+    assert.throws(() => polarGetTimeoutMs({ POLAR_GET_TIMEOUT_MS: value }));
+});
+
 test('SDK 1.0.1 fija API 2026-04, sandbox, precio total y correlación server-side', async () => {
   const productId = randomUUID();
   const polarProductId = randomUUID();
@@ -250,6 +257,26 @@ test('SDK 1.0.1 fija API 2026-04, sandbox, precio total y correlación server-si
     assert.equal((await gateway.create(event, snapshot)).id, checkoutId);
     await assert.rejects(gateway.create(event, null), CheckoutRejected);
     await assert.rejects(gateway.create(event, { ...snapshot, currency: 'usd' }), CheckoutRejected);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Gateway consulta el status de un checkout por GET sin mutarlo', async () => {
+  const gateway = createPolarGateway({
+    accessToken: 'fixture',
+    webhookSecret: secret,
+    server: 'sandbox',
+    webOrigin: 'http://localhost:5173',
+  });
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async (url, init) => {
+      assert.equal(new URL(url).pathname, `/v1/checkouts/${checkoutId}`);
+      assert.equal(init.method, 'GET');
+      return Response.json({ id: checkoutId, status: 'confirmed' });
+    };
+    assert.equal((await gateway.get(checkoutId)).status, 'confirmed');
   } finally {
     globalThis.fetch = originalFetch;
   }

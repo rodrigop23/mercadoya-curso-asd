@@ -8,7 +8,7 @@ import {
   orderPlacedEventSchema,
   type CatalogStockContract,
 } from '@mercadoya/contracts';
-import { createInventoryContract } from './service.js';
+import { createInventoryContract, ReleasedReservationError } from './service.js';
 import type { IdentityContract } from '../identity/contract.js';
 import type { EventBus } from '../events/event-bus.js';
 import { logEvent } from '../events/logger.js';
@@ -39,12 +39,24 @@ export function createInventoryModule(
     },
     async onOrderPlaced(payload: unknown) {
       const event = orderPlacedEventSchema.parse(payload);
-      const result = await contract.reserve({
-        orderId: event.orderId,
-        productId: event.productId,
-        quantity: event.quantity,
-        items: event.items,
-      });
+      let result;
+      try {
+        result = await contract.reserve({
+          orderId: event.orderId,
+          productId: event.productId,
+          quantity: event.quantity,
+          items: event.items,
+        });
+      } catch (error) {
+        if (!(error instanceof ReleasedReservationError)) throw error;
+        logEvent({
+          type: 'inventory.reservation_ignored',
+          transport: eventBus.transport,
+          orderId: event.orderId,
+          reason: 'reservation_released',
+        });
+        return;
+      }
       const occurredAt = new Date().toISOString();
 
       if (result.reserved) {

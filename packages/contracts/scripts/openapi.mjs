@@ -161,7 +161,7 @@ documents.set(
   'apps/orders-service/openapi.yaml',
   doc(
     'Orders',
-    '2.3.0',
+    '2.4.0',
     {
       '/api/orders/health': {
         get: op('ordersHealth', 'Estado de Orders', { 200: health('orders') }),
@@ -180,7 +180,7 @@ documents.set(
           {
             security: applicationAuth,
             description:
-              'El comprador procede de la sesión verificada. Incluye pedidos pendientes, confirmados y rechazados, ordenados por createdAt descendente y por id descendente en caso de empate. No acepta un buyerId del cliente. Cache-Control: no-store.',
+              'El comprador procede de la sesión verificada. Incluye pedidos pendientes, confirmados, rechazados, cancelados y vencidos, ordenados por createdAt descendente y por id descendente en caso de empate. No acepta un buyerId del cliente. Cache-Control: no-store.',
           },
         ),
         post: op(
@@ -211,6 +211,27 @@ documents.set(
             parameters: [id('orderId')],
             description:
               'Solo el comprador puede consultar el pedido y sus líneas. Cache-Control: no-store.',
+          },
+        ),
+      },
+      '/api/orders/{orderId}/cancel': {
+        post: op(
+          'cancelOrder',
+          'Cancelar un pedido pendiente del comprador',
+          {
+            202: response(
+              'Pedido cancelado; la devolución de stock continúa por la outbox.',
+              'OrderResponse',
+            ),
+            200: response('El pedido ya estaba cancelado.', 'OrderResponse'),
+            ...errors(400, 401, 404, 502, 503),
+            409: response('El pedido ya finalizó o el pago se está procesando.', 'Error'),
+          },
+          {
+            security: applicationAuth,
+            parameters: [id('orderId')],
+            description:
+              'Sin cuerpo. Solo el comprador puede cancelar. Consulta Polar antes de cerrar un checkout abierto. Un fallo remoto devuelve 503 sin cancelar. Cache-Control: no-store.',
           },
         ),
       },

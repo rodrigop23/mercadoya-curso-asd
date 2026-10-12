@@ -4,10 +4,12 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, CreditCard, LoaderCircle, ShoppingCart, Trash2 } from 'lucide-react';
 import { Button, buttonVariants } from '@mercadoya/ui/components/button';
 import { Separator } from '@mercadoya/ui/components/separator';
+import { cn } from '@mercadoya/ui/lib/utils';
 import { useCart } from '@/features/cart/cart-context';
 import { QuantityControl } from '@/features/cart/quantity-control';
 import { ProductThumbnail } from '@/features/cart/product-thumbnail';
 import { OrderItems } from '@/features/cart/order-items';
+import { CancelOrderButton } from '@/features/cart/cancel-order-button';
 import { authClient } from '@/lib/auth-client';
 import {
   checkoutQueryOptions,
@@ -53,7 +55,7 @@ function CartPage() {
     },
   });
 
-  const { setPendingOrder, completeOrder, releaseCheckout } = cart;
+  const { setPendingOrder, completeOrder, releaseCheckout, releaseClosedOrder } = cart;
   useEffect(() => {
     if (!order) return;
     if (order.status === 'confirmed') {
@@ -63,8 +65,19 @@ function CartPage() {
     } else if (order.status === 'rejected') {
       releaseCheckout('El pedido no se completó. Revisa las cantidades y vuelve a intentarlo.');
       void queryClient.invalidateQueries({ queryKey: productsQueryOptions.queryKey });
+    } else if (order.status === 'cancelled' || order.status === 'expired') {
+      releaseClosedOrder(order);
+      void queryClient.invalidateQueries({ queryKey: productsQueryOptions.queryKey });
     } else setPendingOrder(order.id);
-  }, [order, setPendingOrder, completeOrder, releaseCheckout, navigate, queryClient]);
+  }, [
+    order,
+    setPendingOrder,
+    completeOrder,
+    releaseCheckout,
+    releaseClosedOrder,
+    navigate,
+    queryClient,
+  ]);
 
   useEffect(() => {
     if (checkout && order?.status === 'pending' && !cart.redirected) {
@@ -92,6 +105,7 @@ function CartPage() {
     productsQuery.isSuccess &&
     !mutation.isPending &&
     !sessionPending;
+  const failureKind = mutation.error ? 'error' : cart.failureKind;
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-12">
@@ -268,8 +282,15 @@ function CartPage() {
                     : 'Pagar'}
               </Button>
             )}
+            {session && orderId && (!order || pending) && <CancelOrderButton orderId={orderId} />}
             {(mutation.error || cart.failureReason) && (
-              <p role="alert" className="text-sm leading-6 text-destructive">
+              <p
+                role={failureKind === 'closed' ? 'status' : 'alert'}
+                className={cn(
+                  'text-sm leading-6',
+                  failureKind === 'closed' ? 'text-muted-foreground' : 'text-destructive',
+                )}
+              >
                 {mutation.error?.message ?? cart.failureReason}
               </p>
             )}

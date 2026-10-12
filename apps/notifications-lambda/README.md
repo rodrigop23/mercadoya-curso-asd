@@ -10,6 +10,8 @@ Notifications recibe solo los desenlaces `payment.succeeded`, `inventory.rejecte
 
 El bridge no se suscribe a `orders.placed`, `inventory.reserved` ni `inventory.released`. Si llegan directamente al handler autenticado, responde 202 sin enviar correo. La reserva de stock no confirma un pedido.
 
+El handler también omite `payment.failed` con reason `order_cancelled` u `order_expired`. Responde 202 con `ignored: true` y registra `notification.ignored`, sin renderizar ni enviar el correo de pago fallido. La cancelación y el vencimiento se muestran en la web. Consulta [ADR 0023](../../docs/adr/0023-vencimiento-cancelacion-pedidos.md).
+
 NATS no invoca Lambda por sí mismo. `src/bridge.ts` mantiene tres suscripciones NATS con grupos de cola distintos. Si `NOTIFICATIONS_FUNCTION_URL` está vacía, llama al mismo `handler` en el proceso local. Si tiene una URL, hace `POST` a la Function URL. Las reglas de notificación viven en `src/handler.ts`, fuera del bridge.
 
 ## Clase local sin AWS

@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import {
   eventSubjects,
   orderPlacedEventSchema,
@@ -6,11 +6,12 @@ import {
   type CartItem,
 } from '@mercadoya/contracts';
 
-import { db } from '../db/index.js';
+import { db, pool } from '../db/index.js';
 import type { EventBus } from '../events/event-bus.js';
 import { orderRecord, type OrderStatus } from './schema.js';
 import type { CatalogBillingPort } from '../catalog/http.js';
 import { CatalogBillingError } from '../catalog/http.js';
+import { orderLifecycleConfig } from './lifecycle.js';
 
 export type CreateOrderInput = CreateOrderRequest & { buyerId: string | null };
 
@@ -39,6 +40,28 @@ function sameItems(a: CartItem[], b: CartItem[]) {
 }
 
 export function createOrdersService(eventBus: EventBus, catalog: CatalogBillingPort) {
+  const { minutes } = orderLifecycleConfig();
+  async function publishPlaced(row: typeof orderRecord.$inferSelect) {
+    const event = orderPlacedEventSchema.parse({
+      version: 1,
+      orderId: row.id,
+      productId: row.productId,
+      quantity: row.quantity,
+      ...(row.items
+        ? { items: row.items.map(({ productId, quantity }) => ({ productId, quantity })) }
+        : {}),
+      buyerId: row.buyerId,
+      occurredAt: row.createdAt.toISOString(),
+    });
+    try {
+      await eventBus.publish(eventSubjects.ordersPlaced, event);
+    } catch {
+      throw new CatalogBillingError(
+        503,
+        'No se pudo iniciar el pedido. Reintenta con el mismo pedido.',
+      );
+    }
+  }
   return {
     async createOrder(input: CreateOrderInput) {
       const lines =
@@ -58,6 +81,15 @@ export function createOrdersService(eventBus: EventBus, catalog: CatalogBillingP
           )
         )
           throw new CatalogBillingError(409, 'Este intento de pago ya corresponde a otro pedido.');
+        if (existing.status === 'pending') {
+          const { rowCount } = await pool.query(
+            `SELECT 1 FROM orders_order o WHERE o.id=$1 AND o.status='pending'
+              AND o.expires_at > now()
+              AND NOT EXISTS (SELECT 1 FROM orders_payment_checkout p WHERE p.order_id=o.id)`,
+            [existing.id],
+          );
+          if (rowCount) await publishPlaced(existing);
+        }
         return { order: publicOrder(existing) };
       };
       const existing = await readExisting();
@@ -87,6 +119,7 @@ export function createOrdersService(eventBus: EventBus, catalog: CatalogBillingP
           paymentProduct,
           items: 'items' in input ? snapshots : null,
           status: 'pending',
+          expiresAt: sql`now() + ${minutes} * interval '1 minute'`,
         })
         .onConflictDoNothing()
         .returning();
@@ -97,17 +130,7 @@ export function createOrdersService(eventBus: EventBus, catalog: CatalogBillingP
         throw new Error('No se pudo guardar el pedido.');
       }
 
-      // La saga mantiene pending hasta el resultado de Payment o el rechazo de Inventory.
-      const event = orderPlacedEventSchema.parse({
-        version: 1,
-        orderId: createdOrder.id,
-        productId: paymentProduct.productId,
-        quantity: paymentProduct.quantity,
-        ...('items' in input ? { items: lines } : {}),
-        buyerId: input.buyerId,
-        occurredAt: new Date().toISOString(),
-      });
-      await eventBus.publish(eventSubjects.ordersPlaced, event);
+      await publishPlaced(createdOrder);
 
       return { order: publicOrder(createdOrder) };
     },

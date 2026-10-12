@@ -32,6 +32,9 @@ async function gateway(page: Page, initialBuyer: string | null = 'cart-buyer') {
     order: null as Record<string, unknown> | null,
     status: 'pending',
     failNext: false,
+    cancelStatus: 202,
+    cancelDelay: 0,
+    cancellations: 0,
     images: [] as string[],
   };
   await page.route('http://localhost:8000/**', async (route) => {
@@ -107,8 +110,30 @@ async function gateway(page: Page, initialBuyer: string | null = 'cart-buyer') {
           createdAt: timestamp,
           updatedAt: timestamp,
         };
-        body = { order: { ...state.order, status: state.status } };
+        body = {
+          order: {
+            ...state.order,
+            status: state.status,
+            rejectionReason:
+              state.status === 'expired'
+                ? 'order_expired'
+                : state.status === 'cancelled'
+                  ? 'order_cancelled'
+                  : null,
+          },
+        };
         status = 202;
+      }
+    } else if (path.endsWith('/cancel')) {
+      state.cancellations++;
+      await new Promise((resolve) => setTimeout(resolve, state.cancelDelay));
+      status = state.cancelStatus;
+      if (status === 409) body = { error: 'El pago se está procesando' };
+      else {
+        state.status = 'cancelled';
+        body = {
+          order: { ...state.order, status: state.status, rejectionReason: 'order_cancelled' },
+        };
       }
     } else if (path.endsWith('/checkout'))
       body = {
@@ -124,7 +149,19 @@ async function gateway(page: Page, initialBuyer: string | null = 'cart-buyer') {
           : null,
       };
     else if (path.startsWith('/api/orders/')) {
-      if (state.order) body = { order: { ...state.order, status: state.status } };
+      if (state.order)
+        body = {
+          order: {
+            ...state.order,
+            status: state.status,
+            rejectionReason:
+              state.status === 'expired'
+                ? 'order_expired'
+                : state.status === 'cancelled'
+                  ? 'order_cancelled'
+                  : null,
+          },
+        };
       else {
         status = 404;
         body = { error: 'El pedido no existe.' };
@@ -350,6 +387,7 @@ test('error incierto conserva carrito y reintenta con la misma clave de pedido',
   state.failNext = true;
   await page.getByRole('button', { name: 'Pagar', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Reintenta el pago');
+  await expect(page.getByRole('alert')).toHaveClass(/text-destructive/);
   await expect(
     page.getByRole('button', { name: 'Agregar una unidad de Palta fresca' }),
   ).toBeDisabled();
@@ -395,9 +433,169 @@ test('regresar de Polar conserva el pedido y un rechazo permite corregir las can
   state.status = 'rejected';
   await page.reload();
   await expect(page.getByRole('alert')).toContainText('El pedido no se completó');
+  await expect(page.getByRole('alert')).toHaveClass(/text-destructive/);
   await expect(
     page.getByRole('button', { name: 'Restar una unidad de Palta fresca' }),
   ).toBeEnabled();
   await page.getByRole('button', { name: 'Restar una unidad de Palta fresca' }).click();
   await expect(page.getByRole('link', { name: 'Abrir carrito, 2 unidades' })).toBeVisible();
 });
+
+test('cancelar desde el carrito confirma, muestra carga y conserva las líneas desbloqueadas', async ({
+  page,
+}, testInfo) => {
+  const state = await gateway(page);
+  await addProducts(page);
+  await page.goto('/cart');
+  await expect(page.getByRole('button', { name: 'Cancelar pedido', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Pagar', exact: true }).click();
+  await expect(page).toHaveURL('https://sandbox.polar.sh/checkout/cart-test');
+  await page.getByRole('link', { name: 'Volver al carrito', exact: true }).click();
+  await page.getByRole('button', { name: 'Cancelar pedido', exact: true }).click();
+  await page.getByRole('button', { name: 'Seguir con el pedido' }).click();
+  expect(state.cancellations).toBe(0);
+  await page.getByRole('button', { name: 'Cancelar pedido', exact: true }).click();
+  state.cancelDelay = 500;
+  await page.getByRole('button', { name: 'Sí, cancelar pedido' }).click();
+  await expect(page.getByRole('button', { name: 'Cancelando…' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Seguir con el pedido' })).toBeDisabled();
+  await expect(page.getByRole('alertdialog')).toBeHidden();
+  await expect(page.getByRole('status')).toContainText('Cancelaste el pedido');
+  await expect(page.getByRole('status')).toHaveClass(/text-muted-foreground/);
+  await expect(page.getByRole('status')).not.toHaveClass(/text-destructive/);
+  await expect(page.getByRole('button', { name: 'Cancelar pedido', exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole('button', { name: 'Restar una unidad de Palta fresca' }),
+  ).toBeEnabled();
+  await expect(page.getByRole('link', { name: 'Abrir carrito, 3 unidades' })).toBeVisible();
+  const saved = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('mercadoya:cart:v1:cart-buyer')!),
+  );
+  expect(saved.items).toHaveLength(2);
+  expect(saved.checkoutKey).toBeNull();
+  expect(saved.pendingOrderId).toBeNull();
+  expect(saved.failureKind).toBe('closed');
+  expect(state.cancellations).toBe(1);
+  await captureReview(page, testInfo, 'cart-cancelled-desktop.png');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await noOverflow(page);
+  await captureReview(page, testInfo, 'cart-cancelled-mobile.png');
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Pagar', exact: true })).toBeEnabled();
+});
+
+test('pago en proceso muestra aviso 409 y mantiene el pedido y el carrito bloqueados', async ({
+  page,
+}) => {
+  const state = await gateway(page);
+  await addProducts(page);
+  await page.goto('/cart');
+  await page.getByRole('button', { name: 'Pagar', exact: true }).click();
+  await expect(page).toHaveURL('https://sandbox.polar.sh/checkout/cart-test');
+  await page.getByRole('link', { name: 'Volver al carrito', exact: true }).click();
+  state.cancelStatus = 409;
+  await page.getByRole('button', { name: 'Cancelar pedido', exact: true }).click();
+  await page.getByRole('button', { name: 'Sí, cancelar pedido' }).click();
+  await expect(page.getByRole('status')).toContainText('El pago se está procesando');
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Continuar pago' })).toBeVisible();
+  expect(state.status).toBe('pending');
+  const saved = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('mercadoya:cart:v1:cart-buyer')!),
+  );
+  expect(saved.pendingOrderId).toBe(state.order!.id);
+});
+
+for (const detail of [false, true])
+  test(`vencimiento desbloquea el carrito con sus líneas desde ${detail ? 'el detalle' : 'el carrito'}`, async ({
+    page,
+  }) => {
+    const state = await gateway(page);
+    await addProducts(page);
+    await page.goto('/cart');
+    await page.getByRole('button', { name: 'Pagar', exact: true }).click();
+    await expect(page).toHaveURL('https://sandbox.polar.sh/checkout/cart-test');
+    state.status = 'expired';
+    await page.goto(detail ? `/orders/${state.order!.id}` : '/cart');
+    if (detail) await expect(page.getByText('Vencido', { exact: true })).toBeVisible();
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => JSON.parse(localStorage.getItem('mercadoya:cart:v1:cart-buyer')!).pendingOrderId,
+        ),
+      )
+      .toBeNull();
+    await page.goto('/cart');
+    await expect(page.getByRole('status')).toContainText('El pedido venció');
+    await expect(page.getByRole('status')).toHaveClass(/text-muted-foreground/);
+    await expect(page.getByRole('status')).not.toHaveClass(/text-destructive/);
+    await expect(
+      page.getByRole('button', { name: 'Restar una unidad de Palta fresca' }),
+    ).toBeEnabled();
+    await expect(page.getByRole('link', { name: 'Abrir carrito, 3 unidades' })).toBeVisible();
+  });
+
+test('cancelar desde el detalle desbloquea el carrito correspondiente', async ({ page }) => {
+  const state = await gateway(page);
+  await addProducts(page);
+  await page.goto('/cart');
+  await page.getByRole('button', { name: 'Pagar', exact: true }).click();
+  await expect(page).toHaveURL('https://sandbox.polar.sh/checkout/cart-test');
+  await page.goto(`/orders/${state.order!.id}`);
+  await page.getByRole('button', { name: 'Cancelar pedido', exact: true }).click();
+  await page.getByRole('button', { name: 'Sí, cancelar pedido' }).click();
+  await expect(page.getByText('Cancelado', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Cancelar pedido', exact: true })).toHaveCount(0);
+  await page.goto('/cart');
+  await expect(
+    page.getByRole('button', { name: 'Restar una unidad de Palta fresca' }),
+  ).toBeEnabled();
+  await expect(page.getByRole('link', { name: 'Abrir carrito, 3 unidades' })).toBeVisible();
+});
+
+for (const [kind, reason] of [
+  ['closed', 'El pedido terminó y puedes volver a comprar.'],
+  ['error', 'Cancelaste otra operación, pero este pago falló.'],
+  [undefined, 'No se pudo completar el pago anterior.'],
+] as const)
+  test(`failureKind ${kind ?? 'histórico sin campo'} decide el aviso sin interpretar el texto`, async ({
+    page,
+  }, testInfo) => {
+    await gateway(page);
+    await page.addInitScript(
+      ({ kind, reason, product }) => {
+        localStorage.setItem(
+          'mercadoya:cart:v1:cart-buyer',
+          JSON.stringify({
+            items: [
+              {
+                productId: product.id,
+                quantity: 1,
+                title: product.title,
+                thumbnailPath: null,
+                unitAmount: 1025,
+              },
+            ],
+            checkoutKey: null,
+            pendingOrderId: null,
+            redirected: false,
+            failureReason: reason,
+            failureKind: kind,
+          }),
+        );
+      },
+      { kind, reason, product: productsFixture[0] },
+    );
+    await page.goto('/cart');
+    const message = page.getByText(reason, { exact: true });
+    const notice = kind === 'closed';
+    await expect(message).toHaveAttribute('role', notice ? 'status' : 'alert');
+    await expect(message).toHaveClass(notice ? /text-muted-foreground/ : /text-destructive/);
+    await expect(page.getByRole('link', { name: 'Abrir carrito, 1 unidades' })).toBeVisible();
+    if (kind === 'error') {
+      await captureReview(page, testInfo, 'cart-error-desktop.png');
+      await page.setViewportSize({ width: 390, height: 844 });
+      await noOverflow(page);
+      await captureReview(page, testInfo, 'cart-error-mobile.png');
+    }
+  });

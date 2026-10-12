@@ -2,13 +2,14 @@ import { queryOptions } from '@tanstack/react-query';
 import {
   paymentCheckoutResponseSchema,
   ordersResponseSchema,
+  orderResponseSchema,
   type CreateOrderRequest,
   type OrderItem,
 } from '@mercadoya/contracts';
 
 import { API_BASE_URL } from './products';
 
-export type OrderStatus = 'pending' | 'confirmed' | 'rejected';
+export type OrderStatus = 'pending' | 'confirmed' | 'rejected' | 'cancelled' | 'expired';
 
 export type Order = {
   id: string;
@@ -20,6 +21,8 @@ export type Order = {
   buyerId: string | null;
   status: OrderStatus;
   rejectionReason: string | null;
+  expiresAt?: string | null;
+  cancelledAt?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -68,6 +71,16 @@ export async function getOrder(orderId: string): Promise<Order> {
 
   const data = (await response.json()) as OrderResponse;
   return data.order;
+}
+
+export async function cancelOrder(orderId: string): Promise<Order> {
+  const response = await fetch(`${API_BASE_URL}/api/orders/${encodeURIComponent(orderId)}/cancel`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (!response.ok)
+    throw await readApiError(response, 'No se pudo cancelar el pedido. Inténtalo de nuevo.');
+  return orderResponseSchema.parse(await response.json()).order;
 }
 
 export function orderQueryOptions(orderId: string) {

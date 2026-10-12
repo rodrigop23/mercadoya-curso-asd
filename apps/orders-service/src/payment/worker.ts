@@ -21,6 +21,16 @@ import {
   type PolarGateway,
 } from './polar.js';
 import type { PaymentOutcome } from './webhook.js';
+import {
+  closePendingOrder,
+  enqueueOrderClose,
+  lockOrder,
+  orderLifecycleConfig,
+  type CancelResult,
+  type LockedOrder,
+} from '../orders/lifecycle.js';
+import { CatalogBillingError } from '../catalog/http.js';
+import { polarGetTimeoutMs } from './config.js';
 
 type PaymentRow = {
   order_id: string;
@@ -38,8 +48,25 @@ type PaymentRow = {
 };
 
 export function createPaymentWorker(pool: Pool, eventBus: EventBus, gateway: PolarGateway) {
+  const { graceSeconds } = orderLifecycleConfig();
+  const getTimeoutMs = polarGetTimeoutMs();
+  const warnedPaidOrders = new Set<string>();
   let active: Promise<void> | undefined;
   let timer: ReturnType<typeof setInterval> | undefined;
+  async function readPolarCheckout(checkoutId: string) {
+    const signal = AbortSignal.timeout(getTimeoutMs);
+    let onTimeout: () => void;
+    const timedOut = new Promise<never>((_resolve, reject) => {
+      onTimeout = () => reject(signal.reason);
+      signal.addEventListener('abort', onTimeout, { once: true });
+    });
+    try {
+      // El SDK cancela su fetch; la carrera también limita gateways que ignoran el timeout.
+      return await Promise.race([gateway.get(checkoutId, getTimeoutMs), timedOut]);
+    } finally {
+      signal.removeEventListener('abort', onTimeout!);
+    }
+  }
   // El advisory lock del worker serializa esta preparación entre pedidos y réplicas.
   async function purchaseProduct(client: PoolClient): Promise<string | null> {
     await client.query(
@@ -98,10 +125,16 @@ export function createPaymentWorker(pool: Pool, eventBus: EventBus, gateway: Pol
       expires_at=$4, amount=$5, currency=$6 WHERE order_id=$1 AND state='creating'`,
       [orderId, checkout.id, checkout.url, checkout.expires_at, checkout.amount, checkout.currency],
     );
+    await client.query(
+      `UPDATE orders_order SET expires_at=GREATEST(expires_at, $2::timestamptz + $3 * interval '1 second'),
+        updated_at=now() WHERE id=$1 AND status='pending'`,
+      [orderId, checkout.expires_at, graceSeconds],
+    );
   }
   async function processOutcome(client: PoolClient, event: PaymentOutcome) {
     await client.query('BEGIN');
     try {
+      const order = await lockOrder(client, event.orderId);
       const {
         rows: [payment],
       } = await client.query<PaymentRow>(
@@ -110,11 +143,46 @@ export function createPaymentWorker(pool: Pool, eventBus: EventBus, gateway: Pol
       );
       if (!payment || (event.checkoutId && !payment.checkout_id))
         throw new Error('checkout_not_ready');
-      const mismatch = event.checkoutId && event.checkoutId !== payment.checkout_id;
+      const mismatch =
+        (event.outcome === 'succeeded' && !event.checkoutId) ||
+        (event.checkoutId && event.checkoutId !== payment.checkout_id);
       const wrongAmount =
         event.outcome === 'succeeded' &&
         (event.amount !== payment.amount || event.currency !== payment.currency);
-      if (mismatch || wrongAmount || payment.state === 'succeeded' || payment.state === 'failed') {
+      if (
+        !mismatch &&
+        !wrongAmount &&
+        event.outcome === 'succeeded' &&
+        (order?.status === 'cancelled' || order?.status === 'expired')
+      ) {
+        await client.query(
+          'UPDATE orders_payment_checkout SET late_payment=COALESCE(late_payment, $2::jsonb) WHERE order_id=$1',
+          [
+            event.orderId,
+            {
+              eventId: event.eventId,
+              providerOrderId: event.providerOrderId,
+              amount: event.amount,
+              currency: event.currency,
+              occurredAt: event.occurredAt,
+            },
+          ],
+        );
+        logEvent({
+          type: 'payment.late_after_close',
+          orderId: event.orderId,
+          eventId: event.eventId,
+          providerOrderId: event.providerOrderId,
+          amount: event.amount,
+          occurredAt: event.occurredAt,
+          status: order.status,
+        });
+      } else if (
+        mismatch ||
+        wrongAmount ||
+        payment.state === 'succeeded' ||
+        payment.state === 'failed'
+      ) {
         logEvent({
           type: 'payment.outcome_ignored',
           orderId: event.orderId,
@@ -148,6 +216,12 @@ export function createPaymentWorker(pool: Pool, eventBus: EventBus, gateway: Pol
           event.orderId,
           event.outcome,
         ]);
+        // Hacer durable la confirmación con el pago evita cancelar antes del consumidor NATS.
+        if (succeeded)
+          await client.query(
+            "UPDATE orders_order SET status='confirmed', rejection_reason=NULL, updated_at=now() WHERE id=$1 AND status='pending'",
+            [event.orderId],
+          );
       }
       await client.query('UPDATE orders_payment_webhook SET processed_at=now() WHERE event_id=$1', [
         event.eventId,
@@ -189,10 +263,52 @@ export function createPaymentWorker(pool: Pool, eventBus: EventBus, gateway: Pol
           });
         }
       }
+      if (warnedPaidOrders.size) {
+        const { rows } = await client.query<{ id: string }>(
+          "SELECT id FROM orders_order WHERE status='pending' AND id=ANY($1::uuid[])",
+          [[...warnedPaidOrders]],
+        );
+        const pendingIds = new Set(rows.map((order) => order.id));
+        for (const orderId of warnedPaidOrders)
+          if (!pendingIds.has(orderId)) warnedPaidOrders.delete(orderId);
+      }
+      const {
+        rows: [paid],
+      } = await client.query<{ id: string }>(
+        `SELECT o.id FROM orders_order o
+            WHERE o.status='pending' AND o.expires_at <= now()
+              AND NOT (o.id=ANY($1::uuid[]))
+              AND EXISTS (SELECT 1 FROM orders_payment_checkout p
+                WHERE p.order_id=o.id AND p.state='succeeded')
+            ORDER BY o.expires_at, o.id LIMIT 1`,
+        [[...warnedPaidOrders]],
+      );
+      if (paid && !warnedPaidOrders.has(paid.id)) {
+        logEvent({ type: 'order.expiry_skipped_paid', orderId: paid.id });
+        warnedPaidOrders.add(paid.id);
+      }
+      await client.query('BEGIN');
+      try {
+        const {
+          rows: [expired],
+        } = await client.query<LockedOrder>(
+          `SELECT o.* FROM orders_order o WHERE o.status='pending' AND o.expires_at <= now()
+            AND NOT EXISTS (SELECT 1 FROM orders_payment_checkout p
+              WHERE p.order_id=o.id AND p.state='succeeded')
+            ORDER BY o.expires_at, o.id LIMIT 1 FOR UPDATE OF o SKIP LOCKED`,
+        );
+        if (expired) await closePendingOrder(client, expired, 'expired');
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      }
       const {
         rows: [payment],
-      } = await client.query<PaymentRow>(`SELECT * FROM orders_payment_checkout
-        WHERE state IN ('queued', 'creating') AND next_attempt_at <= now() ORDER BY created_at LIMIT 1`);
+      } = await client.query<PaymentRow>(`SELECT p.* FROM orders_payment_checkout p
+        JOIN orders_order o ON o.id=p.order_id
+        WHERE p.state IN ('queued', 'creating') AND p.next_attempt_at <= now()
+          AND o.status='pending' AND o.expires_at > now() ORDER BY p.created_at LIMIT 1`);
       if (!payment) return;
       const reservation = inventoryReservedEventSchema.parse(payment.reservation);
       try {
@@ -224,20 +340,24 @@ export function createPaymentWorker(pool: Pool, eventBus: EventBus, gateway: Pol
             `UPDATE orders_payment_checkout SET state='creating', next_attempt_at=now()+interval '30 seconds' WHERE order_id=$1`,
             [payment.order_id],
           );
-          await saveCheckout(
-            client,
-            payment.order_id,
-            await gateway.create(
-              reservation,
-              payment.product,
-              payment.items,
-              payment.bundle_product_id,
-            ),
-          );
+          await withPendingOrder(client, payment.order_id, async () => {
+            await saveCheckout(
+              client,
+              payment.order_id,
+              await gateway.create(
+                reservation,
+                payment.product,
+                payment.items,
+                payment.bundle_product_id,
+              ),
+            );
+          });
         } else {
-          const recovered = await gateway.find(reservation);
-          if (recovered) await saveCheckout(client, payment.order_id, recovered);
-          else logEvent({ type: 'payment.checkout_uncertain', orderId: payment.order_id });
+          await withPendingOrder(client, payment.order_id, async () => {
+            const recovered = await gateway.find(reservation);
+            if (recovered) await saveCheckout(client, payment.order_id, recovered);
+            else logEvent({ type: 'payment.checkout_uncertain', orderId: payment.order_id });
+          });
           await client.query(
             `UPDATE orders_payment_checkout SET next_attempt_at=now()+interval '30 seconds' WHERE order_id=$1`,
             [payment.order_id],
@@ -246,7 +366,7 @@ export function createPaymentWorker(pool: Pool, eventBus: EventBus, gateway: Pol
       } catch (error) {
         if (error instanceof CheckoutRateLimited) {
           await client.query(
-            "UPDATE orders_payment_checkout SET state='queued', bundle_state=CASE WHEN bundle_product_id IS NULL THEN 'queued' ELSE bundle_state END WHERE order_id=$1",
+            "UPDATE orders_payment_checkout SET state='queued', bundle_state=CASE WHEN bundle_product_id IS NULL THEN 'queued' ELSE bundle_state END WHERE order_id=$1 AND state IN ('queued', 'creating')",
             [payment.order_id],
           );
         }
@@ -283,6 +403,23 @@ export function createPaymentWorker(pool: Pool, eventBus: EventBus, gateway: Pol
       }
     }
   }
+  async function withPendingOrder(client: PoolClient, orderId: string, work: () => Promise<void>) {
+    await client.query('BEGIN');
+    try {
+      const order = await lockOrder(client, orderId);
+      const {
+        rows: [deadline],
+      } = await client.query<{ valid: boolean }>(
+        'SELECT expires_at > clock_timestamp() AS valid FROM orders_order WHERE id=$1',
+        [orderId],
+      );
+      if (order?.status === 'pending' && deadline?.valid) await work();
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    }
+  }
   function tick() {
     if (!active)
       active = run().finally(() => {
@@ -293,20 +430,113 @@ export function createPaymentWorker(pool: Pool, eventBus: EventBus, gateway: Pol
   return {
     enqueue,
     tick,
+    async cancelOrder(orderId: string, buyerId: string): Promise<CancelResult> {
+      const {
+        rows: [before],
+      } = await pool.query<{
+        buyer_id: string | null;
+        status: LockedOrder['status'];
+        checkout_id: string | null;
+        payment_state: PaymentRow['state'] | null;
+      }>(
+        `SELECT o.buyer_id, o.status, p.checkout_id, p.state AS payment_state
+          FROM orders_order o LEFT JOIN orders_payment_checkout p ON p.order_id=o.id
+          WHERE o.id=$1`,
+        [orderId],
+      );
+      if (!before || before.buyer_id !== buyerId) return 'not_found';
+      if (before.status === 'cancelled') return 'already_cancelled';
+      if (before.status !== 'pending') return 'conflict';
+      if (before.payment_state === 'succeeded')
+        throw new CatalogBillingError(409, 'El pago se está procesando');
+      if (before.payment_state === 'open' && before.checkout_id) {
+        let checkout: Checkout;
+        try {
+          checkout = await readPolarCheckout(before.checkout_id);
+        } catch {
+          throw new CatalogBillingError(503, 'No se pudo consultar el pago. Inténtalo de nuevo.');
+        }
+        if (checkout.status === 'confirmed' || checkout.status === 'succeeded')
+          throw new CatalogBillingError(409, 'El pago se está procesando');
+        if (
+          checkout.id !== before.checkout_id ||
+          !['open', 'failed', 'expired'].includes(checkout.status)
+        )
+          throw new CatalogBillingError(503, 'No se pudo verificar el pago. Inténtalo de nuevo.');
+      }
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const order = await lockOrder(client, orderId);
+        let result: CancelResult;
+        if (!order || order.buyer_id !== buyerId) result = 'not_found';
+        else if (order.status === 'cancelled') result = 'already_cancelled';
+        else if (order.status !== 'pending') result = 'conflict';
+        else {
+          const {
+            rows: [payment],
+          } = await client.query<PaymentRow>(
+            'SELECT * FROM orders_payment_checkout WHERE order_id=$1 FOR UPDATE',
+            [orderId],
+          );
+          if (payment?.state === 'succeeded')
+            throw new CatalogBillingError(409, 'El pago se está procesando');
+          if (
+            (payment?.checkout_id ?? null) !== before.checkout_id ||
+            (payment?.state ?? null) !== before.payment_state
+          )
+            throw new CatalogBillingError(
+              409,
+              'El pago cambió mientras consultábamos su estado. Inténtalo de nuevo.',
+            );
+          result = (await closePendingOrder(client, order, 'cancelled')) ? 'cancelled' : 'conflict';
+        }
+        await client.query('COMMIT');
+        return result;
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
     async onInventoryReserved(payload: unknown) {
       const event = inventoryReservedEventSchema.parse(payload);
-      await pool.query(
-        `INSERT INTO orders_payment_checkout(order_id, reservation, product, items)
-          SELECT id, $2, payment_product, items FROM orders_order WHERE id=$1 ON CONFLICT DO NOTHING`,
-        [event.orderId, event],
-      );
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const order = await lockOrder(client, event.orderId);
+        if (order) {
+          await client.query(
+            `INSERT INTO orders_payment_checkout(order_id, reservation, product, items)
+              SELECT id, $2, payment_product, items FROM orders_order WHERE id=$1 ON CONFLICT DO NOTHING`,
+            [event.orderId, event],
+          );
+          const {
+            rows: [payment],
+          } = await client.query<PaymentRow>(
+            'SELECT * FROM orders_payment_checkout WHERE order_id=$1 FOR UPDATE',
+            [event.orderId],
+          );
+          if (order.status === 'cancelled' || order.status === 'expired')
+            await enqueueOrderClose(client, order, payment?.checkout_id);
+        }
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
     },
     async getCheckout(orderId: string): Promise<PaymentCheckoutResponse> {
       const {
         rows: [payment],
-      } = await pool.query<PaymentRow>('SELECT * FROM orders_payment_checkout WHERE order_id=$1', [
-        orderId,
-      ]);
+      } = await pool.query<PaymentRow>(
+        `SELECT p.* FROM orders_payment_checkout p
+          JOIN orders_order o ON o.id=p.order_id WHERE p.order_id=$1 AND o.status='pending'`,
+        [orderId],
+      );
       return {
         provider: 'polar',
         checkout:

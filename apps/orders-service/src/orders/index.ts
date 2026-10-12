@@ -1,15 +1,14 @@
-import { createOrdersRoutes } from './routes.js';
+import { createOrdersRoutes, type OrdersPaymentPort } from './routes.js';
 import type { IdentityContract } from '../identity/contract.js';
 import type { EventBus } from '../events/event-bus.js';
 import { logEvent } from '../events/logger.js';
 import { createOrdersService } from './service.js';
-import type { PaymentCheckoutResponse } from '@mercadoya/contracts';
 import type { CatalogBillingPort } from '../catalog/http.js';
 
 export function createOrdersModule(
   eventBus: EventBus,
   identity: IdentityContract,
-  payments: { getCheckout(orderId: string): Promise<PaymentCheckoutResponse> },
+  payments: OrdersPaymentPort,
   catalog: CatalogBillingPort,
 ) {
   const service = createOrdersService(eventBus, catalog);

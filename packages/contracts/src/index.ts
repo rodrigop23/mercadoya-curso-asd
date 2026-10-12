@@ -60,7 +60,13 @@ export const paymentSucceededEventSchema = z.object({
 export const paymentFailedEventSchema = z.object({
   ...inventoryReservationResult,
   ...paymentCorrelation,
-  reason: z.string().min(1).max(160),
+  reason: z
+    .string()
+    .min(1)
+    .max(160)
+    .describe(
+      'Motivo de compensación, incluidos order_cancelled y order_expired. Estos cierres no notifican un pago fallido.',
+    ),
 });
 export type InventoryReleasedEvent = z.infer<typeof inventoryReleasedEventSchema>;
 export type PaymentSucceededEvent = z.infer<typeof paymentSucceededEventSchema>;

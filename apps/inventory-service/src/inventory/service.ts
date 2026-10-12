@@ -8,6 +8,8 @@ import type {
 } from '@mercadoya/contracts';
 import { inventoryReservation } from './schema.js';
 
+export class ReleasedReservationError extends Error {}
+
 export function createInventoryContract(catalog: CatalogStockContract): InventoryPort & {
   release(
     orderId: string,
@@ -33,7 +35,8 @@ export function createInventoryContract(catalog: CatalogStockContract): Inventor
               JSON.stringify(items?.map((item) => [item.productId, item.quantity]))
           )
             throw new Error('Reserva incompatible con orderId.');
-          if (existing.releasedAt) throw new Error('La reserva ya fue liberada.');
+          if (existing.releasedAt)
+            throw new ReleasedReservationError('La reserva ya fue liberada.');
           return { reserved: true };
         }
         if (items) {
@@ -113,7 +116,10 @@ export function createInventoryContract(catalog: CatalogStockContract): Inventor
         }
         const result = await catalog.adjustStock(reservation.productId, reservation.quantity);
         if (!result.adjusted) throw new Error(`No se pudo liberar stock: ${result.reason}`);
-        await tx.delete(inventoryReservation).where(eq(inventoryReservation.orderId, orderId));
+        await tx
+          .update(inventoryReservation)
+          .set({ releasedAt: new Date() })
+          .where(eq(inventoryReservation.orderId, orderId));
         return { productId: reservation.productId, quantity: reservation.quantity };
       });
     },

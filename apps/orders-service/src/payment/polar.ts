@@ -7,7 +7,7 @@ import {
   type BillingProduct,
   type InventoryReservedEvent,
 } from '@mercadoya/contracts';
-import type { PolarConfig } from './config.js';
+import { polarGetTimeoutMs, type PolarConfig } from './config.js';
 
 export type Checkout = {
   id: string;
@@ -26,6 +26,7 @@ export interface PolarGateway {
     bundleProductId?: string | null,
   ): Promise<Checkout>;
   find(event: InventoryReservedEvent): Promise<Checkout | null>;
+  get(checkoutId: string, timeoutMs?: number): Promise<Checkout>;
   createPurchaseProduct(): Promise<string>;
   findPurchaseProduct(): Promise<string | null>;
   findBundle(event: InventoryReservedEvent): Promise<string | null>;
@@ -80,6 +81,9 @@ export function createPolarGateway(config: PolarConfig): PolarGateway {
   });
   return {
     server: config.server,
+    async get(checkoutId, timeoutMs = polarGetTimeoutMs()) {
+      return polar.checkouts.get(checkoutId, { timeout: timeoutMs / 1000 });
+    },
     async createPurchaseProduct() {
       try {
         const product = await polar.products.create({

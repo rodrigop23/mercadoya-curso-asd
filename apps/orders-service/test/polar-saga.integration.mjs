@@ -25,6 +25,9 @@ databaseUrl.searchParams.set('options', `-csearch_path=${schema}`);
 process.env.DATABASE_URL = databaseUrl.href;
 process.env.NATS_URL = process.env.PAYMENTS_TEST_NATS_URL;
 process.env.EVENT_BUS = 'nats';
+process.env.ORDER_PENDING_TTL_MINUTES = '15';
+process.env.ORDER_EXPIRY_GRACE_SECONDS = '120';
+process.env.POLAR_GET_TIMEOUT_MS = '5000';
 process.env.EMAIL_MODE = 'stub';
 process.env.DEMO_NOTIFY_EMAIL = 'saga-test@example.com';
 process.env.NOTIFICATIONS_INVOKE_TOKEN = randomBytes(32).toString('base64url');
@@ -50,6 +53,9 @@ await pool.query(await readFile(new URL('../db/0002_pricing.sql', import.meta.ur
 await pool.query(await readFile(new URL('../db/0003_cart.sql', import.meta.url), 'utf8'));
 await pool.query(
   await readFile(new URL('../db/0004_purchase_product.sql', import.meta.url), 'utf8'),
+);
+await pool.query(
+  await readFile(new URL('../db/0005_order_lifecycle.sql', import.meta.url), 'utf8'),
 );
 await pool.query(
   await readFile(
@@ -162,6 +168,11 @@ const gateway = {
     if (uncertain) throw new Error('network_uncertain');
     return session;
   },
+  async get(checkoutId) {
+    const checkout = [...sessions.values()].find((session) => session.id === checkoutId);
+    if (!checkout || checkout.unavailable) throw new Error('polar_unavailable');
+    return checkout;
+  },
   async find(event) {
     return sessions.get(event.orderId) ?? null;
   },
@@ -182,6 +193,7 @@ const orders = createOrdersModule(
   identity,
   {
     getCheckout: (...args) => worker.getCheckout(...args),
+    cancelOrder: (...args) => worker.cancelOrder(...args),
   },
   catalogBilling,
 );
@@ -471,9 +483,8 @@ test('Polar, PostgreSQL, NATS, Inventory y Notifications completan la saga', asy
         for (const product of products)
           assert.equal(await catalog.getAvailableStock(product.id), 10);
         assert.equal(outcomes(order.id, eventSubjects.inventoryReleased).length, 1);
-        await assert.rejects(
-          inventory.onOrderPlaced(outcomes(order.id, eventSubjects.inventoryReserved)[0].payload),
-          /liberada/,
+        await inventory.onOrderPlaced(
+          outcomes(order.id, eventSubjects.inventoryReserved)[0].payload,
         );
         for (const product of products)
           assert.equal(await catalog.getAvailableStock(product.id), 10);
@@ -766,6 +777,607 @@ test('Polar, PostgreSQL, NATS, Inventory y Notifications completan la saga', asy
         );
         await until(() => notificationResults.length >= 6);
         assert.ok(notificationResults.every((result) => result.statusCode === 202));
+      },
+    );
+    await t.test(
+      'migración rellena pendientes anteriores con TTL configurado y no cambia un plazo existente',
+      async () => {
+        const products = await cartProducts();
+        const quiet = createOrdersService({ ...bus, publish: async () => {} }, catalogBilling);
+        const { order } = await quiet.createOrder({
+          buyerId,
+          productId: products[0].id,
+          quantity: 1,
+        });
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          await client.query(
+            "UPDATE orders_order SET expires_at=NULL, created_at=(now() AT TIME ZONE 'UTC')-interval '1 hour' WHERE id=$1",
+            [order.id],
+          );
+          await client.query("SELECT set_config('mercadoya.order_pending_ttl_minutes', '3', true)");
+          const migration = await readFile(
+            new URL('../db/0005_order_lifecycle.sql', import.meta.url),
+            'utf8',
+          );
+          await client.query(migration);
+          const read = async () =>
+            (
+              await client.query(
+                "SELECT expires_at, extract(epoch FROM expires_at-(created_at AT TIME ZONE 'UTC'))::integer AS seconds FROM orders_order WHERE id=$1",
+                [order.id],
+              )
+            ).rows[0];
+          const before = await read();
+          assert.equal(before.seconds, 180);
+          await client.query(
+            "SELECT set_config('mercadoya.order_pending_ttl_minutes', '20', true)",
+          );
+          await client.query(migration);
+          assert.deepEqual(await read(), before);
+          await client.query('COMMIT');
+        } catch (error) {
+          await client.query('ROLLBACK');
+          throw error;
+        } finally {
+          client.release();
+        }
+        await worker.tick();
+        assert.equal((await service.getOrder(order.id)).status, 'expired');
+        assert.equal(
+          (await pool.query('SELECT 1 FROM orders_payment_checkout WHERE order_id=$1', [order.id]))
+            .rowCount,
+          0,
+        );
+      },
+    );
+    const cancel = (orderId) =>
+      app.request(`/api/orders/${orderId}/cancel`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer buyer' },
+      });
+    const compensated = async (order, expected) => {
+      await until(
+        async () =>
+          (await service.getOrder(order.id)).status === expected &&
+          outcomes(order.id, eventSubjects.inventoryReleased).length === 1,
+      );
+      assert.equal(outcomes(order.id, eventSubjects.paymentFailed).length, 1);
+      assert.equal(outcomes(order.id, eventSubjects.paymentSucceeded).length, 0);
+    };
+    for (const cart of [false, true])
+      await t.test(
+        `cancelar checkout abierto devuelve stock de ${cart ? 'carrito' : 'producto único'}`,
+        async () => {
+          const fixture = cart ? await createCart() : { order: await createOrder() };
+          const { order } = fixture;
+          const before = await service.getOrder(order.id);
+          assert.equal(
+            new Date(before.expiresAt).getTime(),
+            Date.parse(sessions.get(order.id).expires_at) + 120000,
+          );
+          const response = await cancel(order.id);
+          assert.equal(response.status, 202);
+          const closed = (await response.json()).order;
+          assert.equal(closed.status, 'cancelled');
+          assert.equal(closed.rejectionReason, 'order_cancelled');
+          assert.ok(closed.cancelledAt);
+          assert.equal((await worker.getCheckout(order.id)).checkout, null);
+          assert.equal((await cancel(order.id)).status, 200);
+          await worker.tick();
+          await compensated(order, 'cancelled');
+          for (const id of fixture.products?.map((product) => product.id) ?? [order.productId])
+            assert.equal(await catalog.getAvailableStock(id), 10);
+          const reservation = outcomes(order.id, eventSubjects.inventoryReserved)[0].payload;
+          await inventory.onOrderPlaced(reservation);
+          await worker.onInventoryReserved(reservation);
+          await worker.tick();
+          await orders.onPaymentFailed({ orderId: order.id, reason: 'payment_failed' });
+          await orders.onInventoryReleased({ orderId: order.id });
+          assert.equal((await service.getOrder(order.id)).status, 'cancelled');
+          assert.equal(outcomes(order.id, eventSubjects.paymentFailed).length, 1);
+          assert.equal(outcomes(order.id, eventSubjects.inventoryReleased).length, 1);
+          const row = (
+            await pool.query('SELECT released_at FROM inventory_reservations WHERE order_id=$1', [
+              order.id,
+            ])
+          ).rows[0];
+          assert.ok(row.released_at);
+        },
+      );
+    for (const cart of [false, true])
+      await t.test(
+        `vencer sin webhook devuelve stock de ${cart ? 'carrito' : 'producto único'}`,
+        async () => {
+          const fixture = cart ? await createCart() : { order: await createOrder() };
+          const { order } = fixture;
+          await pool.query(
+            "UPDATE orders_order SET expires_at=now()-interval '1 second' WHERE id=$1",
+            [order.id],
+          );
+          await worker.tick();
+          await worker.tick();
+          await compensated(order, 'expired');
+          assert.equal((await service.getOrder(order.id)).rejectionReason, 'order_expired');
+          assert.equal((await service.getOrder(order.id)).cancelledAt, null);
+          await orders.onPaymentFailed({ orderId: order.id, reason: 'payment_failed' });
+          await orders.onInventoryReleased({ orderId: order.id });
+          assert.equal((await service.getOrder(order.id)).status, 'expired');
+          for (const id of fixture.products?.map((product) => product.id) ?? [order.productId])
+            assert.equal(await catalog.getAvailableStock(id), 10);
+        },
+      );
+    for (const finalStatus of ['cancelled', 'expired'])
+      await t.test(
+        `${finalStatus} antes de la reserva compensa inventory.reserved tardío`,
+        async () => {
+          const products = await cartProducts();
+          const quiet = createOrdersService({ ...bus, publish: async () => {} }, catalogBilling);
+          const { order } = await quiet.createOrder({
+            buyerId,
+            items: products.map((product) => ({ productId: product.id, quantity: 2 })),
+          });
+          assert.equal(
+            new Date(order.expiresAt).getTime() - new Date(order.createdAt).getTime(),
+            900000,
+          );
+          if (finalStatus === 'cancelled') assert.equal((await cancel(order.id)).status, 202);
+          else {
+            await pool.query(
+              "UPDATE orders_order SET expires_at=now()-interval '1 second' WHERE id=$1",
+              [order.id],
+            );
+            await worker.tick();
+          }
+          assert.equal(
+            (
+              await pool.query('SELECT 1 FROM orders_payment_checkout WHERE order_id=$1', [
+                order.id,
+              ])
+            ).rowCount,
+            0,
+          );
+          assert.equal(outcomes(order.id, eventSubjects.paymentFailed).length, 0);
+          let republished = 0;
+          const retry = createOrdersService(
+            {
+              ...bus,
+              publish: async () => {
+                republished++;
+              },
+            },
+            catalogBilling,
+          );
+          await retry.createOrder({
+            buyerId,
+            idempotencyKey: order.id,
+            items: order.items.map(({ productId, quantity }) => ({ productId, quantity })),
+          });
+          assert.equal(republished, 0);
+          await inventory.onOrderPlaced({
+            version: 1,
+            orderId: order.id,
+            productId: order.productId,
+            quantity: order.quantity,
+            buyerId: order.buyerId,
+            items: order.items.map(({ productId, quantity }) => ({ productId, quantity })),
+            occurredAt: new Date().toISOString(),
+          });
+          await until(
+            async () =>
+              (
+                await pool.query('SELECT 1 FROM orders_payment_checkout WHERE order_id=$1', [
+                  order.id,
+                ])
+              ).rowCount === 1,
+          );
+          const before = creations;
+          await worker.tick();
+          await compensated(order, finalStatus);
+          assert.equal(creations, before);
+          for (const product of products)
+            assert.equal(await catalog.getAvailableStock(product.id), 10);
+        },
+      );
+    for (const finalStatus of ['cancelled', 'expired'])
+      await t.test(
+        `pago después de ${finalStatus} queda en late_payment sin confirmar`,
+        async () => {
+          const order = await createOrder();
+          if (finalStatus === 'cancelled') await cancel(order.id);
+          else
+            await pool.query(
+              "UPDATE orders_order SET expires_at=now()-interval '1 second' WHERE id=$1",
+              [order.id],
+            );
+          await worker.tick();
+          await worker.tick();
+          await compensated(order, finalStatus);
+          const paid = eventFor(order, 'order.paid', 'paid');
+          const bad = structuredClone(paid);
+          bad.data.subtotal_amount = 1;
+          await deliver(bad);
+          await worker.tick();
+          assert.equal(
+            (
+              await pool.query(
+                'SELECT late_payment FROM orders_payment_checkout WHERE order_id=$1',
+                [order.id],
+              )
+            ).rows[0].late_payment,
+            null,
+          );
+          const eventId = randomUUID();
+          await deliver(paid, eventId);
+          await worker.tick();
+          await deliver(paid, eventId);
+          await worker.tick();
+          const late = (
+            await pool.query('SELECT late_payment FROM orders_payment_checkout WHERE order_id=$1', [
+              order.id,
+            ])
+          ).rows[0].late_payment;
+          assert.equal(late.eventId, eventId);
+          assert.equal(late.providerOrderId, paid.data.id);
+          assert.equal(late.amount, paid.data.subtotal_amount);
+          assert.equal(late.occurredAt, paid.timestamp);
+          assert.equal((await service.getOrder(order.id)).status, finalStatus);
+          assert.equal(await catalog.getAvailableStock(order.productId), 10);
+          assert.equal(outcomes(order.id, eventSubjects.paymentSucceeded).length, 0);
+        },
+      );
+    await t.test(
+      'Polar confirmed o succeeded impide cancelar; caída de Polar devuelve 503',
+      async () => {
+        const order = await createOrder();
+        const checkout = sessions.get(order.id);
+        for (const status of ['confirmed', 'succeeded']) {
+          checkout.status = status;
+          const response = await cancel(order.id);
+          assert.equal(response.status, 409);
+          assert.deepEqual(await response.json(), { error: 'El pago se está procesando' });
+        }
+        checkout.status = 'unknown';
+        assert.equal((await cancel(order.id)).status, 503);
+        checkout.status = 'open';
+        checkout.unavailable = true;
+        assert.equal((await cancel(order.id)).status, 503);
+        assert.equal((await service.getOrder(order.id)).status, 'pending');
+        assert.equal(await catalog.getAvailableStock(order.productId), 8);
+        assert.equal(outcomes(order.id, eventSubjects.paymentFailed).length, 0);
+        checkout.unavailable = false;
+        const other = createOrdersModule(
+          bus,
+          { getSession: async () => ({ user: { id: 'other' } }) },
+          worker,
+          catalogBilling,
+        ).routes;
+        assert.equal((await other.request(`/${order.id}/cancel`, { method: 'POST' })).status, 404);
+      },
+    );
+    await t.test(
+      'publicación perdida devuelve 503 y el reintento republica una vez y reserva una vez',
+      async () => {
+        const products = await cartProducts();
+        let fail = true;
+        const sent = [];
+        const retryBus = {
+          ...bus,
+          publish: async (subject, payload) => {
+            sent.push({ subject, payload });
+            if (fail) throw new Error('nats_unavailable');
+            await bus.publish(subject, payload);
+          },
+        };
+        const route = createOrdersModule(retryBus, identity, worker, catalogBilling).routes;
+        const id = randomUUID();
+        const request = () =>
+          route.request('/', {
+            method: 'POST',
+            headers: { authorization: 'Bearer buyer', 'content-type': 'application/json' },
+            body: JSON.stringify({
+              items: products.map((product) => ({ productId: product.id, quantity: 2 })),
+              idempotencyKey: id,
+            }),
+          });
+        assert.equal((await request()).status, 503);
+        assert.equal((await request()).status, 503);
+        assert.equal((await service.getOrder(id)).status, 'pending');
+        fail = false;
+        assert.equal((await request()).status, 202);
+        await until(
+          async () =>
+            (await pool.query('SELECT 1 FROM orders_payment_checkout WHERE order_id=$1', [id]))
+              .rowCount === 1,
+        );
+        assert.equal((await request()).status, 202);
+        await worker.tick();
+        assert.equal(sent.length, 3);
+        assert.deepEqual(sent[0], sent[2]);
+        for (const product of products)
+          assert.equal(await catalog.getAvailableStock(product.id), 8);
+        assert.equal(
+          (await pool.query('SELECT 1 FROM inventory_reservations WHERE order_id=$1', [id]))
+            .rowCount,
+          1,
+        );
+      },
+    );
+    for (const expire of [false, true])
+      await t.test(
+        `cancelaciones concurrentes${expire ? ' y vencimiento simultáneo' : ''} compensan una sola vez`,
+        async () => {
+          const order = await createOrder();
+          if (expire)
+            await pool.query(
+              "UPDATE orders_order SET expires_at=now()-interval '1 second' WHERE id=$1",
+              [order.id],
+            );
+          const results = await Promise.all([
+            cancel(order.id),
+            cancel(order.id),
+            cancel(order.id),
+            ...(expire ? [worker.tick()] : []),
+          ]);
+          for (const response of results.filter(Boolean))
+            assert.ok([200, 202, 409].includes(response.status));
+          await worker.tick();
+          await worker.tick();
+          const status = (await service.getOrder(order.id)).status;
+          assert.ok(['cancelled', 'expired'].includes(status));
+          await compensated(order, status);
+          assert.equal(await catalog.getAvailableStock(order.productId), 10);
+          assert.equal(
+            (
+              await pool.query(
+                "SELECT 1 FROM orders_payment_webhook WHERE outcome->>'orderId'=$1",
+                [order.id],
+              )
+            ).rowCount,
+            1,
+          );
+        },
+      );
+    await t.test('creating incierto deja de buscar y devuelve stock cuando vence', async () => {
+      uncertain = true;
+      const order = await createOrder();
+      uncertain = false;
+      let finds = 0;
+      const expiryWorker = createPaymentWorker(pool, publisher, {
+        ...gateway,
+        find: async () => {
+          finds++;
+          return null;
+        },
+      });
+      await pool.query("UPDATE orders_order SET expires_at=now()-interval '1 second' WHERE id=$1", [
+        order.id,
+      ]);
+      await pool.query(
+        'UPDATE orders_payment_checkout SET next_attempt_at=now() WHERE order_id=$1',
+        [order.id],
+      );
+      await expiryWorker.tick();
+      await expiryWorker.tick();
+      await compensated(order, 'expired');
+      assert.equal(finds, 0);
+    });
+    for (const mode of ['lento', 'colgado'])
+      await t.test(
+        `GET Polar ${mode} termina en 503 y permite procesar pagos y vencimientos durante la espera`,
+        { timeout: 8000 },
+        async () => {
+          const order = await createOrder();
+          const other = await createOrder();
+          const expired = await createOrder();
+          await pool.query(
+            "UPDATE orders_order SET expires_at=now()-interval '1 second' WHERE id=$1",
+            [expired.id],
+          );
+          const started = Promise.withResolvers();
+          const remote = Promise.withResolvers();
+          let passedTimeout;
+          process.env.POLAR_GET_TIMEOUT_MS = '2000';
+          const slowWorker = createPaymentWorker(pool, publisher, {
+            ...gateway,
+            async get(id, timeoutMs) {
+              passedTimeout = timeoutMs;
+              started.resolve();
+              if (mode === 'colgado') return new Promise(() => {});
+              await remote.promise;
+              return gateway.get(id);
+            },
+          });
+          process.env.POLAR_GET_TIMEOUT_MS = '5000';
+          const route = createOrdersModule(bus, identity, slowWorker, catalogBilling).routes;
+          let replied = false;
+          const start = performance.now();
+          const response = route
+            .request(`/${order.id}/cancel`, {
+              method: 'POST',
+              headers: { authorization: 'Bearer buyer' },
+            })
+            .then((value) => {
+              replied = true;
+              return value;
+            });
+          try {
+            await started.promise;
+            // Un outcome del mismo pedido obligaría al tick a esperar su fila si cancelar la bloqueara.
+            await deliver(eventFor(order, 'order.paid', 'paid'));
+            await deliver(eventFor(other, 'order.paid', 'paid'));
+            await worker.tick();
+            await worker.tick();
+            assert.equal((await service.getOrder(order.id)).status, 'confirmed');
+            assert.equal((await service.getOrder(other.id)).status, 'confirmed');
+            assert.equal((await service.getOrder(expired.id)).status, 'expired');
+            assert.equal(replied, false);
+            const result = await response;
+            assert.equal(result.status, 503);
+            assert.equal(passedTimeout, 2000);
+            assert.ok(
+              performance.now() - start < 3000,
+              'La cancelación debe terminar con el timeout, sin esperar a Polar.',
+            );
+            assert.equal((await service.getOrder(order.id)).cancelledAt, null);
+            assert.equal(outcomes(order.id, eventSubjects.paymentFailed).length, 0);
+            await worker.tick();
+            await compensated(expired, 'expired');
+          } finally {
+            remote.resolve();
+            process.env.POLAR_GET_TIMEOUT_MS = '5000';
+          }
+        },
+      );
+    for (const change of ['checkout_id', 'state'])
+      await t.test(
+        `cambiar ${change} después del GET y antes del lock impide cerrar el pedido`,
+        async () => {
+          const order = await createOrder();
+          const checkoutId = sessions.get(order.id).id;
+          const changedId = randomUUID();
+          const racingWorker = createPaymentWorker(pool, publisher, {
+            ...gateway,
+            async get(id) {
+              const checkout = await gateway.get(id);
+              if (change === 'checkout_id')
+                await pool.query(
+                  'UPDATE orders_payment_checkout SET checkout_id=$2 WHERE order_id=$1',
+                  [order.id, changedId],
+                );
+              else
+                await pool.query(
+                  "UPDATE orders_payment_checkout SET state='creating' WHERE order_id=$1",
+                  [order.id],
+                );
+              return checkout;
+            },
+          });
+          const route = createOrdersModule(bus, identity, racingWorker, catalogBilling).routes;
+          try {
+            const response = await route.request(`/${order.id}/cancel`, {
+              method: 'POST',
+              headers: { authorization: 'Bearer buyer' },
+            });
+            assert.equal(response.status, 409);
+            assert.match((await response.json()).error, /El pago cambió/);
+            assert.equal((await service.getOrder(order.id)).status, 'pending');
+            assert.equal((await service.getOrder(order.id)).cancelledAt, null);
+            assert.equal(
+              (
+                await pool.query('SELECT 1 FROM orders_payment_webhook WHERE event_id=$1', [
+                  `order-cancel:${order.id}`,
+                ])
+              ).rowCount,
+              0,
+            );
+            assert.equal(await catalog.getAvailableStock(order.productId), 8);
+          } finally {
+            await pool.query(
+              "UPDATE orders_payment_checkout SET checkout_id=$2, state='open' WHERE order_id=$1",
+              [order.id, checkoutId],
+            );
+          }
+        },
+      );
+    await t.test(
+      'el pedido que se confirma durante el GET conserva su estado y no se cancela',
+      async () => {
+        const order = await createOrder();
+        const racingWorker = createPaymentWorker(pool, publisher, {
+          ...gateway,
+          async get(id) {
+            const checkout = await gateway.get(id);
+            await deliver(eventFor(order, 'order.paid', 'paid'));
+            await worker.tick();
+            return checkout;
+          },
+        });
+        const route = createOrdersModule(bus, identity, racingWorker, catalogBilling).routes;
+        const response = await route.request(`/${order.id}/cancel`, {
+          method: 'POST',
+          headers: { authorization: 'Bearer buyer' },
+        });
+        assert.equal(response.status, 409);
+        assert.equal((await service.getOrder(order.id)).status, 'confirmed');
+        assert.equal(outcomes(order.id, eventSubjects.paymentFailed).length, 0);
+      },
+    );
+    await t.test(
+      'un pendiente vencido con checkout succeeded se registra y no bloquea otro vencimiento',
+      async (subtest) => {
+        const paid = await createOrder();
+        const normal = await createOrder();
+        await pool.query("UPDATE orders_payment_checkout SET state='succeeded' WHERE order_id=$1", [
+          paid.id,
+        ]);
+        await pool.query(
+          "UPDATE orders_order SET expires_at=now()-interval '10 minutes' WHERE id=$1",
+          [paid.id],
+        );
+        await pool.query(
+          "UPDATE orders_order SET expires_at=now()-interval '1 minute' WHERE id=$1",
+          [normal.id],
+        );
+        const logs = [];
+        subtest.mock.method(console, 'info', (line) => logs.push(JSON.parse(line)));
+        await worker.tick();
+        assert.equal((await service.getOrder(paid.id)).status, 'pending');
+        assert.equal((await service.getOrder(normal.id)).status, 'expired');
+        assert.ok(
+          logs.some(
+            (event) => event.type === 'order.expiry_skipped_paid' && event.orderId === paid.id,
+          ),
+        );
+        assert.equal(outcomes(paid.id, eventSubjects.paymentFailed).length, 0);
+        assert.equal(outcomes(paid.id, eventSubjects.paymentSucceeded).length, 0);
+        await worker.tick();
+        await compensated(normal, 'expired');
+        assert.equal(await catalog.getAvailableStock(paid.productId), 8);
+        const warningCount = (orderId) =>
+          logs.filter(
+            (event) => event.type === 'order.expiry_skipped_paid' && event.orderId === orderId,
+          ).length;
+        await worker.tick();
+        await worker.tick();
+        assert.equal(warningCount(paid.id), 1);
+
+        // Otro pago omitido también debe avisarse aunque el primero siga pendiente.
+        const secondPaid = await createOrder();
+        await pool.query("UPDATE orders_payment_checkout SET state='succeeded' WHERE order_id=$1", [
+          secondPaid.id,
+        ]);
+        await pool.query(
+          "UPDATE orders_order SET expires_at=now()-interval '5 minutes' WHERE id=$1",
+          [secondPaid.id],
+        );
+        await worker.tick();
+        await worker.tick();
+        assert.equal(warningCount(paid.id), 1);
+        assert.equal(warningCount(secondPaid.id), 1);
+
+        await service.recordSagaResult({
+          orderId: paid.id,
+          status: 'confirmed',
+          rejectionReason: null,
+        });
+        await pool.query("UPDATE orders_order SET status='cancelled' WHERE id=$1", [secondPaid.id]);
+        await worker.tick();
+        // Reintroducir la inconsistencia demuestra que se retiraron ambos IDs del Set.
+        await pool.query("UPDATE orders_order SET status='pending' WHERE id=ANY($1::uuid[])", [
+          [paid.id, secondPaid.id],
+        ]);
+        await worker.tick();
+        await worker.tick();
+        await worker.tick();
+        assert.equal(warningCount(paid.id), 2);
+        assert.equal(warningCount(secondPaid.id), 2);
+        for (const order of [paid, secondPaid]) {
+          assert.equal((await service.getOrder(order.id)).status, 'pending');
+          assert.equal(outcomes(order.id, eventSubjects.paymentFailed).length, 0);
+          assert.equal(outcomes(order.id, eventSubjects.paymentSucceeded).length, 0);
+        }
       },
     );
   } finally {
