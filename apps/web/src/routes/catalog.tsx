@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useDebouncer } from '@tanstack/react-pacer';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { createFileRoute, Link } from '@tanstack/react-router';
+import { createFileRoute, Link, redirect, useRouter } from '@tanstack/react-router';
 import { ArrowRight, PackageOpen, ShoppingCart } from 'lucide-react';
-import { z } from 'zod';
-import { productsQuerySchema } from '@mercadoya/contracts';
+import { productsQuerySchema, type ProductsQuery } from '@mercadoya/contracts';
 
 import { Button, buttonVariants } from '@mercadoya/ui/components/button';
 import { Card, CardContent } from '@mercadoya/ui/components/card';
@@ -11,6 +11,7 @@ import { Field, FieldError, FieldGroup, FieldLabel } from '@mercadoya/ui/compone
 import { Input } from '@mercadoya/ui/components/input';
 import { useCart } from '@/features/cart/cart-context';
 import { QuantityControl } from '@/features/cart/quantity-control';
+import { parseCatalogSearch } from '@/lib/catalog-search';
 import {
   priceFormatter,
   productImageUrl,
@@ -18,24 +19,22 @@ import {
   type Product,
 } from '@/lib/products';
 
-// TanStack Router interpreta los valores numéricos de la URL antes de validateSearch.
-const searchStringSchema = z
-  .preprocess((value) => (typeof value === 'number' ? String(value) : value), z.string().optional())
-  .catch(undefined);
-const catalogSearchSchema = z.object({
-  q: searchStringSchema,
-  minPrice: searchStringSchema,
-  maxPrice: searchStringSchema,
-});
-
 export const Route = createFileRoute('/catalog')({
-  validateSearch: catalogSearchSchema,
+  validateSearch: parseCatalogSearch,
+  beforeLoad: ({ location }) => {
+    const rawSearch: Record<string, unknown> = location.search;
+    // Router mezcla los parámetros crudos con validateSearch, incluso los omitidos.
+    const search = parseCatalogSearch(rawSearch);
+    if (
+      Object.keys(rawSearch).length !== Object.keys(search).length ||
+      Object.entries(search).some(([key, value]) => rawSearch[key] !== value)
+    ) {
+      throw redirect({ to: '/catalog', search, hash: location.hash, replace: true });
+    }
+  },
   loaderDeps: ({ search }) => search,
   loader: ({ context: { queryClient }, deps, cause }) => {
-    const filters = productsQuerySchema.safeParse(deps);
-    const query = queryClient.ensureQueryData(
-      productsQueryOptions(filters.success ? filters.data : {}),
-    );
+    const query = queryClient.ensureQueryData(productsQueryOptions(deps));
     // Las actualizaciones las observa useQuery, que conserva el listado mientras carga.
     if (cause === 'stay') {
       void query.catch(() => undefined);
@@ -46,34 +45,32 @@ export const Route = createFileRoute('/catalog')({
   component: CatalogPage,
 });
 
+type CatalogInputs = { q: string; minPrice: string; maxPrice: string };
+
+function searchToInputs(search: ProductsQuery): CatalogInputs {
+  return {
+    q: search.q ?? '',
+    minPrice: search.minPrice === undefined ? '' : String(search.minPrice),
+    maxPrice: search.maxPrice === undefined ? '' : String(search.maxPrice),
+  };
+}
+
+function sameSearch(left: ProductsQuery, right: ProductsQuery) {
+  return left.q === right.q && left.minPrice === right.minPrice && left.maxPrice === right.maxPrice;
+}
+
 function CatalogPage() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
-  const [inputs, setInputs] = useState({
-    q: search.q ?? '',
-    minPrice: search.minPrice ?? '',
-    maxPrice: search.maxPrice ?? '',
-  });
-  const [previousSearch, setPreviousSearch] = useState(search);
-  if (
-    previousSearch.q !== search.q ||
-    previousSearch.minPrice !== search.minPrice ||
-    previousSearch.maxPrice !== search.maxPrice
-  ) {
-    setPreviousSearch(search);
-    setInputs({
-      q: search.q ?? '',
-      minPrice: search.minPrice ?? '',
-      maxPrice: search.maxPrice ?? '',
-    });
-  }
-  const filters = productsQuerySchema.safeParse(search);
+  const router = useRouter();
+  const [inputs, setInputs] = useState(() => searchToInputs(search));
+  const ownSearch = useRef<ProductsQuery | null>(null);
   const {
     data: products = [],
     isFetching,
     isPlaceholderData,
   } = useQuery({
-    ...productsQueryOptions(filters.success ? filters.data : {}),
+    ...productsQueryOptions(search),
     placeholderData: keepPreviousData,
     throwOnError: true,
   });
@@ -82,29 +79,48 @@ function CatalogPage() {
   const errors = validation.success ? [] : validation.error.issues;
   const priceInvalid = errors.some((issue) => issue.path[0] !== 'q');
 
-  useEffect(() => {
-    const result = productsQuerySchema.safeParse(inputs);
-    if (!result.success) return;
-    const nextSearch = {
-      ...(result.data.q ? { q: result.data.q } : {}),
-      ...(result.data.minPrice !== undefined ? { minPrice: result.data.minPrice } : {}),
-      ...(result.data.maxPrice !== undefined ? { maxPrice: result.data.maxPrice } : {}),
-    };
-    if (
-      nextSearch.q === search.q &&
-      (nextSearch.minPrice === undefined ? undefined : String(nextSearch.minPrice)) ===
-        search.minPrice &&
-      (nextSearch.maxPrice === undefined ? undefined : String(nextSearch.maxPrice)) ===
-        search.maxPrice
-    )
-      return;
-    const timeout = window.setTimeout(() => {
+  const debouncer = useDebouncer(
+    (nextInputs: CatalogInputs) => {
+      const result = productsQuerySchema.safeParse(nextInputs);
+      if (!result.success) return;
+      const nextSearch = parseCatalogSearch(result.data);
+      if (sameSearch(nextSearch, search)) return;
+      ownSearch.current = nextSearch;
       void navigate({ search: nextSearch, replace: true });
-    }, 300);
-    return () => window.clearTimeout(timeout);
-  }, [inputs, search.q, search.minPrice, search.maxPrice, navigate]);
+    },
+    { wait: 300 },
+  );
+
+  const cancelDebounce = debouncer.cancel;
+  useEffect(() => {
+    const unsubscribeBefore = router.subscribe('onBeforeNavigate', () => cancelDebounce());
+    const unsubscribeResolved = router.subscribe('onResolved', ({ toLocation }) => {
+      if (toLocation.pathname !== '/catalog') return;
+      const nextSearch = parseCatalogSearch(toLocation.search);
+      if (ownSearch.current && sameSearch(ownSearch.current, nextSearch)) {
+        // Consumir la navegación propia para que atrás/adelante sí resincronice.
+        ownSearch.current = null;
+        return;
+      }
+      ownSearch.current = null;
+      cancelDebounce();
+      setInputs(searchToInputs(nextSearch));
+    });
+    return () => {
+      unsubscribeBefore();
+      unsubscribeResolved();
+    };
+  }, [router, cancelDebounce]);
+
+  function updateInput(name: keyof CatalogInputs, value: string) {
+    const nextInputs = { ...inputs, [name]: value };
+    setInputs(nextInputs);
+    debouncer.maybeExecute(nextInputs);
+  }
 
   function clearFilters() {
+    debouncer.cancel();
+    ownSearch.current = null;
     setInputs({ q: '', minPrice: '', maxPrice: '' });
     void navigate({ search: {}, replace: true });
   }
@@ -139,7 +155,7 @@ function CatalogPage() {
               value={inputs.q}
               aria-invalid={errors.some((issue) => issue.path[0] === 'q')}
               aria-describedby={errors.length ? 'catalog-filter-error' : undefined}
-              onChange={(event) => setInputs((current) => ({ ...current, q: event.target.value }))}
+              onChange={(event) => updateInput('q', event.target.value)}
             />
           </Field>
           <Field data-invalid={priceInvalid}>
@@ -153,9 +169,7 @@ function CatalogPage() {
               value={inputs.minPrice}
               aria-invalid={priceInvalid}
               aria-describedby={priceInvalid ? 'catalog-filter-error' : undefined}
-              onChange={(event) =>
-                setInputs((current) => ({ ...current, minPrice: event.target.value }))
-              }
+              onChange={(event) => updateInput('minPrice', event.target.value)}
             />
           </Field>
           <Field data-invalid={priceInvalid}>
@@ -169,9 +183,7 @@ function CatalogPage() {
               value={inputs.maxPrice}
               aria-invalid={priceInvalid}
               aria-describedby={priceInvalid ? 'catalog-filter-error' : undefined}
-              onChange={(event) =>
-                setInputs((current) => ({ ...current, maxPrice: event.target.value }))
-              }
+              onChange={(event) => updateInput('maxPrice', event.target.value)}
             />
           </Field>
           <Button
