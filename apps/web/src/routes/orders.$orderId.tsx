@@ -47,16 +47,16 @@ function OrderPage() {
     enabled: order?.status === 'pending',
   });
   const checkout = checkoutQuery.data?.checkout;
-  const productsQuery = useQuery(productsQueryOptions);
+  const productsQuery = useQuery(productsQueryOptions());
   const product = productsQuery.data?.find((item) => item.id === order?.productId);
 
   useEffect(() => {
     if (order?.status === 'cancelled' || order?.status === 'expired') {
       releaseClosedOrder(order);
-      void queryClient.invalidateQueries({ queryKey: productsQueryOptions.queryKey });
+      void queryClient.invalidateQueries({ queryKey: ['products'] });
     } else if (order?.status === 'confirmed') {
       completeOrder(order);
-      void queryClient.invalidateQueries({ queryKey: productsQueryOptions.queryKey });
+      void queryClient.invalidateQueries({ queryKey: ['products'] });
     }
   }, [order, completeOrder, releaseClosedOrder, queryClient]);
 

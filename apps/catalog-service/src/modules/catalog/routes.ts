@@ -3,7 +3,12 @@ import { Hono } from 'hono';
 import { fileURLToPath } from 'node:url';
 import { timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
-import { productFormSchema, stockAdjustmentSchema, stockBatchSchema } from '@mercadoya/contracts';
+import {
+  productFormSchema,
+  productsQuerySchema,
+  stockAdjustmentSchema,
+  stockBatchSchema,
+} from '@mercadoya/contracts';
 
 import type { AdminAuthorizer } from '../../auth.js';
 import { InvalidMediaError } from '../media/contract.js';
@@ -74,7 +79,14 @@ export function createCatalogRoutes(identity: AdminAuthorizer, catalogContract: 
   );
 
   routes.get('/api/products', async (c) => {
-    const products = await catalogContract.listProducts();
+    const filters = productsQuerySchema.safeParse(c.req.query());
+    if (!filters.success) {
+      return c.json({ error: 'Parámetros de búsqueda inválidos.' }, 400);
+    }
+    const hasFilters = Object.values(filters.data).some((value) => value !== undefined);
+    const products = hasFilters
+      ? await catalogContract.listProducts(filters.data)
+      : await catalogContract.listProducts();
     return c.json({ products });
   });
 

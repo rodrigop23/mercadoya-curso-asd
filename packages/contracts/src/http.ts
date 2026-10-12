@@ -188,6 +188,35 @@ export const productSchema = z.object({
   updatedAt: z.iso.datetime(),
 });
 export const productsResponseSchema = z.object({ products: z.array(productSchema) });
+const queryPriceSchema = z
+  .union([
+    z.literal('').transform(() => undefined),
+    z
+      .string()
+      .regex(/^\d+(\.\d{1,2})?$/, 'Usa un precio no negativo con hasta dos decimales.')
+      .transform(Number)
+      .pipe(z.number().finite().nonnegative()),
+  ])
+  .optional();
+
+export const productsQuerySchema = z
+  .object({
+    q: z
+      .string()
+      .trim()
+      .max(100)
+      .transform((value) => value || undefined)
+      .optional(),
+    minPrice: queryPriceSchema,
+    maxPrice: queryPriceSchema,
+  })
+  .refine(
+    ({ minPrice, maxPrice }) =>
+      minPrice === undefined || maxPrice === undefined || minPrice <= maxPrice,
+    { message: 'El precio mínimo no puede superar el máximo.', path: ['maxPrice'] },
+  );
+export type ProductsQuery = z.infer<typeof productsQuerySchema>;
+
 export const productResponseSchema = z.object({ product: productSchema });
 export const stockResponseSchema = z.object({
   availableStock: z.number().int().nonnegative().nullable(),

@@ -105,6 +105,51 @@ test('no autenticado 401 y buyer 403 antes de ejecutar el CRUD', async () => {
     }
   }
 });
+test('listado entrega filtros parseados y conserva la llamada sin filtros', async () => {
+  const calls = [];
+  const routes = app(
+    { allowed: true },
+    {
+      listProducts: async (...args) => {
+        calls.push(args);
+        return [product];
+      },
+    },
+  );
+  for (const path of ['/api/products', '/api/products?q=%20%20&minPrice=&maxPrice=']) {
+    const response = await routes.request(path);
+    assert.equal(response.status, 200);
+    productsResponseSchema.parse(await response.json());
+  }
+  assert.deepEqual(calls, [[], []]);
+  const response = await routes.request('/api/products?q=%20AUD%20&minPrice=20&maxPrice=100.50');
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls[2], [{ q: 'AUD', minPrice: 20, maxPrice: 100.5 }]);
+  await routes.request('/api/products?minPrice=0');
+  assert.deepEqual(calls[3], [{ minPrice: 0 }]);
+});
+
+test('listado rechaza filtros inválidos antes de llamar al contrato', async () => {
+  const routes = app(
+    { allowed: true },
+    {
+      listProducts: async () => {
+        throw new Error('No debe consultar');
+      },
+    },
+  );
+  for (const query of [
+    'minPrice=abc',
+    'minPrice=-1',
+    'minPrice=50&maxPrice=10',
+    'maxPrice=1.234',
+    `q=${'a'.repeat(101)}`,
+  ]) {
+    const response = await routes.request(`/api/products?${query}`);
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { error: 'Parámetros de búsqueda inválidos.' });
+  }
+});
 test('stock mantiene token S2S independiente, validación y DTO', async () => {
   const routes = app();
   const path = `/api/internal/catalog/products/${id}/adjust-stock`;

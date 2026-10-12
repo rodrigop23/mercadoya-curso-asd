@@ -423,18 +423,42 @@ documents.set(
   'apps/catalog-service/openapi/catalog.yaml',
   doc(
     'Catalog',
-    '1.3.0',
+    '1.4.0',
     {
       '/api/catalog/health': {
         get: op('catalogHealth', 'Estado de Catalog', { 200: health('catalog') }),
       },
       '/api/products': {
-        get: op('listProducts', 'Listar productos', {
-          200: response(
-            'Productos ordenados por fecha de creación descendente.',
-            'ProductsResponse',
-          ),
-        }),
+        get: op(
+          'listProducts',
+          'Listar productos',
+          {
+            200: response(
+              'Productos filtrados, ordenados por fecha de creación descendente.',
+              'ProductsResponse',
+            ),
+            400: response('Parámetros de búsqueda inválidos.', 'Error'),
+          },
+          {
+            parameters: [
+              {
+                name: 'q',
+                in: 'query',
+                required: false,
+                description:
+                  'Texto en título o descripción, sin distinguir mayúsculas. Se recorta y el vacío se ignora.',
+                schema: { type: 'string', maxLength: 100 },
+              },
+              ...['minPrice', 'maxPrice'].map((name) => ({
+                name,
+                in: 'query',
+                required: false,
+                description: `${name === 'minPrice' ? 'Precio mínimo' : 'Precio máximo'} inclusivo en soles PEN. El vacío se ignora; minPrice no debe superar maxPrice.`,
+                schema: { type: 'string', pattern: '^\\d+(\\.\\d{1,2})?$' },
+              })),
+            ],
+          },
+        ),
         post: op(
           'createProduct',
           'Crear producto con imagen',

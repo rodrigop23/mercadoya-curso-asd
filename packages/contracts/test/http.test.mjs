@@ -10,6 +10,7 @@ import {
   sessionBuyerSchema,
   productFormSchema,
   productResponseSchema,
+  productsQuerySchema,
   stockResponseSchema,
   stockAdjustmentSchema,
   stockAdjustmentResponseSchema,
@@ -17,6 +18,48 @@ import {
 
 const id = '4e7a4b1b-e14d-4cd1-9dc9-55e70dbd0cb0';
 const date = '2026-09-30T12:00:00.000Z';
+
+test('Catalog normaliza filtros de texto y precios en soles', () => {
+  assert.deepEqual(productsQuerySchema.parse({}), {});
+  assert.deepEqual(
+    productsQuerySchema.parse({ q: '  AUD  ', minPrice: '20', maxPrice: '100.50' }),
+    {
+      q: 'AUD',
+      minPrice: 20,
+      maxPrice: 100.5,
+    },
+  );
+  assert.deepEqual(productsQuerySchema.parse({ q: '  ', minPrice: '', maxPrice: '' }), {
+    q: undefined,
+    minPrice: undefined,
+    maxPrice: undefined,
+  });
+  for (const input of [
+    { minPrice: '0' },
+    { maxPrice: '10.5' },
+    { minPrice: '20.00', maxPrice: '20' },
+    { q: 'a'.repeat(100) },
+  ])
+    assert.equal(productsQuerySchema.safeParse(input).success, true);
+  for (const field of ['minPrice', 'maxPrice']) {
+    for (const value of [
+      '-1',
+      'abc',
+      '1.234',
+      '1e2',
+      '.5',
+      '1.',
+      '  ',
+      ' 20 ',
+      '9'.repeat(400),
+      20,
+    ]) {
+      assert.equal(productsQuerySchema.safeParse({ [field]: value }).success, false);
+    }
+  }
+  assert.equal(productsQuerySchema.safeParse({ minPrice: '50', maxPrice: '10' }).success, false);
+  assert.equal(productsQuerySchema.safeParse({ q: 'a'.repeat(101) }).success, false);
+});
 
 test('Orders mantiene límites HTTP y descarta importes del cliente', () => {
   assert.deepEqual(

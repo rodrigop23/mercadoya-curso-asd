@@ -3,6 +3,7 @@ import type {
   CatalogBillingResponse,
   StockBatchRequest,
   StockBatchResponse,
+  ProductsQuery,
 } from '@mercadoya/contracts';
 export type { StockAdjustmentResult } from '@mercadoya/contracts';
 
@@ -28,7 +29,7 @@ export type CreateProductInput = {
 export type UpdateProductInput = Omit<CreateProductInput, 'image'> & { image?: File };
 
 export interface CatalogContract {
-  listProducts(): Promise<CatalogProduct[]>;
+  listProducts(filters?: ProductsQuery): Promise<CatalogProduct[]>;
   createProduct(input: CreateProductInput): Promise<CatalogProduct>;
   updateProduct(id: string, input: UpdateProductInput): Promise<CatalogProduct | null>;
   deleteProduct(id: string): Promise<boolean>;

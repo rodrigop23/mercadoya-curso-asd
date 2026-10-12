@@ -26,7 +26,7 @@ function CartPage() {
   const { data: session, isPending: sessionPending } = authClient.useSession();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const productsQuery = useQuery(productsQueryOptions);
+  const productsQuery = useQuery(productsQueryOptions());
   const orderId = cart.pendingOrderId ?? cart.checkoutKey;
   const orderQuery = useQuery({
     ...orderQueryOptions(orderId ?? ''),
@@ -51,7 +51,7 @@ function CartPage() {
     },
     onError: (error) => {
       if (error instanceof OrderRequestError && error.status < 500) cart.releaseCheckout();
-      void queryClient.invalidateQueries({ queryKey: productsQueryOptions.queryKey });
+      void queryClient.invalidateQueries({ queryKey: ['products'] });
     },
   });
 
@@ -60,14 +60,14 @@ function CartPage() {
     if (!order) return;
     if (order.status === 'confirmed') {
       completeOrder(order);
-      void queryClient.invalidateQueries({ queryKey: productsQueryOptions.queryKey });
+      void queryClient.invalidateQueries({ queryKey: ['products'] });
       void navigate({ to: '/orders/$orderId', params: { orderId: order.id } });
     } else if (order.status === 'rejected') {
       releaseCheckout('El pedido no se completó. Revisa las cantidades y vuelve a intentarlo.');
-      void queryClient.invalidateQueries({ queryKey: productsQueryOptions.queryKey });
+      void queryClient.invalidateQueries({ queryKey: ['products'] });
     } else if (order.status === 'cancelled' || order.status === 'expired') {
       releaseClosedOrder(order);
-      void queryClient.invalidateQueries({ queryKey: productsQueryOptions.queryKey });
+      void queryClient.invalidateQueries({ queryKey: ['products'] });
     } else setPendingOrder(order.id);
   }, [
     order,
