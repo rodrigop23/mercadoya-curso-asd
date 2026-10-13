@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   agent-smoke:
-    name: Agent auth, isolation and MCP tools smoke
+    name: Agent auth, isolation, MCP tools and confirmations smoke
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     defaults:

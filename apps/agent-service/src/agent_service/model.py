@@ -36,6 +36,7 @@ async def reply(messages: list[BaseMessage], config: RunnableConfig, tools=None)
             try:
                 _, name, raw = last.text.split(" ", 2)
                 args = json.loads(raw)
+                # Incluye propuestas locales; la lista enlazada excluye cancel_my_order.
                 if not isinstance(args, dict) or name not in {tool.name for tool in tools}:
                     raise ValueError
             except (ValueError, TypeError):

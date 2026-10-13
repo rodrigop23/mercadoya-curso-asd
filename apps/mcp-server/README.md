@@ -1,8 +1,8 @@
-# MCP de lectura de MercadoYa
+# MCP de MercadoYa
 
 Servidor Python 3.12 independiente del agente, de pnpm y de Turbo. Expone cinco
-herramientas sobre las APIs públicas de Catalog y Orders. No contiene mutaciones,
-acceso a Inventory ni credenciales internas de Catalog.
+herramientas de lectura sobre las APIs públicas de Catalog y Orders y una
+cancelación autenticada. No accede a Inventory ni a credenciales internas de Catalog.
 
 ## Arranque
 
@@ -32,7 +32,7 @@ su healthcheck antes de arrancar.
 
 ## Herramientas
 
-Todas anuncian `readOnlyHint=true`, `destructiveHint=false`, `idempotentHint=true`
+Las cinco lecturas anuncian `readOnlyHint=true`, `destructiveHint=false`, `idempotentHint=true`
 y `openWorldHint=false`. Pydantic valida entradas y publica `outputSchema`.
 El SDK entrega texto JSON y `structuredContent` con los mismos datos. Una línea
 breve confirma que la consulta de lectura terminó. Los errores de validación
@@ -71,7 +71,7 @@ El servidor usa `mcp.server.mcpserver.MCPServer`; las opciones de transporte en
 El cliente del agente usa MCP 1.x en su propio lock. No se instalan los dos SDK
 en un entorno. `tests/adapter_probe.py` corre con uv en el proyecto del agente.
 
-El test real confirma initialize con `2025-11-25`, las cinco herramientas,
+El test real confirma initialize con `2025-11-25`, las seis herramientas,
 annotations, outputSchema, structuredContent y llamada con adapters. El SDK 2.x
 acepta ese handshake aunque también soporta la revisión stateless `2026-07-28`.
 No hizo falta bajar el servidor a FastMCP 1.x.
@@ -93,3 +93,21 @@ Referencias: [SDK Python y migración v2](https://py.sdk.modelcontextprotocol.io
 [adapters](https://docs.langchain.com/oss/python/langchain/mcp).
 La autorización OAuth de MCP no se usa para este servidor interno. Véase
 [ADR 0025](../../docs/adr/0025-herramientas-mcp-lectura.md).
+
+
+## Cancelación aprobada
+
+`cancel_my_order(order_id: UUID)` hace un POST sin cuerpo a
+`/api/orders/{order_id}/cancel` con el Bearer de Context.headers. Devuelve
+`{ order_id, status: "cancelled", already_cancelled }`: 202 cancela ahora y 200
+informa una cancelación previa. Sus anotaciones son readOnlyHint=false,
+destructiveHint=true, idempotentHint=true y openWorldHint=false.
+
+El agente nunca enlaza esta herramienta al modelo. La llama solo después de una
+aprobación humana y con el JWT del request que reanuda. El MCP exige además el
+token interno de proceso. 409 indica pedido finalizado o pago en proceso; 404 no
+revela si existe un pedido ajeno. 401 y fallos 5xx/timeout usan mensajes fijos.
+No hay reintentos; los logs conservan únicamente nombre, duración y status.
+Los tests cubren 200, 202, 400, 401, 404, 409, 502, 503 y timeout, incluidos headers
+por llamada y ausencia de JWT en logs. Véase el
+[ADR 0026](../../docs/adr/0026-acciones-con-confirmacion.md).

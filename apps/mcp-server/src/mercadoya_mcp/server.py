@@ -21,7 +21,11 @@ class ReadingServer(MCPServer):
                 raise ToolError("Filtros inválidos: revisa los parámetros de la consulta") from None
             if not isinstance(error, UnexpectedToolError):
                 raise
-            service = "Orders" if name in {"list_my_orders", "get_my_order"} else "Catalog"
+            service = (
+                "Orders"
+                if name in {"list_my_orders", "get_my_order", "cancel_my_order"}
+                else "Catalog"
+            )
             raise ToolError(f"El servicio de {service} no está disponible ahora") from None
         except Exception:
             raise ToolError("El servicio de consultas no está disponible ahora") from None

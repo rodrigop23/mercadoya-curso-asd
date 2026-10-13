@@ -8,9 +8,10 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from mercadoya_mcp.clients import get, user_authorization
+from mercadoya_mcp.clients import get, post, user_authorization
 from mercadoya_mcp.money import cents_to_pen
 from mercadoya_mcp.tools.schemas import (
+    CancelResult,
     Limit,
     OrderDetail,
     OrderItem,
@@ -151,4 +152,23 @@ def register(server: MCPServer):
                 )
                 for i in o.get("items") or []
             ],
+        )
+
+    @server.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=False
+        )
+    )
+    async def cancel_my_order(ctx: Context, order_id: UUID) -> CancelResult:
+        """Cancela un pedido propio pendiente. Usar solo tras la aprobación del comprador."""
+        status, raw = await post(
+            "cancel_my_order",
+            "Orders",
+            f"/api/orders/{order_id}/cancel",
+            authorization=user_authorization(ctx),
+        )
+        return CancelResult(
+            order_id=raw["order"]["id"],
+            status=raw["order"]["status"],
+            already_cancelled=status == 200,
         )

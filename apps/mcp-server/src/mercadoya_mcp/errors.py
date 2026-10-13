@@ -6,6 +6,10 @@ def remote_error(service: str, status: int | None) -> ToolError:
         return ToolError("Filtros inválidos: revisa los parámetros de la consulta")
     if status in (401, 403):
         return ToolError("Tu sesión venció, vuelve a iniciar sesión")
+    if status == 409:
+        return ToolError(
+            "Ese pedido ya no se puede cancelar (ya finalizó o el pago está en proceso)"
+        )
     if status == 404:
         return ToolError(
             "No encontré ese pedido entre los tuyos"

@@ -1,5 +1,15 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { z } from 'zod';
+import { cartResultSchema, type CartProposal, type CartResult } from '@/lib/agent-actions';
+import { applyAgentCartProposalOnce } from './apply-agent-cart-proposal';
 import type { Order } from '@/lib/orders';
 import { productThumbnailPath, type Product } from '@/lib/products';
 
@@ -12,6 +22,7 @@ const entrySchema = z.object({
 });
 const cartSchema = z.object({
   items: z.array(entrySchema).max(20),
+  agentResults: z.record(z.string(), cartResultSchema).default({}),
   checkoutKey: z.uuid().nullable(),
   pendingOrderId: z.uuid().nullable(),
   redirected: z.boolean(),
@@ -22,6 +33,7 @@ type CartState = z.infer<typeof cartSchema>;
 export type CartEntry = z.infer<typeof entrySchema>;
 const emptyCart: CartState = {
   items: [],
+  agentResults: {},
   checkoutKey: null,
   pendingOrderId: null,
   redirected: false,
@@ -53,6 +65,11 @@ type CartContextValue = CartState & {
   count: number;
   locked: boolean;
   setQuantity(product: Product, quantity: number): void;
+  applyAgentProposal(
+    proposal: CartProposal,
+    product: Product | null,
+    failure?: CartResult,
+  ): CartResult;
   remove(productId: string): void;
   beginCheckout(): string;
   setPendingOrder(orderId: string): void;
@@ -64,7 +81,7 @@ type CartContextValue = CartState & {
 const CartContext = createContext<CartContextValue | null>(null);
 
 export function CartProvider({ owner, children }: { owner: string; children: ReactNode }) {
-  const [state, setState] = useState<CartState>(() => {
+  const [state, setReactState] = useState<CartState>(() => {
     if (owner === 'loading') return emptyCart;
     const saved = readCart(owner);
     if (owner === 'guest' || saved.checkoutKey) return saved;
@@ -77,6 +94,17 @@ export function CartProvider({ owner, children }: { owner: string; children: Rea
     }
     return { ...saved, items };
   });
+  // Refrescar y persistir en el evento, fuera de un updater de React que puede repetirse.
+  const currentState = useRef(state);
+  const setState = useCallback(
+    (update: CartState | ((current: CartState) => CartState)) => {
+      const next = typeof update === 'function' ? update(currentState.current) : update;
+      currentState.current = next;
+      if (owner !== 'loading') persistCart(owner, next);
+      setReactState(next);
+    },
+    [owner],
+  );
   useEffect(() => {
     if (owner === 'loading') return;
     try {
@@ -92,7 +120,7 @@ export function CartProvider({ owner, children }: { owner: string; children: Rea
     };
     window.addEventListener('storage', sync);
     return () => window.removeEventListener('storage', sync);
-  }, [owner]);
+  }, [owner, setState]);
   const locked = owner === 'loading' || Boolean(state.checkoutKey || state.pendingOrderId);
   const releaseCheckout = useCallback(
     (reason?: string) =>
@@ -104,53 +132,79 @@ export function CartProvider({ owner, children }: { owner: string; children: Rea
         failureReason: reason ?? current.failureReason,
         failureKind: reason ? 'error' : current.failureKind,
       })),
-    [],
+    [setState],
   );
   const setPendingOrder = useCallback(
     (pendingOrderId: string) =>
       setState((current) =>
         current.pendingOrderId === pendingOrderId ? current : { ...current, pendingOrderId },
       ),
-    [],
+    [setState],
   );
-  const completeOrder = useCallback((order: Order) => {
-    setState((current) => {
-      if (current.pendingOrderId !== order.id && current.checkoutKey !== order.id) return current;
-      const purchased = order.items ?? [{ productId: order.productId, quantity: order.quantity }];
-      const items = current.items
-        .map((item) => ({
-          ...item,
-          quantity:
-            item.quantity -
-            (purchased.find((line) => line.productId === item.productId)?.quantity ?? 0),
-        }))
-        .filter((item) => item.quantity > 0);
-      return { ...emptyCart, items };
-    });
-  }, []);
-  const releaseClosedOrder = useCallback((order: Order) => {
-    if (order.status !== 'cancelled' && order.status !== 'expired') return;
-    setState((current) => {
-      if (current.pendingOrderId !== order.id && current.checkoutKey !== order.id) return current;
-      return {
-        ...current,
-        checkoutKey: null,
-        pendingOrderId: null,
-        redirected: false,
-        failureKind: 'closed',
-        failureReason:
-          order.status === 'cancelled'
-            ? 'Cancelaste el pedido. Tus productos siguen en el carrito para volver a comprar.'
-            : 'El pedido venció. Tus productos siguen en el carrito para volver a comprar.',
-      };
-    });
-  }, []);
+  const completeOrder = useCallback(
+    (order: Order) => {
+      setState((current) => {
+        if (current.pendingOrderId !== order.id && current.checkoutKey !== order.id) return current;
+        const purchased = order.items ?? [{ productId: order.productId, quantity: order.quantity }];
+        const items = current.items
+          .map((item) => ({
+            ...item,
+            quantity:
+              item.quantity -
+              (purchased.find((line) => line.productId === item.productId)?.quantity ?? 0),
+          }))
+          .filter((item) => item.quantity > 0);
+        return { ...emptyCart, items, agentResults: current.agentResults };
+      });
+    },
+    [setState],
+  );
+  const releaseClosedOrder = useCallback(
+    (order: Order) => {
+      if (order.status !== 'cancelled' && order.status !== 'expired') return;
+      setState((current) => {
+        if (current.pendingOrderId !== order.id && current.checkoutKey !== order.id) return current;
+        return {
+          ...current,
+          checkoutKey: null,
+          pendingOrderId: null,
+          redirected: false,
+          failureKind: 'closed',
+          failureReason:
+            order.status === 'cancelled'
+              ? 'Cancelaste el pedido. Tus productos siguen en el carrito para volver a comprar.'
+              : 'El pedido venció. Tus productos siguen en el carrito para volver a comprar.',
+        };
+      });
+    },
+    [setState],
+  );
   return (
     <CartContext.Provider
       value={{
         ...state,
         locked,
         count: state.items.reduce((sum, item) => sum + item.quantity, 0),
+        applyAgentProposal(proposal, product, failure) {
+          const current = currentState.current;
+          const outcome = applyAgentCartProposalOnce(
+            {
+              ...current,
+              locked: owner === 'loading' || Boolean(current.checkoutKey || current.pendingOrderId),
+            },
+            proposal,
+            product,
+            failure,
+          );
+          const next = {
+            ...current,
+            items: outcome.cart.items,
+            agentResults: outcome.cart.agentResults,
+          };
+          // Un solo snapshot guarda las líneas y el resultado para reanudar sin sumar otra vez.
+          setState(next);
+          return outcome.result;
+        },
         setQuantity(product, quantity) {
           const previous = state.items.find((item) => item.productId === product.id)?.quantity ?? 0;
           if (

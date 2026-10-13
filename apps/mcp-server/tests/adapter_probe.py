@@ -8,7 +8,8 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
-EXPECTED = {"search_products", "get_product", "check_stock", "list_my_orders", "get_my_order"}
+READ = {"search_products", "get_product", "check_stock", "list_my_orders", "get_my_order"}
+EXPECTED = READ | {"cancel_my_order"}
 
 
 async def main():
@@ -20,7 +21,12 @@ async def main():
             assert initialized.protocolVersion == "2025-11-25"
             tools = (await session.list_tools()).tools
             assert {tool.name for tool in tools} == EXPECTED
-            assert all(tool.annotations.readOnlyHint and tool.outputSchema for tool in tools)
+            assert all(tool.outputSchema for tool in tools)
+            for tool in tools:
+                assert tool.annotations.readOnlyHint == (tool.name in READ)
+                assert tool.annotations.destructiveHint == (tool.name == "cancel_my_order")
+                assert tool.annotations.idempotentHint
+                assert not tool.annotations.openWorldHint
             result = await session.call_tool("search_products", {"query": "audifonos"})
             assert not result.isError
             assert len(result.content) == 1

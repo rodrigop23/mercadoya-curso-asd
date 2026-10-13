@@ -64,3 +64,9 @@ class OrderDetail(BaseModel):
     created_at: str
     total_pen: str | None
     items: list[OrderItem]
+
+
+class CancelResult(BaseModel):
+    order_id: str
+    status: Literal["cancelled"]
+    already_cancelled: bool

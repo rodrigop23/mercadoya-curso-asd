@@ -11,7 +11,7 @@ from mercadoya_mcp.errors import remote_error
 logger = logging.getLogger("mercadoya_mcp.tools")
 
 
-async def get(tool: str, service: str, path: str, *, params=None, authorization=None):
+async def _request(method, tool, service, path, *, params=None, authorization=None):
     base = (
         os.getenv("CATALOG_URL", "http://catalog:3007")
         if service == "Catalog"
@@ -25,7 +25,8 @@ async def get(tool: str, service: str, path: str, *, params=None, authorization=
             asyncio.timeout(5),
             httpx.AsyncClient(timeout=httpx.Timeout(5, connect=2), trust_env=False) as client,
         ):
-            response = await client.get(
+            response = await client.request(
+                method,
                 base + path,
                 params=params,
                 headers={"Authorization": authorization} if authorization else {},
@@ -33,7 +34,7 @@ async def get(tool: str, service: str, path: str, *, params=None, authorization=
         status = response.status_code
         if not response.is_success:
             raise remote_error(service, status)
-        return response.json()
+        return response.status_code, response.json()
     except (httpx.HTTPError, ValueError, TimeoutError):
         raise remote_error(service, None) from None
     finally:
@@ -43,6 +44,15 @@ async def get(tool: str, service: str, path: str, *, params=None, authorization=
             (time.monotonic() - started) * 1000,
             status,
         )
+
+
+async def get(tool: str, service: str, path: str, *, params=None, authorization=None):
+    _, body = await _request("GET", tool, service, path, params=params, authorization=authorization)
+    return body
+
+
+async def post(tool: str, service: str, path: str, *, authorization=None):
+    return await _request("POST", tool, service, path, authorization=authorization)
 
 
 def user_authorization(ctx):

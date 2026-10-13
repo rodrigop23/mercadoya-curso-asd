@@ -13,9 +13,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from uuid import uuid4
 
 import jwt
 from cryptography.hazmat.primitives.asymmetric import rsa
+from jsonschema import validate
 
 HERE = Path(__file__).resolve().parents[1]
 
@@ -82,6 +84,8 @@ def main():
     key.update(kid="smoke-rsa", use="sig", alg="RS256")
     jwks_available = True
     received_auth = []
+    cancel_posts = []
+    order_status = {"smoke-buyer-a": "pending", "smoke-buyer-b": "pending"}
     order_ids = {
         "smoke-buyer-a": "00000000-0000-4000-8000-00000000000a",
         "smoke-buyer-b": "00000000-0000-4000-8000-00000000000b",
@@ -118,7 +122,7 @@ def main():
                     oid = order_ids[claims["sub"]]
                     order = dict(
                         id=oid,
-                        status="confirmed",
+                        status=order_status[claims["sub"]],
                         createdAt="2026-10-12T10:00:00Z",
                         totalAmount=19980,
                         buyerId=claims["sub"],
@@ -147,6 +151,34 @@ def main():
             self.end_headers()
             self.wfile.write(json.dumps(body).encode())
 
+        def do_POST(self):
+            authorization = self.headers.get("Authorization", "")
+            cancel_posts.append(authorization)
+            try:
+                claims = jwt.decode(
+                    authorization.removeprefix("Bearer "),
+                    private.public_key(),
+                    algorithms=["RS256"],
+                    issuer="http://localhost:8000",
+                    audience="mercadoya-services",
+                )
+                subject = claims["sub"]
+                oid = order_ids[subject]
+                if self.path != f"/api/orders/{oid}/cancel":
+                    status, body = 404, {"error": "private order"}
+                elif order_status[subject] not in {"pending", "cancelled"}:
+                    status, body = 409, {"error": "finished"}
+                else:
+                    status = 200 if order_status[subject] == "cancelled" else 202
+                    order_status[subject] = "cancelled"
+                    body = {"order": {"id": oid, "status": "cancelled"}}
+            except (jwt.PyJWTError, KeyError):
+                status, body = 401, {"error": "invalid"}
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(body).encode())
+
         def log_message(self, *_args):
             pass
 
@@ -163,6 +195,7 @@ def main():
                 "role": "user",
                 "iss": "http://localhost:8000",
                 "aud": "mercadoya-services",
+                "jti": str(uuid4()),
                 "iat": now,
                 "exp": now + 300,
             },
@@ -349,6 +382,130 @@ def main():
                             if m.get("type") == "tool"
                         ),
                         "error MCP como ToolMessage",
+                    )
+
+                    schema = json.loads(
+                        (
+                            HERE.parents[1] / "packages/contracts/agent/agent-action.schema.json"
+                        ).read_text()
+                    )
+
+                    def proposal_run(token, name, params):
+                        status, created = request(base, "/threads", token, {})
+                        check(status == 200, "hilo para propuesta")
+                        thread_id = created["thread_id"]
+                        status, result = request(
+                            base,
+                            f"/threads/{thread_id}/runs/wait",
+                            token,
+                            {
+                                "assistant_id": "agent",
+                                "input": {
+                                    "messages": [
+                                        {
+                                            "role": "user",
+                                            "content": f"/tool {name} " + json.dumps(params),
+                                        }
+                                    ]
+                                },
+                            },
+                        )
+                        check(status == 200, "run de propuesta")
+                        check(all(t not in json.dumps(result) for t in tokens), "interrupt sin JWT")
+                        status, state = request(base, f"/threads/{thread_id}/state", token)
+                        check(
+                            status == 200 and all(t not in json.dumps(state) for t in tokens),
+                            "estado interrumpido sin JWT",
+                        )
+                        status, thread = request(base, f"/threads/{thread_id}", token)
+                        check(
+                            status == 200 and all(t not in json.dumps(thread) for t in tokens),
+                            "interrupts del hilo sin JWT",
+                        )
+                        return thread_id, result
+
+                    def resume_run(thread_id, token, intr, approved, result=None):
+                        value = {"action_id": intr["value"]["action_id"], "approved": approved}
+                        if result is not None:
+                            value["result"] = result
+                        validate(value, schema)
+                        check(all(t not in json.dumps(value) for t in tokens), "resume sin JWT")
+                        return request(
+                            base,
+                            f"/threads/{thread_id}/runs/wait",
+                            token,
+                            {"assistant_id": "agent", "command": {"resume": {intr["id"]: value}}},
+                        )
+
+                    for approved in (True, False):
+                        thread_id, result = proposal_run(
+                            a, "propose_add_to_cart", {"product_id": product_id, "quantity": 2}
+                        )
+                        intr = result["__interrupt__"][0]
+                        validate(intr["value"], schema)
+                        check(intr["value"]["kind"] == "add_to_cart", "payload de carrito válido")
+                        status, result = resume_run(
+                            thread_id,
+                            a,
+                            intr,
+                            approved,
+                            {"applied": True, "quantity_in_cart": 2} if approved else None,
+                        )
+                        text = json.dumps(result, ensure_ascii=False)
+                        check(
+                            status == 200
+                            and ("Cantidad final: 2" if approved else "no aprobó") in text,
+                            "carrito aprobado" if approved else "carrito rechazado",
+                        )
+
+                    # Rechazar antes de aprobar conserva un pedido pendiente para ambos casos.
+                    thread_id, result = proposal_run(
+                        a, "propose_cancel_order", {"order_id": order_ids["smoke-buyer-a"]}
+                    )
+                    intr = result["__interrupt__"][0]
+                    validate(intr["value"], schema)
+                    status, result = resume_run(thread_id, a, intr, False)
+                    check(
+                        status == 200
+                        and "no aprobó" in json.dumps(result, ensure_ascii=False)
+                        and not cancel_posts,
+                        "cancelación rechazada sin POST",
+                    )
+
+                    thread_id, result = proposal_run(
+                        a, "propose_cancel_order", {"order_id": order_ids["smoke-buyer-a"]}
+                    )
+                    intr = result["__interrupt__"][0]
+                    validate(intr["value"], schema)
+                    renewed = issue("smoke-buyer-a")
+                    check(renewed != a, "JWT nuevo del mismo comprador")
+                    status, result = resume_run(thread_id, renewed, intr, True)
+                    check(
+                        status == 200
+                        and "Pedido cancelado" in json.dumps(result, ensure_ascii=False),
+                        "cancelación aprobada",
+                    )
+                    check(
+                        cancel_posts == [f"Bearer {renewed}"],
+                        "un POST con JWT del request que reanuda",
+                    )
+                    status, duplicate = resume_run(thread_id, renewed, intr, True)
+                    check(status >= 400 or "__error__" in duplicate, "segundo resume rechazado")
+                    check(cancel_posts == [f"Bearer {renewed}"], "segundo resume sin segundo POST")
+                    status, state = request(base, f"/threads/{thread_id}/state", renewed)
+                    check(
+                        status == 200 and all(t not in json.dumps(state) for t in tokens),
+                        "estado final sin JWT",
+                    )
+
+                    _, result = proposal_run(
+                        a, "propose_cancel_order", {"order_id": order_ids["smoke-buyer-b"]}
+                    )
+                    check(
+                        not result.get("__interrupt__")
+                        and "No encontré ese pedido entre los tuyos"
+                        in json.dumps(result, ensure_ascii=False),
+                        "cancelación ajena sin interrupt",
                     )
                 jwks_available = False
                 time.sleep(5.1)  # Cooldown de JWKS igual al verificador Node.

@@ -40,7 +40,7 @@ def test_errors(status, text):
 def test_http_mapping_and_logs(monkeypatch, caplog, status):
     secret = "private-jwt-never-log"
 
-    async def fake_get(_self, url, **kwargs):
+    async def fake_get(_self, method, url, **kwargs):
         assert kwargs["headers"] == {"Authorization": f"Bearer {secret}"}
         if status is None:
             raise httpx.ReadTimeout(secret)
@@ -48,7 +48,7 @@ def test_http_mapping_and_logs(monkeypatch, caplog, status):
             status, json={"orders": [], "error": secret}, request=httpx.Request("GET", url)
         )
 
-    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+    monkeypatch.setattr(httpx.AsyncClient, "request", fake_get)
     caplog.set_level(logging.INFO)
     if status == 200:
         asyncio.run(
@@ -189,3 +189,46 @@ def test_decimal_price(value):
 def test_invalid_decimal_price(value):
     with pytest.raises(ValidationError):
         TypeAdapter(Price).validate_python(value)
+
+
+@pytest.mark.parametrize("status", [200, 202, 400, 401, 404, 409, 502, 503, None])
+def test_cancel_http_no_retries_and_private_logs(monkeypatch, caplog, status):
+    calls = []
+    secret = "secret-cancel-jwt"
+    oid = "00000000-0000-4000-8000-000000000001"
+
+    async def fake_request(_self, method, url, **kwargs):
+        calls.append(method)
+        assert method == "POST" and url.endswith(f"/{oid}/cancel")
+        assert kwargs["headers"] == {"Authorization": f"Bearer {secret}"}
+        assert "json" not in kwargs and "data" not in kwargs
+        if status is None:
+            raise httpx.ReadTimeout(secret)
+        return httpx.Response(
+            status, json={"order": dict(id=oid, status="cancelled"), "error": secret}
+        )
+
+    monkeypatch.setattr(httpx.AsyncClient, "request", fake_request)
+    caplog.set_level(logging.INFO)
+    server = ReadingServer("test")
+    register(server)
+    context = SimpleNamespace(headers={"authorization": f"Bearer {secret}"})
+
+    async def run():
+        if status in (200, 202):
+            result = await server.call_tool("cancel_my_order", {"order_id": oid}, context)
+            assert result.structured_content == dict(
+                order_id=oid, status="cancelled", already_cancelled=status == 200
+            )
+        else:
+            with pytest.raises(ToolError) as error:
+                await server.call_tool("cancel_my_order", {"order_id": oid}, context)
+            assert secret not in str(error.value)
+            if status == 409:
+                assert "ya no se puede cancelar" in str(error.value)
+            if status == 404:
+                assert "No encontré ese pedido entre los tuyos" in str(error.value)
+
+    asyncio.run(run())
+    assert calls == ["POST"]
+    assert secret not in caplog.text and "Bearer" not in caplog.text

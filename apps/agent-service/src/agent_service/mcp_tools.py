@@ -15,7 +15,11 @@ logger = logging.getLogger(__name__)
 
 async def forward_user_jwt(request, handler):
     runtime = request.runtime
-    if runtime is not None and request.name in {"list_my_orders", "get_my_order"}:
+    if runtime is not None and request.name in {
+        "list_my_orders",
+        "get_my_order",
+        "cancel_my_order",
+    }:
         user = runtime.config.get("configurable", {}).get("langgraph_auth_user", {})
         token = user.get("token")
         if token:

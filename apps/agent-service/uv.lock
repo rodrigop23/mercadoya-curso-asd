@@ -783,6 +783,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "jsonschema" },
     { name = "langgraph-api" },
     { name = "langgraph-cli", extra = ["inmem"] },
     { name = "pytest" },
@@ -802,6 +803,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "jsonschema", specifier = "==4.26.0" },
     { name = "langgraph-api", specifier = "==0.16.0" },
     { name = "langgraph-cli", extras = ["inmem"], specifier = "==0.4.33" },
     { name = "pytest", specifier = "==9.1.1" },

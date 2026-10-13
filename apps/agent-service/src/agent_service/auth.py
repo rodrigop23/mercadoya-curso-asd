@@ -9,6 +9,7 @@ import jwt
 from langgraph_sdk import Auth
 
 from agent_service.config import settings
+from agent_service.resume import validate_pending_resume
 
 auth = Auth()
 
@@ -74,6 +75,8 @@ async def authenticate(headers: dict) -> dict:
 
 @auth.on
 async def add_owner(ctx: Auth.types.AuthContext, value: dict) -> dict:
+    if ctx.resource == "threads" and ctx.action == "create_run":
+        await validate_pending_resume(value)
     owner = ctx.user.identity
     if value.get("metadata") is None:
         value["metadata"] = {}

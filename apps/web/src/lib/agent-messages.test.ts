@@ -99,13 +99,12 @@ describe('transcriptRows', () => {
     expect(transcriptRows(messages, { ...idle, toolLabel: pendingToolLabel(messages) })).toEqual([
       { kind: 'message', id: 'human', type: 'human', text: 'Busca café' },
     ]);
-    expect(
-      transcriptRows(messages, {
-        ...idle,
-        isLoading: true,
-        toolLabel: 'Consultando tus pedidos…',
-      }).at(-1)?.text,
-    ).toBe('Consultando tus pedidos…');
+    const last = transcriptRows(messages, {
+      ...idle,
+      isLoading: true,
+      toolLabel: 'Consultando tus pedidos…',
+    }).at(-1);
+    expect(last?.kind === 'status' ? last.text : null).toBe('Consultando tus pedidos…');
   });
 
   it('prioriza la carga del hilo y no deja filas de estado cuando queda inactivo', () => {
@@ -190,4 +189,85 @@ describe('pendingToolLabel', () => {
       expect(pendingToolLabel(messages)).toBeNull();
     }
   });
+});
+
+describe('filas de confirmación', () => {
+  const idle = { toolLabel: null, isLoading: false, isThreadLoading: false };
+  const proposal = {
+    kind: 'add_to_cart',
+    action_id: '12345678-1234-5678-9234-567812345678',
+    product_id: '00000000-0000-4000-8000-000000000001',
+    title: 'Café',
+    unit_price_pen: '12.90',
+    quantity: 2,
+    stock: 7,
+  };
+  it('rehidrata interrupciones válidas y conserva su id para respond', () => {
+    const row = transcriptRows([], {
+      ...idle,
+      interrupts: [{ id: 'interrupt-1', value: proposal }],
+    })[0];
+    expect(row).toEqual({
+      kind: 'confirmation',
+      id: 'interrupt-1',
+      proposal,
+      raw: proposal,
+      state: 'pending',
+    });
+    expect(transcriptRows([], { ...idle, interrupts: [] })).toEqual([]);
+  });
+  it('incluye sending/error y muestra payload inválido como no reconocido', () => {
+    for (const state of ['sending', 'error'] as const) {
+      expect(
+        transcriptRows([], {
+          ...idle,
+          interrupts: [{ id: 'i', value: proposal }],
+          confirmationStates: { i: state },
+        })[0],
+      ).toMatchObject({ kind: 'confirmation', state });
+    }
+    expect(
+      transcriptRows([], { ...idle, interrupts: [{ id: 'bad', value: { kind: 'unknown' } }] })[0],
+    ).toMatchObject({ kind: 'confirmation', proposal: null });
+  });
+});
+
+it('muestra solo el interrupt actual al reproducir eventos históricos del SDK', () => {
+  const proposal = {
+    kind: 'cancel_order',
+    action_id: '12345678-1234-5678-9234-567812345678',
+    order_id: '00000000-0000-4000-8000-000000000001',
+    status: 'pending',
+    total_pen: '12.90',
+    items_count: 1,
+    created_at: '2026-10-12T10:00:00Z',
+  };
+  const ai = {
+    type: 'ai',
+    content: '',
+    tool_calls: [{ id: 'new-call', name: 'propose_cancel_order' }],
+  };
+  const interrupts = [
+    { id: 'old', value: proposal },
+    { id: 'current', value: proposal },
+  ];
+  const options = { toolLabel: null, isLoading: false, isThreadLoading: false, interrupts };
+  expect(
+    transcriptRows([ai], options)
+      .filter((row) => row.kind === 'confirmation')
+      .map((row) => row.id),
+  ).toEqual(['current']);
+  expect(
+    transcriptRows([ai, { type: 'tool', tool_call_id: 'new-call', content: 'Rechazado' }], options),
+  ).toEqual([]);
+  expect(
+    transcriptRows([ai, { type: 'ai', content: 'No se hizo ningún cambio' }], options).some(
+      (row) => row.kind === 'confirmation',
+    ),
+  ).toBe(false);
+  expect(
+    transcriptRows([ai], { ...options, isLoading: true }).some(
+      (row) => row.kind === 'confirmation',
+    ),
+  ).toBe(false);
 });

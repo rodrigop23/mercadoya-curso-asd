@@ -2,8 +2,8 @@
 
 Servicio Python 3.12, separado de pnpm y Turbo. El grafo `agent` conversa en español y consulta
 catálogo, stock y pedidos propios mediante cinco herramientas del servidor
-[mercadoya-mcp](../mcp-server/README.md). No modifica carrito o pedidos ni incluye
-confirmaciones, memoria de largo plazo o multiagente.
+[mercadoya-mcp](../mcp-server/README.md). Propone agregar al carrito o cancelar un pedido pendiente y espera la aprobación
+del comprador con `interrupt`. No incluye memoria de largo plazo ni multiagente.
 
 ## Arranque local con Postgres
 
@@ -99,12 +99,11 @@ dan acceso a un hilo ajeno; la lectura directa responde 404.
 El token se entrega por `config["configurable"]["langgraph_auth_user"]`.
 El interceptor `forward_user_jwt` lo lee en el ToolRuntime de cada llamada de
 pedidos y lo reenvía como Authorization. No se agrega a las herramientas públicas.
-El cliente no guarda JWT ni headers de usuario. Las futuras acciones con
-confirmación todavía no están implementadas. Deben seguir este orden dentro del
-mismo nodo de confirmación:
+El cliente no guarda JWT ni headers de usuario. El nodo `confirm_action` sigue
+este orden para cancelar un pedido aprobado:
 
 ```python
-# Patrón futuro, no está implementado en el grafo base.
+# Orden implementado en confirm_action.
 decision = interrupt(payload)
 user = config["configurable"]["langgraph_auth_user"]
 token = user["token"]
@@ -153,8 +152,10 @@ conserva saltos de línea y omite reasoning. El `threadId` se guarda en sessionS
 por usuario. Nuevo hilo limpia esa referencia y conserva el hilo anterior en el servidor.
 Un cambio de usuario desmonta el chat anterior.
 
-El comentario junto al hook deja preparado `stream.interrupts` y
-`stream.respond({ aprobado }, { interruptId })`. No hay UI de confirmación.
+El chat renderiza `stream.interrupts` como tarjetas y responde con
+`stream.respond({ action_id, approved, result }, { interruptId })`. La web aplica
+el carrito antes de informar el resultado; el grafo ejecuta solo la cancelación
+aprobada. Recargar vuelve a mostrar una confirmación pendiente.
 
 ## Tests y smoke sin secretos
 
@@ -233,7 +234,8 @@ el job nuevo queda listo para la siguiente ejecución de GitHub Actions.
 
 ## Bucle MCP de lectura
 
-`StateGraph` alterna assistant y tools con `ToolNode` y `tools_condition`.
+`StateGraph` alterna assistant y tools con `ToolNode`. Su ruteo desvía propuestas
+al nodo confirm_action antes de ejecutar cualquier herramienta.
 Cuenta hasta seis iteraciones de tools desde el último HumanMessage. Después
 responde con los datos obtenidos, sin herramientas enlazadas al modelo.
 `create_model().bind_tools(tools)` mantiene Responses API con gpt-6-luna y recibe
@@ -279,3 +281,25 @@ la consulta, dos compradores aislados y un pedido ajeno como error. Se consultar
 27 runs del proyecto LangSmith y los logs Docker, sin JWT ni headers Authorization.
 La comprobación visual cubrió escritorio y móvil sin overflow horizontal.
 Estos resultados son locales; no se ejecutó GitHub Actions desde esta rama sin commit.
+
+
+## Acciones con confirmación
+
+Las herramientas locales `propose_add_to_cart(product_id, quantity)` y
+`propose_cancel_order(order_id)` se prueban también con `/tool` en scripted.
+Cada cambio requiere su propia aprobación. Dos propuestas o una propuesta junto
+a otra llamada se rechazan sin interrumpir. Solo las cinco lecturas MCP se enlazan
+al modelo; `cancel_my_order` queda reservado al nodo después de interrupt.
+
+El contrato Pydantic compartido se exporta desde esta app:
+
+```sh
+uv run python scripts/export_action_schema.py
+```
+
+Pytest falla si el archivo versionado difiere y usa los mismos fixtures que zod.
+`smoke.py --tools` cubre aprobar/rechazar ambas acciones, token nuevo al reanudar,
+un único POST, resume duplicado 409 y pedido ajeno sin interrupt. Revisa también
+state, interrupts, resumes y logs. El handler de auth añade el rechazo 409 porque
+Agent Server 0.16.0 devuelve 200 para un segundo resume vacío. Consulta el
+[ADR 0026](../../docs/adr/0026-acciones-con-confirmacion.md).

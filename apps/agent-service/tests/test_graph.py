@@ -31,7 +31,14 @@ def test_model_receives_prompt_history_and_no_credentials(monkeypatch):
     observed = {}
 
     async def fake_tools():
-        return [object()]
+        from langchain_core.tools import tool
+
+        @tool
+        def get_product() -> str:
+            """Producto de prueba."""
+            return "producto"
+
+        return [get_product]
 
     monkeypatch.setattr(graph_module, "get_tools", fake_tools)
 

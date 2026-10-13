@@ -1,3 +1,5 @@
+import { agentProposalSchema, type AgentProposal } from './agent-actions';
+
 /** Responses API mezcla texto con reasoning y otros bloques no visibles. */
 export function messageText(content: unknown): string {
   if (typeof content === 'string') return content;
@@ -16,16 +18,36 @@ export function messageText(content: unknown): string {
 
 export type TranscriptRow =
   | { kind: 'message'; id: string; type: 'human' | 'ai'; text: string }
-  | { kind: 'status'; id: string; text: string };
-// Futuras confirmaciones: extender la unión con kind: 'confirmation' para stream.interrupts.
+  | { kind: 'status'; id: string; text: string }
+  | {
+      kind: 'confirmation';
+      id: string;
+      proposal: AgentProposal | null;
+      raw: unknown;
+      state: 'pending' | 'sending' | 'error';
+    };
 
 export function transcriptRows(
-  messages: readonly { id?: string; type: string; content: unknown }[],
+  messages: readonly {
+    id?: string;
+    type: string;
+    content: unknown;
+    tool_calls?: { id?: string; name: string }[];
+    tool_call_id?: string;
+  }[],
   {
     toolLabel,
     isLoading,
     isThreadLoading,
-  }: { toolLabel: string | null; isLoading: boolean; isThreadLoading: boolean },
+    interrupts = [],
+    confirmationStates = {},
+  }: {
+    toolLabel: string | null;
+    isLoading: boolean;
+    isThreadLoading: boolean;
+    interrupts?: readonly { id?: string; value?: unknown }[];
+    confirmationStates?: Record<string, 'pending' | 'sending' | 'error'>;
+  },
 ): TranscriptRow[] {
   const rows: TranscriptRow[] = [];
   const positions = { human: 0, ai: 0 };
@@ -40,6 +62,31 @@ export function transcriptRows(
       id: message.id ?? `agent-message:${message.type}:${position}`,
       type: message.type,
       text,
+    });
+  }
+  let lastAiIndex = messages.length - 1;
+  while (lastAiIndex >= 0 && messages[lastAiIndex]?.type !== 'ai') lastAiIndex -= 1;
+  const latestCalls = messages[lastAiIndex]?.tool_calls ?? [];
+  const activeProposal =
+    latestCalls.length === 1 &&
+    ['propose_add_to_cart', 'propose_cancel_order'].includes(latestCalls[0]!.name) &&
+    !messages
+      .slice(lastAiIndex + 1)
+      .some((message) => message.type === 'tool' && message.tool_call_id === latestCalls[0]!.id);
+  // El SDK puede reproducir interrupts históricos al recibir eventos del siguiente turno.
+  // El último interrupt raíz pertenece a la única propuesta activa; el resto ya se respondió.
+  const current =
+    !isLoading && !isThreadLoading && (messages.length === 0 || activeProposal)
+      ? interrupts.at(-1)
+      : undefined;
+  if (current?.id) {
+    const parsed = agentProposalSchema.safeParse(current.value);
+    rows.push({
+      kind: 'confirmation',
+      id: current.id,
+      proposal: parsed.success ? parsed.data : null,
+      raw: current.value,
+      state: confirmationStates[current.id] ?? 'pending',
     });
   }
   const status = isThreadLoading

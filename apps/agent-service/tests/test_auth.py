@@ -107,6 +107,8 @@ def test_jwks_unavailable_is_infrastructure_error(identity, monkeypatch):
 
 @pytest.mark.parametrize("value", [{}, {"metadata": None}, {"metadata": {"owner": "buyer-b"}}])
 def test_owner_overwrites_client(value):
-    ctx = SimpleNamespace(user=SimpleNamespace(identity="buyer-a"))
+    ctx = SimpleNamespace(
+        user=SimpleNamespace(identity="buyer-a"), resource="threads", action="create"
+    )
     assert asyncio.run(add_owner(ctx, value)) == {"owner": "buyer-a"}
     assert value["metadata"]["owner"] == "buyer-a"
