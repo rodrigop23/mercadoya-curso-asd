@@ -4,10 +4,6 @@
   "auth": { "path": "./src/agent_service/auth.py:auth" },
   "python_version": "3.12",
   "api_version": "0.16.0",
-  "env": {
-    "LANGSMITH_HIDE_INPUTS": "true",
-    "LANGSMITH_HIDE_OUTPUTS": "true"
-  },
   "http": {
     "disable_store": true,
     "disable_ui": true,

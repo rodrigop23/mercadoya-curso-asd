@@ -28,6 +28,7 @@ from agent_service.guardrails.input import PII_NOTICE, before_model
 from agent_service.guardrails.moderation import moderate
 from agent_service.guardrails.observability import record_event, record_moderation
 from agent_service.guardrails.output import after_model, structured_data
+from agent_service.guardrails.privacy import configure_trace_privacy
 from agent_service.guardrails.tool import sanitize_tool_message
 from agent_service.history import trim_history
 from agent_service.mcp_tools import get_tools
@@ -95,7 +96,7 @@ async def input_guard(state: AgentState, config: RunnableConfig):
     }
 
 
-def guarded_response(response, state, config):
+def guarded_response(response, state, config, model_messages=None):
     # Se valida antes de escribir el resultado del modelo en cualquier checkpoint.
     if response.tool_calls:
         from agent_service.guardrails.input import detect_injection
@@ -119,7 +120,10 @@ def guarded_response(response, state, config):
         # No conservar reasoning ni texto auxiliar sin validar.
         return AIMessage(content="", tool_calls=response.tool_calls, id=response.id)
     decision = after_model(
-        response.text, state["messages"], SYSTEM_PROMPT, settings().mcp_internal_token
+        response.text,
+        model_messages if model_messages is not None else state["messages"],
+        SYSTEM_PROMPT,
+        settings().mcp_internal_token,
     )
     if decision.reason:
         record_event(config, "output", decision.reason, decision.action)
@@ -182,8 +186,9 @@ async def assistant(state: AgentState, config: RunnableConfig, runtime: Runtime 
             content=messages[0].text
             + ("\nLlegaste al límite de consultas de este turno. Responde con los datos obtenidos.")
         )
-    response = await reply(trim_history(messages), config, tools if not exhausted else [])
-    return {"messages": [guarded_response(response, state, config)]}
+    model_messages = trim_history(messages)
+    response = await reply(model_messages, config, tools if not exhausted else [])
+    return {"messages": [guarded_response(response, state, config, model_messages)]}
 
 
 def tool_failure(error: Exception) -> str:
@@ -346,6 +351,8 @@ async def confirm_action(state: MessagesState, config: RunnableConfig):
     except (ValueError, KeyError, TypeError):
         return answer("No se pudo confirmar la cancelación; consulta el estado del pedido")
 
+
+configure_trace_privacy()
 
 builder = StateGraph(AgentState)
 builder.add_node("input_guard", input_guard)

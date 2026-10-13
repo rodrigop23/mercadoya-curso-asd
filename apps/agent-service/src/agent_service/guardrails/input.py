@@ -27,7 +27,8 @@ STORE_TOPICS = re.compile(
 ALIEN_TOPICS = re.compile(
     r"\b(?:integral\w*|derivada\w*|tarea\w* escolar\w*|ecuacion\w*|"
     r"resuelve\w*.*(?:matematica\w*|ejercicio\w*)|programa\w*.*(?:python|javascript)|"
-    r"codigo|debug\w*|politica|presidente|elecciones|diagnostico|medicina|"
+    r"codigo\s+fuente|python|javascript|funcion|error de compilacion|"
+    r"debug\w*|politica|presidente|elecciones|diagnostico|medicina|"
     r"tratamiento|enfermedad\w*|inversion\w*|finanzas personales|bitcoin)\b"
 )
 

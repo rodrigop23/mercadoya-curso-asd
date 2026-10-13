@@ -348,4 +348,9 @@ y pedidos propios. No modifica datos. El agente directo usa `127.0.0.1:8123`,
 la web usa `/api/agent` por Kong y MCP no publica puerto del host ni ruta de Kong.
 Catalog agrega detalle público GET `/api/products/{id}`, documentado en OpenAPI 1.5.0.
 CI prueba el transporte MCP y aislamiento sin claves mediante el proveedor scripted.
+LangSmith muestra entradas y salidas con PII redactada para depurar y evaluar.
+`LANGSMITH_HIDE_INPUTS` y `LANGSMITH_HIDE_OUTPUTS` valen `false` por defecto en
+Compose. Actívalos con `true` cuando el entorno prohíba enviar ese contenido,
+incluso redactado; se conservan tags, metadata y tiempos. Los detalles de redacción
+y guardrails están en [ADR 0027](docs/adr/0027-guardrails-memoria.md).
 La decisión está en [ADR 0025](docs/adr/0025-herramientas-mcp-lectura.md).

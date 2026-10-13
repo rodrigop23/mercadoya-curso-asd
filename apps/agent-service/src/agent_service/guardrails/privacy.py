@@ -1,8 +1,37 @@
-"""Redacta antes de que Agent Server escriba el run y el primer checkpoint."""
+"""Redacta la entrada del servidor y el contenido exportado a LangSmith."""
+
+import re
 
 from langgraph_sdk import Auth
+from langsmith import Client, configure
+from langsmith.utils import tracing_is_enabled
 
 from agent_service.guardrails.pii import redact_pii
+
+TRACE_SECRETS = re.compile(
+    r"eyJ[\w-]+\.[\w-]+\.[\w-]+|Bearer\s+\S+|\bsk-[\w-]+|\blsv2_[\w-]+"
+)
+PRIVATE_FIELDS = {"token", "authorization", "x-mcp-internal-token", "api_key"}
+
+
+def sanitize_trace(value):
+    """Sanea copias serializadas, incluidos resultados crudos, metadata y errores."""
+    if isinstance(value, dict):
+        return {
+            key: "[secreto]" if key.casefold() in PRIVATE_FIELDS else sanitize_trace(child)
+            for key, child in value.items()
+        }
+    if isinstance(value, list):
+        return [sanitize_trace(child) for child in value]
+    if isinstance(value, str):
+        return TRACE_SECRETS.sub("[secreto]", redact_pii(value))
+    return value
+
+
+def configure_trace_privacy():
+    # Sin tracing no se construye un cliente. Los flags HIDE siguen controlados por el entorno.
+    if tracing_is_enabled():
+        configure(client=Client(anonymizer=sanitize_trace))
 
 
 def sanitize_run_input(value: dict):

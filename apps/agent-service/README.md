@@ -64,6 +64,9 @@ Compose inyecta las variables. `langgraph.json` no carga ningún `.env`.
 - `LANGSMITH_API_KEY`: requerida por la imagen en modo lite incluso con `echo`.
 - `LANGSMITH_PROJECT`: `mercadoya-agent` por defecto.
 - `LANGSMITH_TRACING`: `true` por defecto. Las trazas se activan por entorno.
+- `LANGSMITH_HIDE_INPUTS` y `LANGSMITH_HIDE_OUTPUTS`: `false` por defecto.
+  Activa cada uno con `true` cuando el entorno prohíba enviar ese contenido a
+  LangSmith, incluso redactado. Los tags, metadata y tiempos siguen disponibles.
 
 Después de cambiar variables del entorno de Compose, recrea el contenedor:
 
@@ -311,20 +314,36 @@ ajenos, y ejecuta moderación opcional. Auth redacta la entrada antes del primer
 checkpoint. Los resultados MCP se sanean dentro del interceptor y en el grafo;
 el catálogo no puede cambiar las instrucciones mediante títulos o descripciones.
 `output_guard` comprueba fuga de instrucciones, secretos, PII y precios/stock
-numéricos contra los datos estructurados del turno actual. El modelo usa
+numéricos contra las herramientas de toda la ventana enviada al modelo. También
+admite montos del comprador ya redactados, presupuestos de memoria y subtotales
+de precios unitarios por cantidades de 1 a 20. Reconoce miles con coma o espacio.
+Si queda un monto sin respaldo, conserva la respuesta y añade
+"Algunos montos no están confirmados; verifícalos en el catálogo", con
+`ungrounded_price` y `action=annotated`. Solo reemplaza la respuesta por falta de
+respaldo monetario si todos los montos carecen de evidencia y no hay herramientas
+en esa ventana. Los stocks sin respaldo también reciben un aviso.
+Las consultas sobre códigos de descuento, pedido o producto están permitidas;
+el filtro de programación exige vocabulario como `código fuente` o `python`.
+El modelo usa
 `nostream` y la web recibe el texto completo después de validarlo.
 
 `AGENT_MAX_INPUT_CHARS=2000` admite límites inferiores.
 `AGENT_MODERATION=off` mantiene el comportamiento determinista sin claves;
 con `on` y una clave se consulta `omni-moderation-latest`, con timeout de 3 s.
-Los fallos registran `moderation=skipped`. Logs y trazas registran solo motivos,
-acciones y contadores, sin texto original ni identidad.
+Los fallos registran `moderation=skipped`. Los eventos de guardrails registran
+motivos, acciones y contadores, sin texto original ni identidad.
 
-Por privacidad, Compose y los configs fijan `LANGSMITH_HIDE_INPUTS=true` y
-`LANGSMITH_HIDE_OUTPUTS=true`. LangSmith conserva tags, metadata y tiempos,
-pero oculta todo el contenido de entradas y salidas. El cuerpo HTTP original
-llega al servidor antes de auth. Una invocación directa del grafo con checkpointer
-o callbacks debe usar `sanitize_run_input` primero.
+LangSmith muestra entradas y salidas por defecto para depurar y evaluar. Auth
+redacta la entrada antes del run y del primer checkpoint. Al cargar el grafo con
+tracing activo se configura un `Client(anonymizer=sanitize_trace)` global que
+redacta PII y secretos en las copias exportadas de entradas, salidas, metadata y
+errores. Esto cubre también los resultados crudos del proveedor anteriores al
+guard de salida. Los flags de ocultamiento se leen del entorno y no se fijan en
+los configs de LangGraph. Activa `LANGSMITH_HIDE_INPUTS=true` o
+`LANGSMITH_HIDE_OUTPUTS=true` cuando la política del entorno exija omitir todo ese
+contenido, incluso redactado. El cuerpo HTTP original llega al servidor antes
+de auth; los proxies externos deben evitar registrarlo. Una invocación directa
+del grafo con checkpointer o callbacks debe usar `sanitize_run_input` primero.
 
 Pide "Recuerda que uso talla M", "¿qué recuerdas de mí?", "olvida mi talla"
 o "Olvida todo". La memoria solo guarda preferencias de compra de hasta 80
@@ -348,6 +367,16 @@ persiste íntegro y no hay resumen automático. Las heurísticas de PII, inyecci
 fuga y respaldo de precios tienen límites documentados en
 [ADR 0027](../../docs/adr/0027-guardrails-memoria.md).
 
-Las verificaciones locales del 2026-10-13 incluyen los smokes sin claves y la
+Las verificaciones iniciales del 2026-10-13 incluyeron los smokes sin claves y la
 imagen con Postgres y modelo real: memoria en hilo nuevo, aislamiento, borrado,
-checkpoints/logs sin PII y trazas de LangSmith ocultas con tags de guardrails.
+checkpoints/logs sin PII y trazas de LangSmith entonces ocultas con tags de guardrails.
+La regresión de falsos positivos cubre presupuestos, subtotales, separadores de
+miles, precios de turnos anteriores y exportaciones redactadas con ambos valores
+de los flags de ocultamiento.
+
+La tarea 10 pasó Ruff, 226 tests pytest, ambos smokes sin claves y la validación
+de Compose con los flags en `false`. Con claves reales y dos productos temporales,
+"busco audífonos por menos de 150 soles" devolvió la lista a S/ 12.90 y S/ 89.90,
+sin reemplazo ni aviso de montos sin confirmar. LangSmith mostró entradas y
+salidas visibles, con correo y DNI redactados también en la entrada raíz.
+Los productos, el comprador y los hilos de prueba se eliminaron al terminar.

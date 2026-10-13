@@ -6,9 +6,7 @@
   "api_version": "0.16.0",
   "env": {
     "AGENT_MODEL_PROVIDER": "echo",
-    "LANGSMITH_TRACING": "false",
-    "LANGSMITH_HIDE_INPUTS": "true",
-    "LANGSMITH_HIDE_OUTPUTS": "true"
+    "LANGSMITH_TRACING": "false"
   },
   "http": {
     "disable_store": true,

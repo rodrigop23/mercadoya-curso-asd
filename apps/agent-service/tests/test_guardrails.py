@@ -12,11 +12,12 @@ from agent_service.auth import add_owner, authorize_store
 from agent_service.guardrails.input import PII_NOTICE, before_model, detect_injection, is_off_topic
 from agent_service.guardrails.moderation import moderate
 from agent_service.guardrails.observability import record_event
-from agent_service.guardrails.output import after_model
+from agent_service.guardrails.output import UNCONFIRMED, UNCONFIRMED_NOTICE, after_model
 from agent_service.guardrails.pii import redact_pii
-from agent_service.guardrails.privacy import sanitize_run_input
+from agent_service.guardrails.privacy import sanitize_run_input, sanitize_trace
 from agent_service.guardrails.tool import sanitize_tool_message
 from agent_service.history import trim_history
+from agent_service.memory import PREFERENCES_PREFIX
 from agent_service.prompts import SYSTEM_PROMPT
 
 
@@ -130,14 +131,11 @@ def test_output(text, reason):
     assert decision.text != text
 
 
-def test_output_evidence_current_turn_only():
+def test_output_evidence_all_model_history():
     data = ToolMessage(content=json.dumps({"price_pen": "12.90", "stock": 7}), tool_call_id="one")
     text = "Cuesta S/ 12.90 y quedan 7 unidades"
     assert after_model(text, [HumanMessage("busca"), data], SYSTEM_PROMPT).reason is None
-    assert (
-        after_model(text, [data, HumanMessage("nuevo turno")], SYSTEM_PROMPT).reason
-        == "ungrounded_price"
-    )
+    assert after_model(text, [data, HumanMessage("nuevo turno")], SYSTEM_PROMPT).reason is None
     arbitrary = ToolMessage(
         content=json.dumps({"description": "S/ 12.90", "id": "12.90"}), tool_call_id="x"
     )
@@ -145,6 +143,153 @@ def test_output_evidence_current_turn_only():
         after_model(text, [HumanMessage("busca"), arbitrary], SYSTEM_PROMPT).reason
         == "ungrounded_price"
     )
+
+
+@pytest.mark.parametrize(
+    "text,messages,expected",
+    [
+        (
+            "Por menos de 150 soles encontré uno a S/ 12.90.",
+            [
+                HumanMessage("audífonos por menos de 150 soles"),
+                ToolMessage('{"price_pen": "12.90"}', tool_call_id="one"),
+            ],
+            None,
+        ),
+        (
+            "Dos unidades suman S/ 25.80.",
+            [
+                HumanMessage("quiero dos unidades"),
+                ToolMessage('{"price_pen": "12.90"}', tool_call_id="one"),
+            ],
+            None,
+        ),
+        (
+            "El otro cuesta S/ 1,299.90.",
+            [
+                HumanMessage("busca otro"),
+                ToolMessage('{"price_pen": "1299.90"}', tool_call_id="one"),
+            ],
+            None,
+        ),
+        (
+            "El primero costaba S/ 12.90.",
+            [
+                HumanMessage("busca audífonos"),
+                AIMessage("", tool_calls=[{"id": "one", "name": "search_products", "args": {}}]),
+                ToolMessage('{"price_pen": "12.90"}', tool_call_id="one"),
+                AIMessage("El primero cuesta S/ 12.90."),
+                HumanMessage("¿y cuánto costaba el primero?"),
+            ],
+            None,
+        ),
+        ("Cuesta S/ 99.99", [HumanMessage("hola")], UNCONFIRMED),
+    ],
+)
+def test_output_false_positive_regressions(text, messages, expected):
+    decision = after_model(text, messages, SYSTEM_PROMPT)
+    assert decision.text == (text if expected is None else expected)
+    assert decision.reason == (None if expected is None else "ungrounded_price")
+    assert decision.action == (None if expected is None else "replaced")
+
+
+@pytest.mark.parametrize(
+    "text,reason",
+    [
+        ("mi código de descuento no funciona", None),
+        ("escríbeme código en python", "off_topic"),
+        ("código de pedido", None),
+        ("código del producto", None),
+    ],
+)
+def test_code_topic_regressions(text, reason):
+    decision = before_model(text)
+    assert decision.reason == reason
+    assert decision.text == text
+    assert (decision.response is None) == (reason is None)
+
+
+@pytest.mark.parametrize("amount", ["1 299.90", "1,299.90", "1,299", "12,90", "1,234,567.89"])
+def test_amount_normalization(amount):
+    price = {
+        "1 299.90": "1299.90",
+        "1,299.90": "1299.90",
+        "1,299": "1299",
+        "12,90": "12.90",
+        "1,234,567.89": "1234567.89",
+    }[amount]
+    tool = ToolMessage(
+        "", tool_call_id="one", artifact={"structured_content": {"price_pen": price}}
+    )
+    for text in [f"Cuesta S/ {amount}.", f"Cuesta {amount} soles."]:
+        assert after_model(text, [tool], SYSTEM_PROMPT).text == text
+
+
+@pytest.mark.parametrize("quantity", [1, 20, 21])
+def test_subtotal_quantity_limit(quantity):
+    tool = ToolMessage('{"unit_price_pen": "12.90"}', tool_call_id="one")
+    text = f"El subtotal es S/ {12.90 * quantity:.2f}."
+    decision = after_model(text, [tool], SYSTEM_PROMPT)
+    assert decision.text == text + ("\n\n" + UNCONFIRMED_NOTICE if quantity == 21 else "")
+    assert decision.action == ("annotated" if quantity == 21 else None)
+
+
+@pytest.mark.parametrize(
+    "messages,text",
+    [
+        ([ToolMessage("{}", tool_call_id="one")], "Cuesta S/ 99.99"),
+        ([HumanMessage("menos de 150 soles")], "Por 150 soles no hay; este cuesta S/ 99.99"),
+        (
+            [ToolMessage('{"price_pen": "12.90"}', tool_call_id="one")],
+            "Uno cuesta S/ 12.90 y el otro S/ 99.99",
+        ),
+    ],
+)
+def test_unsupported_amounts_annotate(messages, text):
+    decision = after_model(text, messages, SYSTEM_PROMPT)
+    assert decision.text == text + "\n\n" + UNCONFIRMED_NOTICE
+    assert decision.reason == "ungrounded_price" and decision.action == "annotated"
+
+
+def test_assistant_uses_memory_and_only_model_history_as_evidence(monkeypatch):
+    monkeypatch.setenv("AGENT_MODEL_PROVIDER", "echo")
+    preference = PREFERENCES_PREFIX + '[{"tipo": "presupuesto", "valor": "150"}]'
+
+    async def memory(store, config):
+        return preference
+
+    async def fake_reply(messages, config, tools):
+        assert preference in messages[0].text
+        assert not any(isinstance(message, ToolMessage) for message in messages)
+        return AIMessage("Tu presupuesto es 150 soles. El precio anterior era S/ 12.90.")
+
+    monkeypatch.setattr(module, "memory_prompt", memory)
+    monkeypatch.setattr(module, "reply", fake_reply)
+    messages = [
+        HumanMessage("busca"),
+        ToolMessage('{"price_pen": "12.90"}', tool_call_id="old"),
+        AIMessage("uno a S/ 12.90"),
+    ]
+    for _ in range(21):
+        messages.extend([HumanMessage("hola"), AIMessage("hola")])
+    result = asyncio.run(
+        module.assistant({"messages": messages}, {}, SimpleNamespace(store=object()))
+    )
+    assert result["messages"][0].text == (
+        "Tu presupuesto es 150 soles. El precio anterior era S/ 12.90.\n\n" + UNCONFIRMED_NOTICE
+    )
+
+
+def test_annotation_records_action(monkeypatch):
+    events = []
+    monkeypatch.setattr(module, "record_event", lambda *args: events.append(args[1:]))
+    response = module.guarded_response(
+        AIMessage("Cuesta S/ 99.99"),
+        {"messages": [ToolMessage("{}", tool_call_id="one")]},
+        {},
+    )
+    assert response.text.endswith(UNCONFIRMED_NOTICE)
+    assert events == [("output", "ungrounded_price", "annotated")]
 
 
 @pytest.mark.parametrize("flagged,status", [(False, "allowed"), (True, "blocked")])
@@ -402,6 +547,109 @@ def test_model_stream_never_emits_unsafe_output(monkeypatch):
         assert "[correo]" in str(chunks)
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("hidden", [False, True])
+def test_langsmith_export_privacy_and_hide_flags(monkeypatch, hidden, request):
+    from langchain_core.language_models.chat_models import SimpleChatModel
+    from langchain_core.tracers.langchain import LangChainTracer
+    from langsmith import Client, tracing_context
+    from langsmith.utils import get_env_var
+
+    from agent_service import model
+
+    for flag in ["LANGSMITH_HIDE_INPUTS", "LANGSMITH_HIDE_OUTPUTS"]:
+        monkeypatch.setenv(flag, str(hidden).lower())
+    # El SDK cachea el entorno por proceso; cada caso simula un arranque nuevo.
+    get_env_var.cache_clear()
+    request.addfinalizer(get_env_var.cache_clear)
+    monkeypatch.setenv("AGENT_MODEL_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "fake")
+    raw = "Contacto ana@example.com, DNI 12345678, teléfono 987654321, tarjeta 4111111111111111"
+
+    class FakeProvider(SimpleChatModel):
+        @property
+        def _llm_type(self):
+            return "fake-provider"
+
+        def _call(self, messages, stop=None, run_manager=None, **kwargs):
+            return raw
+
+    monkeypatch.setattr(model, "create_model", FakeProvider)
+    exported = []
+
+    def capture(self, method, url, **kwargs):
+        exported.append(json.loads(kwargs["request_kwargs"]["data"]))
+
+    monkeypatch.setattr(Client, "request_with_retries", capture)
+    client = Client(
+        api_url="http://unused", api_key="test", auto_batch_tracing=False, anonymizer=sanitize_trace
+    )
+    tracer = LangChainTracer(client=client)
+
+    async def no_tools():
+        return []
+
+    monkeypatch.setattr(module, "get_tools", no_tools)
+    value = {"kwargs": {"input": {"messages": [{"role": "user", "content": raw}]}}}
+    sanitize_run_input(value)
+    with tracing_context(enabled=True, client=client):
+        result = asyncio.run(
+            module.graph.ainvoke(value["kwargs"]["input"], {"callbacks": [tracer]})
+        )
+    assert "[correo]" in result["messages"][-1].text
+    serialized = json.dumps(exported)
+    assert exported
+    for secret in ["ana@example.com", "12345678", "987654321", "4111111111111111"]:
+        assert secret not in serialized
+    if hidden:
+        assert all(not run.get("inputs") and not run.get("outputs") for run in exported)
+    else:
+        assert any(run.get("inputs") for run in exported)
+        assert any(run.get("outputs") for run in exported)
+        assert "[correo]" in serialized and "[dni]" in serialized
+
+
+def test_langsmith_export_redacts_metadata_errors_and_credentials(monkeypatch):
+    from uuid import uuid4
+
+    from langsmith import Client
+
+    exported = []
+
+    def capture(self, method, url, **kwargs):
+        exported.append(json.loads(kwargs["request_kwargs"]["data"]))
+
+    monkeypatch.setattr(Client, "request_with_retries", capture)
+    client = Client(
+        api_url="http://unused", api_key="test", auto_batch_tracing=False,
+        anonymizer=sanitize_trace, hide_inputs=False, hide_outputs=False,
+    )
+    run_id = uuid4()
+    client.create_run(
+        "privacy", inputs={"text": "150 soles", "token": "private-token"}, run_type="chain",
+        id=run_id, extra={"metadata": {"contact": "ana@example.com"}},
+    )
+    client.update_run(run_id, error="ana@example.com Bearer private-token")
+    serialized = json.dumps(exported)
+    assert "ana@example.com" not in serialized and "private-token" not in serialized
+    assert exported[0]["inputs"] == {"text": "150 soles", "token": "[secreto]"}
+    assert exported[0]["extra"]["metadata"]["contact"] == "[correo]"
+    assert exported[1]["error"] == "[correo] [secreto]"
+
+
+def test_trace_privacy_configured_only_when_enabled(monkeypatch):
+    from agent_service.guardrails import privacy
+
+    configured = []
+    monkeypatch.setattr(privacy, "configure", lambda **kwargs: configured.append(kwargs))
+    monkeypatch.setattr(privacy, "Client", lambda **kwargs: kwargs)
+    monkeypatch.setattr(privacy, "tracing_is_enabled", lambda: False)
+    privacy.configure_trace_privacy()
+    assert not configured
+    monkeypatch.setattr(privacy, "tracing_is_enabled", lambda: True)
+    privacy.configure_trace_privacy()
+    assert configured == [{"client": {"anonymizer": sanitize_trace}}]
 
 
 def test_mcp_redacts_before_adapter_callbacks(monkeypatch):

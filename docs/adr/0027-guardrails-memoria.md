@@ -58,24 +58,33 @@ El límite HTTP solo acepta mensajes humanos nuevos y elimina metadata arbitrari
 de esos mensajes. Un cliente no puede insertar mensajes system, assistant ni
 llamadas de herramientas para evitar el guard de entrada.
 
-El texto original sigue viajando en el cuerpo HTTP al Agent Server. Sin medidas
-adicionales podría aparecer en la traza de entrada del run o en instrumentación
-externa anterior a auth. Se aplican `LANGSMITH_HIDE_INPUTS=true` y
-`LANGSMITH_HIDE_OUTPUTS=true` en ambos configs y como valores fijos de Compose.
-Esto oculta todas las entradas y salidas en LangSmith, incluidos los resultados
-crudos del proveedor. Se conservan nombres, tiempos, tags y metadata. Es una
-pérdida deliberada de detalle de depuración. No se configura un anonimizador
-parcial porque las opciones globales cubren también la entrada raíz y los
-resultados anteriores al guard de salida. No se registran cuerpos ni excepciones
-del proveedor. Esta configuración no controla logs de proxies o exportadores
-externos que se agreguen fuera de la aplicación.
+LangSmith muestra entradas y salidas para depurar y evaluar. Se eliminan los
+valores fijos de `LANGSMITH_HIDE_INPUTS` y `LANGSMITH_HIDE_OUTPUTS` de ambos configs
+de LangGraph. Compose usa `${LANGSMITH_HIDE_INPUTS:-false}` y
+`${LANGSMITH_HIDE_OUTPUTS:-false}`, y `.env.example` documenta esos valores.
+Activa cada flag con `true` cuando el entorno prohíba exportar ese contenido,
+incluso redactado. LangSmith conserva nombres, tiempos, tags y metadata.
+
+La redacción de auth protege la entrada raíz, pero el callback del modelo recibe
+su resultado antes de `after_model`. Para proteger ese punto se configura al
+cargar el grafo, solo con tracing activo, un cliente global de LangSmith con
+`anonymizer=sanitize_trace`. La API pública del SDK aplica el anonimizador a copias
+serializadas de entradas, salidas, metadata y errores antes de enviarlas. Se
+redactan PII, JWT, Bearer, claves de proveedor y campos de credenciales; el
+contenido de compra sigue visible. El cliente respeta ambos flags del entorno.
+No se registran cuerpos ni excepciones del proveedor en logs. El texto original
+sigue viajando en el cuerpo HTTP al Agent Server; esta configuración no controla
+logs de proxies o exportadores externos anteriores a auth.
 
 Las reglas de inyección normalizan mayúsculas y tildes, y cubren pedidos de
 ignorar instrucciones, revelar prompts, cambiar de rol y delimitadores de roles.
 Los mensajes bloqueados se sustituyen por `[mensaje bloqueado]` para no incluir
 su contenido en el prompt de turnos posteriores. La detección de temas ajenos
 solo rechaza coincidencias claras sin vocabulario
-de compras; las consultas ambiguas continúan con el system prompt.
+de compras; las consultas ambiguas continúan con el system prompt. `código` solo
+no bloquea consultas de descuentos, pedidos o productos. El contexto de
+programación incluye `código fuente`, `python`, `javascript`, `función` y
+`error de compilación`.
 
 ## Herramientas y salida
 
@@ -92,12 +101,22 @@ interno del MCP. Redacta PII y descarta reasoning y metadata del modelo en el
 state. Los argumentos de llamadas también se revisan antes de persistirlos.
 Una preferencia ya redactada llega a la herramienta para que rechace guardarla.
 
-Los montos `S/ 12.90` y `12.90 soles`, y expresiones numéricas de stock, se
-comparan con campos estructurados `price_pen`, `unit_price_pen`, `total_pen` y
-`stock` de ToolMessages del turno actual. Las propuestas se conservan como
-evidencia en el artifact del resultado de confirmación. La descripción de un
-producto, el texto del comprador y datos de turnos anteriores no son evidencia.
-Un valor sin respaldo reemplaza toda la respuesta y registra `ungrounded_price`.
+Los montos `S/ 12.90` y `12.90 soles` se normalizan a `Decimal`, incluidos miles
+con coma o espacio como `S/ 1,299.90` y `S/ 1 299.90`. La evidencia incluye los
+montos de mensajes humanos ya redactados, presupuestos revalidados de memoria y
+campos estructurados `price_pen`, `unit_price_pen`, `total_pen` y `stock` de los
+ToolMessages de toda la ventana enviada al modelo. Las propuestas se conservan
+como evidencia en el artifact del resultado de confirmación. Los subtotales de
+precios unitarios por cantidades de 1 a 20 también tienen respaldo. Las
+descripciones de productos y los mensajes assistant no aportan evidencia.
+
+Si quedan montos sin respaldo se conserva el texto y se añade "Algunos montos no
+están confirmados; verifícalos en el catálogo". El evento registra
+`ungrounded_price` con `action=annotated`. Solo se reemplaza la respuesta por
+falta de respaldo monetario cuando todos sus montos carecen de evidencia y no
+hay ningún ToolMessage en la ventana del modelo. Un stock numérico sin respaldo
+recibe un aviso de verificación. El historial persistido fuera de la ventana no
+se usa para respaldar la respuesta.
 
 Cada evento añade `guardrail`, `reason` y `action` a metadata y tags del árbol de
 trazas en curso, o al config. El log JSON `guardrail_events_total` contiene el
@@ -152,8 +171,8 @@ Las heurísticas pueden omitir instrucciones ofuscadas o reformuladas, y detecta
 falsos positivos. DNI y números de ocho dígitos sin contexto son indistinguibles.
 Luhn valida formato, no existencia de una tarjeta. El filtro de stock no demuestra disponibilidad si se
 expresa sin números. La regla de precios no relaciona cada importe con un producto,
-no valida cálculos ni formatos monetarios distintos de los definidos y puede
-rechazar un presupuesto expresado como monto aunque provenga de memoria. El
+solo respalda los productos de precios unitarios por cantidades de 1 a 20 y no
+valida otros cálculos ni formatos monetarios distintos de los definidos. El
 system prompt complementa estas comprobaciones; no son una garantía semántica.
 
 Los detalles pendientes de la tarea 08 quedan cerrados. El carrito conserva los
@@ -175,6 +194,7 @@ Consultadas el 2026-10-13 antes de implementar:
 [moderación](https://platform.openai.com/docs/guides/moderation),
 [LangMem en PyPI](https://pypi.org/project/langmem/),
 [ocultar entradas y salidas](https://docs.langchain.com/langsmith/mask-inputs-outputs)
+y [anonimizador del cliente](https://reference.langchain.com/python/langsmith/client/Client)
 y [opciones HTTP del CLI](https://docs.langchain.com/langsmith/cli).
 
 Mandan las versiones instaladas del lock: LangGraph 1.2.14, langchain-core 1.6.9,
@@ -197,3 +217,26 @@ coincidencias en logs. Se consultaron 60 trazas recientes de la imagen final en 
 y salidas ocultas, sin PII, y tags/metadata de motivos `pii` e `injection`.
 El estado vacío del chat se revisó a 1280 y 390 píxeles, sin desborde horizontal.
 Estas verificaciones son locales; GitHub Actions se ejecutará al publicar la rama.
+
+La tarea 10 agrega regresiones de presupuestos humanos, subtotales, separadores
+de miles, precios de un turno anterior y consultas de códigos de la tienda.
+Los tests interceptan la exportación HTTP del cliente LangSmith para comprobar
+PII redactada en entradas y resultados crudos del modelo con ocultamiento
+desactivado, y entradas/salidas vacías cuando se activa. También comprueban
+metadata y errores redactados, la acción `annotated` y el uso de la ventana
+recortada con presupuestos de memoria.
+
+La verificación de la tarea 10 pasó `uv run ruff check`, los 226 tests de
+`uv run pytest`, `uv run python scripts/smoke.py --tools` y
+`uv run python scripts/smoke.py`, ambos sin claves. También pasó
+`docker compose --profile agent --env-file .env.example config`, con ambos
+flags de ocultamiento en `false`.
+
+Se construyó la imagen y se recreó solo `agent-service` con ocultamiento
+desactivado. Con claves reales y dos productos temporales en el catálogo,
+"busco audífonos por menos de 150 soles" devolvió una lista con S/ 12.90 y
+S/ 89.90, sin "No tengo ese dato confirmado" ni aviso de montos sin respaldo.
+Otra consulta con correo y DNI sintéticos mostró sus marcadores en la entrada
+raíz de LangSmith. Se revisaron 17 runs de ambas trazas con entradas/salidas
+visibles y sin esas coincidencias de PII. Se eliminaron los productos, el
+comprador y los hilos temporales después de la comprobación.

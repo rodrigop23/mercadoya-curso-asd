@@ -1,4 +1,4 @@
-"""Validación de respuestas contra datos estructurados del turno actual."""
+"""Valida montos y stock con la evidencia de la ventana enviada al modelo."""
 
 import json
 import re
@@ -9,11 +9,14 @@ from langchain_core.messages import ToolMessage
 
 from agent_service.guardrails.input import normalize
 from agent_service.guardrails.pii import redact_pii
+from agent_service.memory import PREFERENCES_PREFIX
 
 UNCONFIRMED = "No tengo ese dato confirmado; puedo buscarlo en el catálogo si quieres"
+UNCONFIRMED_NOTICE = "Algunos montos no están confirmados; verifícalos en el catálogo"
 SECRET_REPLY = "No puedo compartir información privada del sistema"
 SECRETS = re.compile(r"eyJ[\w-]+\.[\w-]+\.[\w-]+|Bearer\s+|\bsk-[\w-]+|\blsv2_[\w-]+")
-AMOUNTS = re.compile(r"S/\s*(\d+(?:[.,]\d{1,2})?)|(\d+(?:[.,]\d{1,2})?)\s*soles\b", re.I)
+NUMBER = r"(?:\d{1,3}(?:,\d{3})+|\d{1,3}(?:[ \u00a0\u202f]\d{3})+|\d+)(?:[.,]\d{1,2})?"
+AMOUNTS = re.compile(rf"S/\s*({NUMBER})|(?<![\d.,])({NUMBER})\s*soles\b", re.I)
 STOCK = re.compile(
     r"\bstock\s*(?:disponible\s*)?(?:de\s*|:\s*|=\s*)?(\d+)"
     r"|\b(?:hay|quedan|disponibles)\s+(\d+)\s+unidades"
@@ -21,6 +24,17 @@ STOCK = re.compile(
     re.I,
 )
 PRICE_FIELDS = {"price_pen", "unit_price_pen", "total_pen"}
+
+
+def decimal_amount(value):
+    number = re.sub(r"[ \u00a0\u202f]", "", str(value))
+    # Comas en grupos de tres son miles; una coma decimal se conserva como punto.
+    number = re.sub(r",(?=\d{3}(?:[,\.]|$))", "", number)
+    return Decimal(number.replace(",", "."))
+
+
+def amounts_in(text):
+    return [decimal_amount(a or b) for a, b in AMOUNTS.findall(text)]
 
 
 def structured_data(message: ToolMessage):
@@ -36,14 +50,18 @@ def structured_data(message: ToolMessage):
 
 
 def evidence(messages):
-    prices, stocks = set(), set()
+    prices, stocks, unit_prices = set(), set(), set()
 
     def collect(value):
         if isinstance(value, dict):
             for key, child in value.items():
                 if key in PRICE_FIELDS:
                     try:
-                        prices.add(Decimal(str(child)))
+                        amount = decimal_amount(child)
+                        if amount.is_finite():
+                            prices.add(amount)
+                            if key != "total_pen":
+                                unit_prices.add(amount)
                     except InvalidOperation:
                         pass
                 elif key == "stock" and type(child) is int:
@@ -54,11 +72,25 @@ def evidence(messages):
             for child in value:
                 collect(child)
 
-    for message in reversed(messages):
+    for message in messages:
         if message.type == "human":
-            break
-        if isinstance(message, ToolMessage):
+            prices.update(amounts_in(message.text))
+        elif isinstance(message, ToolMessage):
             collect(structured_data(message))
+        elif message.type == "system" and PREFERENCES_PREFIX in message.text:
+            # Este bloque lo construye memory_prompt con recuerdos revalidados.
+            raw = message.text.split(PREFERENCES_PREFIX, 1)[1]
+            try:
+                preferences, _ = json.JSONDecoder().raw_decode(raw)
+            except ValueError:
+                continue
+            for preference in preferences:
+                if preference["tipo"] == "presupuesto":
+                    prices.update(
+                        decimal_amount(match.group())
+                        for match in re.finditer(NUMBER, preference["valor"])
+                    )
+    prices.update(price * quantity for price in unit_prices for quantity in range(1, 21))
     return prices, stocks
 
 
@@ -80,10 +112,21 @@ def after_model(
         return OutputDecision(SECRET_REPLY, "secret", "replaced")
     safe = redact_pii(text)
     prices, stocks = evidence(messages)
-    amounts = [Decimal((a or b).replace(",", ".")) for a, b in AMOUNTS.findall(safe)]
+    amounts = amounts_in(safe)
     quantities = [int(next(group for group in match if group)) for match in STOCK.findall(safe)]
-    if any(amount not in prices for amount in amounts) or any(q not in stocks for q in quantities):
-        return OutputDecision(UNCONFIRMED, "ungrounded_price", "replaced")
+    if any(amount not in prices for amount in amounts):
+        if all(amount not in prices for amount in amounts) and not any(
+            isinstance(message, ToolMessage) for message in messages
+        ):
+            return OutputDecision(UNCONFIRMED, "ungrounded_price", "replaced")
+        safe += "\n\n" + UNCONFIRMED_NOTICE
+        return OutputDecision(safe, "ungrounded_price", "annotated")
+    if any(q not in stocks for q in quantities):
+        return OutputDecision(
+            safe + "\n\nAlgunos datos de stock no están confirmados; verifícalos en el catálogo",
+            "ungrounded_price",
+            "annotated",
+        )
     return OutputDecision(
         safe, "pii" if safe != text else None, "redacted" if safe != text else None
     )
