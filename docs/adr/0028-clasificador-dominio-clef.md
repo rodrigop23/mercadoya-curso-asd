@@ -203,3 +203,9 @@ Se revisaron 78 runs de LangSmith. Las tres trazas rechazadas tienen metadata
 La metadata y los logs de agente/MCP no contienen token, account id ni los textos
 de prueba. La metadata de dominio queda en su nodo propio; la raíz del Agent
 Server no conserva esas actualizaciones de los ancestros en esta versión.
+
+## Ruteo por categoría
+
+La [ADR 0029](0029-multiagente-router.md) reutiliza la categoría de esta decisión
+para elegir compras o postventa. La guarda en el estado y conserva los rechazos
+en el padre, sin añadir una llamada a un LLM para el ruteo.

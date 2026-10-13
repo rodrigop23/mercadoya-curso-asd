@@ -4,6 +4,7 @@ import json
 import logging
 from collections import Counter
 
+from langchain_core.tracers.base import BaseTracer
 from langsmith import get_current_run_tree
 
 logger = logging.getLogger(__name__)
@@ -50,3 +51,38 @@ def record_moderation(config, status: str):
         run.add_metadata({"moderation": status})
         run = run.parent_run
     logger.info(json.dumps({"moderation": status}))
+
+
+def record_specialist(config, name: str, reason: str | None):
+    metadata = {"agent_name": name, "route_reason": reason}
+    tag = f"agent:{name}"
+    config.setdefault("metadata", {}).update(metadata)
+    tags = config.setdefault("tags", [])
+    if tag not in tags:
+        tags.append(tag)
+    run = get_current_run_tree()
+    current = run
+    while run is not None:
+        if run is current or run.name == name:
+            run.add_metadata(metadata)
+            if tag not in run.tags:
+                run.add_tags([tag])
+        run = run.parent_run
+
+    # Los tracers de LangChain enlazan runs por parent_run_id; parent_run puede ser None.
+    # Actualiza los spans activos antes de su exportación, sin depender del orden de callbacks.
+    callbacks = config.get("callbacks")
+    for handler in getattr(callbacks, "handlers", []):
+        if not isinstance(handler, BaseTracer):
+            continue
+        run_id = getattr(callbacks, "parent_run_id", None)
+        current_id = run_id
+        while run_id is not None:
+            traced = handler.run_map.get(str(run_id))
+            if traced is None:
+                break
+            if run_id == current_id or traced.name == name:
+                traced.add_metadata(metadata)
+                if tag not in traced.tags:
+                    traced.add_tags([tag])
+            run_id = traced.parent_run_id

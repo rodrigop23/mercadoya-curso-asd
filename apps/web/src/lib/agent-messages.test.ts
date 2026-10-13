@@ -271,3 +271,58 @@ it('muestra solo el interrupt actual al reproducir eventos históricos del SDK',
     ),
   ).toBe(false);
 });
+
+describe('confirmaciones de especialistas', () => {
+  const idle = { toolLabel: null, isLoading: false, isThreadLoading: false };
+  const messages = [
+    { type: 'human', content: 'busco un producto' },
+    { type: 'ai', content: 'Encontré una opción' },
+    { type: 'human', content: 'agrega el primero' },
+  ];
+  const proposal = {
+    kind: 'add_to_cart',
+    action_id: '12345678-1234-5678-9234-567812345678',
+    product_id: '00000000-0000-4000-8000-000000000001',
+    title: 'Café',
+    unit_price_pen: '12.90',
+    quantity: 1,
+    stock: 7,
+  };
+
+  it.each(['shopping', 'post_sale'])(
+    'muestra el interrupt de %s sin tool call en el padre',
+    (name) => {
+      const pending = { id: 'current', value: proposal, namespace: [`${name}:checkpoint`] };
+      const options = { ...idle, interrupts: [pending] };
+      expect(transcriptRows(messages, options).at(-1)).toMatchObject({
+        kind: 'confirmation',
+        id: 'current',
+        proposal,
+      });
+      for (const loading of [{ isLoading: true }, { isThreadLoading: true }]) {
+        expect(
+          transcriptRows(messages, { ...options, ...loading }).some(
+            (row) => row.kind === 'confirmation',
+          ),
+        ).toBe(false);
+      }
+      // Tras responder o recargar un hilo resuelto, el SDK obtiene tasks sin interrupts.
+      expect(
+        transcriptRows(messages, { ...idle, interrupts: [] }).some(
+          (row) => row.kind === 'confirmation',
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it('no confunde un namespace ajeno o vacío con una propuesta de especialista', () => {
+    for (const namespace of [[], ['unknown:checkpoint']]) {
+      expect(
+        transcriptRows(messages, {
+          ...idle,
+          interrupts: [{ id: 'old', value: proposal, namespace }],
+        }).some((row) => row.kind === 'confirmation'),
+      ).toBe(false);
+    }
+  });
+});

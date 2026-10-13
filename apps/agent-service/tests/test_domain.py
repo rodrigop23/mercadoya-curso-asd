@@ -12,6 +12,7 @@ from langgraph.types import Command
 from test_mcp_tools import CaptureTracer
 
 from agent_service import graph as module
+from agent_service.agents import specialist
 from agent_service.config import settings
 from agent_service.guardrails import domain_clef
 from agent_service.guardrails.domain import (
@@ -285,7 +286,7 @@ def test_graph_domain_routing_and_private_metadata(monkeypatch, caplog, allowed)
 
     monkeypatch.setenv("AGENT_MODEL_PROVIDER", "echo")
     monkeypatch.setattr(module, "get_classifier", Classifier)
-    monkeypatch.setattr(module, "reply", reply)
+    monkeypatch.setattr(specialist, "reply", reply)
     root = RunTree(name="domain-test", run_type="chain", inputs={})
     with tracing_context(parent=root, enabled=False):
         result = asyncio.run(
@@ -318,7 +319,7 @@ def test_graph_error_retains_human_and_only_explicit_fail_open(monkeypatch, fail
     monkeypatch.setenv("AGENT_CLASSIFIER_FAIL_OPEN", str(fail_open).lower())
     monkeypatch.setenv("AGENT_MODEL_PROVIDER", "echo")
     monkeypatch.setattr(module, "get_classifier", Classifier)
-    monkeypatch.setattr(module, "reply", reply)
+    monkeypatch.setattr(specialist, "reply", reply)
     result = asyncio.run(module.graph.ainvoke({"messages": [HumanMessage(TEXT, id="human")]}))
     assert result["messages"][0].text == TEXT and result["messages"][0].id == "human"
     assert bool(calls) is fail_open
@@ -368,8 +369,8 @@ def test_resume_never_calls_domain_guard(monkeypatch):
 
     monkeypatch.setenv("AGENT_MODEL_PROVIDER", "scripted")
     monkeypatch.setattr(module, "get_classifier", Classifier)
-    monkeypatch.setattr(module, "get_tools", tools)
-    monkeypatch.setattr(module, "call_mcp", mcp)
+    monkeypatch.setattr(specialist, "get_tools", tools)
+    monkeypatch.setattr(specialist, "call_mcp", mcp)
     graph = module.builder.compile(checkpointer=InMemorySaver())
     tracer = CaptureTracer()
     config = {"configurable": {"thread_id": "domain-resume"}, "callbacks": [tracer]}
@@ -392,7 +393,9 @@ def test_resume_never_calls_domain_guard(monkeypatch):
             Command(resume={intr.id: {"action_id": intr.value["action_id"], "approved": False}}),
             config,
         )
-        assert not any(r.get("name") == "domain_guard" for r in tracer.runs)
+        assert not any(
+            r.get("name") in {"input_guard", "domain_guard", "route"} for r in tracer.runs
+        )
 
     asyncio.run(run())
     assert len(classified) == 1
@@ -458,7 +461,7 @@ def test_rules_followup_uses_trusted_prior_decision(monkeypatch):
     async def reply(*args):
         return AIMessage(next(responses))
 
-    monkeypatch.setattr(module, "reply", reply)
+    monkeypatch.setattr(specialist, "reply", reply)
     graph = module.builder.compile(checkpointer=InMemorySaver())
     config = {"configurable": {"thread_id": "terse-followup"}}
 

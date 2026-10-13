@@ -3,7 +3,53 @@
 Servicio Python 3.12, separado de pnpm y Turbo. El grafo `agent` conversa en español y consulta
 catálogo, stock y pedidos propios mediante cinco herramientas del servidor
 [mercadoya-mcp](../mcp-server/README.md). Propone agregar al carrito o cancelar un pedido pendiente y espera la aprobación
-del comprador con `interrupt`. No incluye memoria de largo plazo ni multiagente.
+del comprador con `interrupt`. El router elige compras o postventa dentro del mismo
+grafo, y ambos comparten las preferencias del comprador en el Store.
+
+## Orquestador y especialistas
+
+```mermaid
+flowchart LR
+    START --> input_guard --> domain_guard --> route
+    route --> shopping
+    route --> post_sale
+    subgraph shopping[shopping]
+        sa[assistant] <--> st[tools]
+        sa <--> sc[confirm_action]
+    end
+    subgraph post_sale[post_sale]
+        pa[assistant] <--> pt[tools]
+        pa <--> pc[confirm_action]
+    end
+    sa --> output_guard
+    pa --> output_guard
+    output_guard --> END
+```
+
+Los rechazos de entrada o dominio terminan antes de `route`. Este nodo reutiliza
+la categoría de Clef sin otra llamada al modelo. Productos y carrito seleccionan
+`shopping`; pedidos y pagos/envíos seleccionan `post_sale`. Preferencias y
+conversación conservan `active_agent`, o usan compras en el primer turno.
+Cada especialista recibe su prompt y sus herramientas. El código rechaza lecturas
+y propuestas ajenas incluso si el modelo intenta llamarlas.
+
+En LangSmith, abre un run del proyecto `LANGSMITH_PROJECT` y expande los nodos
+`shopping` o `post_sale`. Filtra por `agent:shopping` o `agent:post_sale` y consulta
+`agent_name` y `route_reason` en metadata. El motivo es la categoría o `sticky`,
+sin texto ni identidad. Los nodos y el modelo conservan esos tags. Para inspeccionar
+un interrupt interno usa `GET /threads/{id}/state?subgraphs=true`; en el SDK,
+`client.threads.get_state(thread_id, subgraphs=True)`. Los runs admiten
+`stream_subgraphs=True`. Studio puede expandir ambos subgrafos del único `agent`.
+
+Al reanudar se repite `confirm_action` desde su inicio, con lecturas idempotentes;
+el padre no repite `domain_guard` ni `route`. El JWT de la solicitud nueva se lee
+después de `interrupt`. Detalles y prueba de la semántica en la
+[ADR 0029](../../docs/adr/0029-multiagente-router.md).
+
+El chat detecta también los interrupts pendientes de los namespaces de compras
+y postventa. No exige que su tool call aparezca aún en los mensajes del padre,
+ya que el subgrafo publica esos mensajes al terminar. Las confirmaciones
+conservan el contrato y la comprobación de vigencia anterior a cada cambio.
 
 ## Arranque local con Postgres
 
@@ -238,7 +284,8 @@ el job nuevo queda listo para la siguiente ejecución de GitHub Actions.
 
 ## Bucle MCP de lectura
 
-`StateGraph` alterna assistant y tools con `ToolNode`. Su ruteo desvía propuestas
+`StateGraph` de cada especialista alterna assistant y tools con su propio `ToolNode`.
+Su ruteo desvía propuestas
 al nodo confirm_action antes de ejecutar cualquier herramienta.
 Cuenta hasta seis iteraciones de tools desde el último HumanMessage. Después
 responde con los datos obtenidos, sin herramientas enlazadas al modelo.

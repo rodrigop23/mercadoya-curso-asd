@@ -366,6 +366,40 @@ def main():
                     check(status == 200, "run de guardrail")
                     return thread_id, response
 
+                for text, specialist, category in (
+                    ("busco audífonos", "shopping", "productos"),
+                    ("¿dónde está mi pedido?", "post_sale", "pedidos"),
+                ):
+                    thread_id, response = chat_run(a, text)
+                    status, state = request(base, f"/threads/{thread_id}/state?subgraphs=true", a)
+                    check(
+                        status == 200
+                        and state["values"]["active_agent"] == specialist
+                        and state["values"]["last_domain_category"] == category,
+                        f"ruteo {specialist} desde categoría",
+                    )
+                    status, events = request(
+                        base,
+                        f"/threads/{thread_id}/runs/stream",
+                        a,
+                        {
+                            "assistant_id": "agent",
+                            "input": {"messages": [{"role": "user", "content": "gracias"}]},
+                            "stream_mode": ["events", "updates"],
+                            "stream_subgraphs": True,
+                        },
+                    )
+                    check(
+                        status == 200
+                        and f"agent:{specialist}" in events
+                        and '"agent_name"' in events
+                        and '"route_reason"' in events
+                        and "sticky" in events
+                        and f"updates|{specialist}:" in events,
+                        f"subgrafo {specialist} con tag y metadata",
+                    )
+                    check(all(token not in events for token in tokens), "stream sin JWT")
+
                 def domain_events():
                     log.seek(0)
                     return log.read().count("domain_latency_ms")

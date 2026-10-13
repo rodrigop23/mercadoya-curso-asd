@@ -45,7 +45,7 @@ export function transcriptRows(
     toolLabel: string | null;
     isLoading: boolean;
     isThreadLoading: boolean;
-    interrupts?: readonly { id?: string; value?: unknown }[];
+    interrupts?: readonly { id?: string; value?: unknown; namespace?: readonly string[] }[];
     confirmationStates?: Record<string, 'pending' | 'sending' | 'error'>;
   },
 ): TranscriptRow[] {
@@ -73,11 +73,16 @@ export function transcriptRows(
     !messages
       .slice(lastAiIndex + 1)
       .some((message) => message.type === 'tool' && message.tool_call_id === latestCalls[0]!.id);
-  // El SDK puede reproducir interrupts históricos al recibir eventos del siguiente turno.
-  // El último interrupt raíz pertenece a la única propuesta activa; el resto ya se respondió.
+  const pending = interrupts.at(-1);
+  // El SDK reconcilia los interrupts pendientes con state.tasks, también al rehidratar.
+  // La propuesta de un especialista permanece en su checkpoint hasta que termina el subgrafo.
+  const specialistPending = pending?.namespace?.some(
+    (segment) => segment.startsWith('shopping:') || segment.startsWith('post_sale:'),
+  );
+  // Conserva el filtro de eventos históricos de propuestas raíz.
   const current =
-    !isLoading && !isThreadLoading && (messages.length === 0 || activeProposal)
-      ? interrupts.at(-1)
+    !isLoading && !isThreadLoading && (messages.length === 0 || activeProposal || specialistPending)
+      ? pending
       : undefined;
   if (current?.id) {
     const parsed = agentProposalSchema.safeParse(current.value);

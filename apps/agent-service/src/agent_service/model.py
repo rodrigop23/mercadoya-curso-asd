@@ -57,7 +57,15 @@ async def reply(messages: list[BaseMessage], config: RunnableConfig, tools=None)
         return AIMessage(content=MISSING_KEY_MESSAGE)
     # No pasar configurable al cliente: auth_user contiene la credencial del request.
     # callbacks conserva streaming/trazas sin enviar ese token al modelo.
-    model_config: RunnableConfig = {"callbacks": config.get("callbacks"), "tags": ["nostream"]}
+    model_config: RunnableConfig = {
+        "callbacks": config.get("callbacks"),
+        "tags": ["nostream", *[tag for tag in config.get("tags", []) if tag.startswith("agent:")]],
+        "metadata": {
+            key: config["metadata"][key]
+            for key in ("agent_name", "route_reason")
+            if key in config.get("metadata", {})
+        },
+    }
     model = create_model()
     if tools:
         model = model.bind_tools(tools)

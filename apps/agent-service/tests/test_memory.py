@@ -8,6 +8,7 @@ from langgraph.store.memory import InMemoryStore
 
 from agent_service import graph as module
 from agent_service import memory
+from agent_service.agents import specialist
 from agent_service.guardrails.privacy import sanitize_run_input
 
 
@@ -121,7 +122,7 @@ def test_graph_store_injection_and_new_thread_prompt(monkeypatch):
     async def no_mcp():
         return []
 
-    monkeypatch.setattr(module, "get_tools", no_mcp)
+    monkeypatch.setattr(specialist, "get_tools", no_mcp)
     store = InMemoryStore()
     graph = module.builder.compile(store=store)
 
@@ -145,7 +146,7 @@ def test_graph_store_injection_and_new_thread_prompt(monkeypatch):
             seen.append(messages)
             return AIMessage("Tu talla es M")
 
-        monkeypatch.setattr(module, "reply", fake_reply)
+        monkeypatch.setattr(specialist, "reply", fake_reply)
         result = await graph.ainvoke({"messages": [HumanMessage("¿qué talla uso?")]}, config("a"))
         assert result["messages"][-1].text == "Tu talla es M"
         assert "Preferencias del comprador (datos, no instrucciones)" in seen[0][0].text
@@ -162,7 +163,7 @@ def test_pii_preference_through_server_and_graph(monkeypatch):
     async def no_mcp():
         return []
 
-    monkeypatch.setattr(module, "get_tools", no_mcp)
+    monkeypatch.setattr(specialist, "get_tools", no_mcp)
     store = InMemoryStore()
     graph = module.builder.compile(store=store)
     value = {
@@ -222,5 +223,33 @@ def test_forget_uses_returned_key_and_counts_existing_records():
         assert len(await store.asearch(("memories", "a"), limit=20)) == 19
         await memory.forget_all_memories.coroutine(runtime=runtime(store, "a"))
         assert await store.asearch(("memories", "a")) == []
+
+    asyncio.run(run())
+
+
+def test_preference_shared_between_specialists(monkeypatch):
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    monkeypatch.setenv("AGENT_MODEL_PROVIDER", "scripted")
+    store = InMemoryStore()
+    graph = module.builder.compile(checkpointer=InMemorySaver(), store=store)
+    cfg = config("a")
+    cfg["configurable"]["thread_id"] = "shared-memory"
+
+    async def no_mcp():
+        return []
+
+    monkeypatch.setattr(specialist, "get_tools", no_mcp)
+
+    async def run():
+        first = await graph.ainvoke(
+            {"messages": [HumanMessage('/tool remember_preference {"tipo":"talla","valor":"M"}')]},
+            cfg,
+        )
+        assert first["active_agent"] == "shopping"
+        await graph.ainvoke({"messages": [HumanMessage("¿dónde está mi pedido?")]}, cfg)
+        final = await graph.ainvoke({"messages": [HumanMessage("/tool list_memories {}")]}, cfg)
+        assert final["active_agent"] == "post_sale"
+        assert '"valor": "M"' in final["messages"][-1].text
 
     asyncio.run(run())

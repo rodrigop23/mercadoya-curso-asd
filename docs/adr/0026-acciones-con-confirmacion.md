@@ -176,3 +176,9 @@ repetida y la web conserva el primer resultado del carrito por `action_id`.
 Conserva los 50 resultados más recientes por orden de inserción. Una confirmación
 antigua debe rechazarse en el servidor; el registro local tiene una ventana finita.
 Web Locks serializa pestañas del mismo origen cuando está disponible.
+
+## Evolución a especialistas
+
+La [ADR 0029](0029-multiagente-router.md) mueve la confirmación a subgrafos de
+compras y postventa. Conserva el contrato de propuesta, el `action_id` estable,
+el JWT leído después de `interrupt` y el rechazo de reanudaciones duplicadas.

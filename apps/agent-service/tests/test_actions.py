@@ -1,5 +1,6 @@
 import asyncio
 import json
+from functools import partial
 from pathlib import Path
 from uuid import uuid4
 
@@ -12,6 +13,18 @@ from test_mcp_tools import CaptureTracer
 
 from agent_service import graph as module
 from agent_service.actions import ActionResume, action_adapter, proposal_adapter
+from agent_service.agents import specialist
+from agent_service.agents.shopping import PROPOSAL_NAMES, READ_TOOLS
+from agent_service.prompts import SHOPPING_PROMPT
+
+shopping_assistant = partial(
+    specialist.assistant,
+    read_tools=READ_TOOLS,
+    proposal_names=PROPOSAL_NAMES,
+    prompt=SHOPPING_PROMPT,
+)
+
+confirm_action = partial(specialist.confirm_action, proposal_names=specialist.PROPOSAL_NAMES)
 
 CONTRACTS = Path(__file__).resolve().parents[3] / "packages/contracts/agent"
 PID = "00000000-0000-4000-8000-000000000001"
@@ -50,7 +63,7 @@ def test_confirm_replays_reads_only_and_current_token(monkeypatch, kind, decisio
 
     async def fake_tools():
         # assistant only needs definitions; actual calls are observed separately here.
-        return module.PROPOSAL_TOOLS
+        return specialist.PROPOSAL_TOOLS
 
     async def fake_mcp(name, args, config):
         token = config["configurable"]["langgraph_auth_user"]["token"]
@@ -71,15 +84,15 @@ def test_confirm_replays_reads_only_and_current_token(monkeypatch, kind, decisio
             data = dict(order_id=PID, status="cancelled", already_cancelled=False)
         return ToolMessage(content=json.dumps(data), tool_call_id="validation")
 
-    original_interrupt = module.interrupt
+    original_interrupt = specialist.interrupt
 
     def observe_interrupt(proposal):
         proposals.append(proposal)
         return original_interrupt(proposal)
 
-    monkeypatch.setattr(module, "get_tools", fake_tools)
-    monkeypatch.setattr(module, "call_mcp", fake_mcp)
-    monkeypatch.setattr(module, "interrupt", observe_interrupt)
+    monkeypatch.setattr(specialist, "get_tools", fake_tools)
+    monkeypatch.setattr(specialist, "call_mcp", fake_mcp)
+    monkeypatch.setattr(specialist, "interrupt", observe_interrupt)
     graph = module.builder.compile(checkpointer=InMemorySaver())
 
     async def run():
@@ -141,9 +154,9 @@ def test_multiple_calls_do_not_interrupt_or_execute(monkeypatch, other):
     async def never_call(*args):
         raise AssertionError("No debe consultar ni ejecutar herramientas")
 
-    monkeypatch.setattr(module, "call_mcp", never_call)
+    monkeypatch.setattr(specialist, "call_mcp", never_call)
     result = asyncio.run(
-        module.confirm_action({"messages": [AIMessage(content="", tool_calls=calls)]}, {})
+        confirm_action({"messages": [AIMessage(content="", tool_calls=calls)]}, {})
     )
     assert len(result["messages"]) == 2
     assert all("una acción a la vez" in m.text for m in result["messages"])
@@ -158,7 +171,7 @@ def test_model_filters_write_tools(monkeypatch):
         raise AssertionError
 
     async def available():
-        return [cancel_my_order, *module.PROPOSAL_TOOLS]
+        return [cancel_my_order, *specialist.PROPOSAL_TOOLS]
 
     seen = []
 
@@ -167,10 +180,12 @@ def test_model_filters_write_tools(monkeypatch):
         return AIMessage(content="respuesta")
 
     monkeypatch.setenv("AGENT_MODEL_PROVIDER", "scripted")
-    monkeypatch.setattr(module, "get_tools", available)
-    monkeypatch.setattr(module, "reply", reply)
-    asyncio.run(module.assistant({"messages": [HumanMessage("/tool propose_cancel_order {}")]}, {}))
-    assert set(seen) == module.PROPOSAL_NAMES
+    monkeypatch.setattr(specialist, "get_tools", available)
+    monkeypatch.setattr(specialist, "reply", reply)
+    asyncio.run(
+        shopping_assistant({"messages": [HumanMessage("/tool propose_cancel_order {}")]}, {})
+    )
+    assert set(seen) == {"propose_add_to_cart"}
     assert "cancel_my_order" not in seen
 
 
@@ -219,10 +234,10 @@ def test_failed_validation_has_no_interrupt(monkeypatch, name, args, data, statu
     def never_interrupt(*_args):
         raise AssertionError("Una propuesta inválida no debe interrumpir")
 
-    monkeypatch.setattr(module, "call_mcp", fake_mcp)
-    monkeypatch.setattr(module, "interrupt", never_interrupt)
+    monkeypatch.setattr(specialist, "call_mcp", fake_mcp)
+    monkeypatch.setattr(specialist, "interrupt", never_interrupt)
     result = asyncio.run(
-        module.confirm_action(
+        confirm_action(
             {
                 "messages": [
                     AIMessage(content="", tool_calls=[dict(id="one", name=name, args=args)])
@@ -256,10 +271,10 @@ def test_cart_reports_web_result_without_write(monkeypatch, result, text):
     value = dict(action_id=str(uuid5(NAMESPACE_URL, "mercadoya:action:one")), approved=True)
     if result is not None:
         value["result"] = result
-    monkeypatch.setattr(module, "call_mcp", fake_mcp)
-    monkeypatch.setattr(module, "interrupt", lambda _: value)
+    monkeypatch.setattr(specialist, "call_mcp", fake_mcp)
+    monkeypatch.setattr(specialist, "interrupt", lambda _: value)
     response = asyncio.run(
-        module.confirm_action(
+        confirm_action(
             {
                 "messages": [
                     AIMessage(
@@ -278,3 +293,27 @@ def test_cart_reports_web_result_without_write(monkeypatch, result, text):
         )
     )
     assert text in response["messages"][0].text
+
+
+@pytest.mark.parametrize(
+    "name,allowed",
+    [
+        ("propose_cancel_order", {"propose_add_to_cart"}),
+        ("propose_add_to_cart", {"propose_cancel_order"}),
+    ],
+)
+def test_foreign_proposal_rejected_in_code(monkeypatch, name, allowed):
+    async def never_mcp(*args):
+        pytest.fail("Una propuesta ajena no debe llegar a MCP")
+
+    monkeypatch.setattr(specialist, "call_mcp", never_mcp)
+    result = asyncio.run(
+        specialist.confirm_action(
+            {"messages": [AIMessage("", tool_calls=[dict(id="foreign", name=name, args={})])]},
+            {},
+            proposal_names=allowed,
+        )
+    )
+    assert result["messages"][0].tool_call_id == "foreign"
+    assert "no está permitida" in result["messages"][0].text
+    assert not result["recent_confirmation"]

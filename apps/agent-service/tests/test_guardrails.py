@@ -1,5 +1,6 @@
 import asyncio
 import json
+from functools import partial
 from types import SimpleNamespace
 
 import pytest
@@ -8,6 +9,9 @@ from langgraph.checkpoint.memory import InMemorySaver
 from test_mcp_tools import CaptureTracer
 
 from agent_service import graph as module
+from agent_service import responses
+from agent_service.agents import specialist
+from agent_service.agents.shopping import PROPOSAL_NAMES, READ_TOOLS
 from agent_service.auth import add_owner, authorize_store
 from agent_service.guardrails.domain_rules import RulesClassifier
 from agent_service.guardrails.input import (
@@ -24,7 +28,14 @@ from agent_service.guardrails.privacy import sanitize_run_input, sanitize_trace
 from agent_service.guardrails.tool import sanitize_tool_message
 from agent_service.history import trim_history
 from agent_service.memory import PREFERENCES_PREFIX
-from agent_service.prompts import SYSTEM_PROMPT
+from agent_service.prompts import SHOPPING_PROMPT
+
+shopping_assistant = partial(
+    specialist.assistant,
+    read_tools=READ_TOOLS,
+    proposal_names=PROPOSAL_NAMES,
+    prompt=SHOPPING_PROMPT,
+)
 
 
 @pytest.mark.parametrize(
@@ -118,7 +129,7 @@ def test_length():
 @pytest.mark.parametrize(
     "text,reason",
     [
-        (" ".join(SYSTEM_PROMPT.split()[:8]), "leak"),
+        (" ".join(SHOPPING_PROMPT.split()[:8]), "leak"),
         ("eyJhbGciOiJIUzI1NiJ9.abc.def", "secret"),
         ("Bearer cualquier-token", "secret"),
         ("sk-test", "secret"),
@@ -132,7 +143,7 @@ def test_length():
     ],
 )
 def test_output(text, reason):
-    decision = after_model(text, [HumanMessage("hola")], SYSTEM_PROMPT, "internal-test")
+    decision = after_model(text, [HumanMessage("hola")], SHOPPING_PROMPT, "internal-test")
     assert decision.reason == reason
     assert decision.text != text
 
@@ -140,13 +151,13 @@ def test_output(text, reason):
 def test_output_evidence_all_model_history():
     data = ToolMessage(content=json.dumps({"price_pen": "12.90", "stock": 7}), tool_call_id="one")
     text = "Cuesta S/ 12.90 y quedan 7 unidades"
-    assert after_model(text, [HumanMessage("busca"), data], SYSTEM_PROMPT).reason is None
-    assert after_model(text, [data, HumanMessage("nuevo turno")], SYSTEM_PROMPT).reason is None
+    assert after_model(text, [HumanMessage("busca"), data], SHOPPING_PROMPT).reason is None
+    assert after_model(text, [data, HumanMessage("nuevo turno")], SHOPPING_PROMPT).reason is None
     arbitrary = ToolMessage(
         content=json.dumps({"description": "S/ 12.90", "id": "12.90"}), tool_call_id="x"
     )
     assert (
-        after_model(text, [HumanMessage("busca"), arbitrary], SYSTEM_PROMPT).reason
+        after_model(text, [HumanMessage("busca"), arbitrary], SHOPPING_PROMPT).reason
         == "ungrounded_price"
     )
 
@@ -193,7 +204,7 @@ def test_output_evidence_all_model_history():
     ],
 )
 def test_output_false_positive_regressions(text, messages, expected):
-    decision = after_model(text, messages, SYSTEM_PROMPT)
+    decision = after_model(text, messages, SHOPPING_PROMPT)
     assert decision.text == (text if expected is None else expected)
     assert decision.reason == (None if expected is None else "ungrounded_price")
     assert decision.action == (None if expected is None else "replaced")
@@ -228,14 +239,14 @@ def test_amount_normalization(amount):
         "", tool_call_id="one", artifact={"structured_content": {"price_pen": price}}
     )
     for text in [f"Cuesta S/ {amount}.", f"Cuesta {amount} soles."]:
-        assert after_model(text, [tool], SYSTEM_PROMPT).text == text
+        assert after_model(text, [tool], SHOPPING_PROMPT).text == text
 
 
 @pytest.mark.parametrize("quantity", [1, 20, 21])
 def test_subtotal_quantity_limit(quantity):
     tool = ToolMessage('{"unit_price_pen": "12.90"}', tool_call_id="one")
     text = f"El subtotal es S/ {12.90 * quantity:.2f}."
-    decision = after_model(text, [tool], SYSTEM_PROMPT)
+    decision = after_model(text, [tool], SHOPPING_PROMPT)
     assert decision.text == text + ("\n\n" + UNCONFIRMED_NOTICE if quantity == 21 else "")
     assert decision.action == ("annotated" if quantity == 21 else None)
 
@@ -252,7 +263,7 @@ def test_subtotal_quantity_limit(quantity):
     ],
 )
 def test_unsupported_amounts_annotate(messages, text):
-    decision = after_model(text, messages, SYSTEM_PROMPT)
+    decision = after_model(text, messages, SHOPPING_PROMPT)
     assert decision.text == text + "\n\n" + UNCONFIRMED_NOTICE
     assert decision.reason == "ungrounded_price" and decision.action == "annotated"
 
@@ -269,8 +280,8 @@ def test_assistant_uses_memory_and_only_model_history_as_evidence(monkeypatch):
         assert not any(isinstance(message, ToolMessage) for message in messages)
         return AIMessage("Tu presupuesto es 150 soles. El precio anterior era S/ 12.90.")
 
-    monkeypatch.setattr(module, "memory_prompt", memory)
-    monkeypatch.setattr(module, "reply", fake_reply)
+    monkeypatch.setattr(specialist, "memory_prompt", memory)
+    monkeypatch.setattr(specialist, "reply", fake_reply)
     messages = [
         HumanMessage("busca"),
         ToolMessage('{"price_pen": "12.90"}', tool_call_id="old"),
@@ -279,7 +290,7 @@ def test_assistant_uses_memory_and_only_model_history_as_evidence(monkeypatch):
     for _ in range(21):
         messages.extend([HumanMessage("hola"), AIMessage("hola")])
     result = asyncio.run(
-        module.assistant({"messages": messages}, {}, SimpleNamespace(store=object()))
+        shopping_assistant({"messages": messages}, {}, SimpleNamespace(store=object()))
     )
     assert result["messages"][0].text == (
         "Tu presupuesto es 150 soles. El precio anterior era S/ 12.90.\n\n" + UNCONFIRMED_NOTICE
@@ -288,7 +299,7 @@ def test_assistant_uses_memory_and_only_model_history_as_evidence(monkeypatch):
 
 def test_annotation_records_action(monkeypatch):
     events = []
-    monkeypatch.setattr(module, "record_event", lambda *args: events.append(args[1:]))
+    monkeypatch.setattr(responses, "record_event", lambda *args: events.append(args[1:]))
     response = module.guarded_response(
         AIMessage("Cuesta S/ 99.99"),
         {"messages": [ToolMessage("{}", tool_call_id="one")]},
@@ -361,7 +372,7 @@ def test_block_without_model(monkeypatch, text, reason):
     async def never(*args):
         pytest.fail("El modelo no debe ejecutarse")
 
-    monkeypatch.setattr(module, "reply", never)
+    monkeypatch.setattr(specialist, "reply", never)
     result = asyncio.run(module.graph.ainvoke({"messages": [HumanMessage(text)]}))
     monkeypatch.setenv("AGENT_CLASSIFIER_PROVIDER", "rules")
     assert result.get("input_blocked") or result.get("domain_blocked")
@@ -429,7 +440,7 @@ def test_replaced_output_has_same_id_and_no_unsafe_checkpoint(monkeypatch):
     async def fake(*args):
         return AIMessage(content="Cuesta S/ 999.90", id="response")
 
-    monkeypatch.setattr(module, "reply", fake)
+    monkeypatch.setattr(specialist, "reply", fake)
     graph = module.builder.compile(checkpointer=InMemorySaver())
     config = {"configurable": {"thread_id": "output"}}
 
@@ -523,7 +534,7 @@ def test_moderation_blocks_before_model(monkeypatch):
         pytest.fail("Moderación debe bloquear el modelo")
 
     monkeypatch.setattr(module, "moderate", fake)
-    monkeypatch.setattr(module, "reply", never)
+    monkeypatch.setattr(specialist, "reply", never)
     result = asyncio.run(module.graph.ainvoke({"messages": [HumanMessage("hola")]}))
     assert result["input_blocked"] and "ese contenido" in result["messages"][-1].text
 
@@ -542,7 +553,7 @@ def test_model_stream_never_emits_unsafe_output(monkeypatch):
     async def no_tools():
         return []
 
-    monkeypatch.setattr(module, "get_tools", no_tools)
+    monkeypatch.setattr(specialist, "get_tools", no_tools)
 
     async def run():
         chunks = [
@@ -599,7 +610,7 @@ def test_langsmith_export_privacy_and_hide_flags(monkeypatch, hidden, request):
     async def no_tools():
         return []
 
-    monkeypatch.setattr(module, "get_tools", no_tools)
+    monkeypatch.setattr(specialist, "get_tools", no_tools)
     value = {"kwargs": {"input": {"messages": [{"role": "user", "content": raw}]}}}
     sanitize_run_input(value)
     with tracing_context(enabled=True, client=client):
@@ -715,7 +726,7 @@ def test_mcp_redacts_before_adapter_callbacks(monkeypatch):
     async def tools():
         return [tool]
 
-    monkeypatch.setattr(module, "get_tools", tools)
+    monkeypatch.setattr(specialist, "get_tools", tools)
     result = asyncio.run(
         module.graph.ainvoke(
             {"messages": [HumanMessage("/tool get_product {}")]}, {"callbacks": [tracer]}
@@ -732,7 +743,7 @@ def test_rejected_instructions_never_reach_next_turn_model(monkeypatch):
         seen.extend(message.text for message in messages)
         return AIMessage("Hola")
 
-    monkeypatch.setattr(module, "reply", fake)
+    monkeypatch.setattr(specialist, "reply", fake)
     graph = module.builder.compile(checkpointer=InMemorySaver())
     config = {"configurable": {"thread_id": "injection-followup"}}
 
@@ -773,3 +784,18 @@ def test_boundary_removes_hidden_pii_metadata():
         "id": "human",
         "additional_kwargs": {"guardrail_pii_redacted": False, "guardrail_input_length": 4},
     }
+
+
+@pytest.mark.parametrize("name", ["shopping", "post_sale"])
+def test_output_guard_uses_active_specialist_prompt(name):
+    from agent_service.prompts import specialist_prompt
+
+    prompt = specialist_prompt(name)
+    leaked = " ".join(prompt.split()[-20:-10])
+    result = asyncio.run(
+        module.output_guard(
+            {"active_agent": name, "messages": [AIMessage(leaked)]},
+            {},
+        )
+    )
+    assert result["messages"][0].text == "No puedo compartir mis instrucciones internas"

@@ -10,6 +10,7 @@ from mcp.types import CallToolResult, TextContent, Tool
 
 from agent_service import graph as graph_module
 from agent_service import mcp_tools, model
+from agent_service.agents import specialist
 
 
 def test_interceptor_current_token_no_runtime_and_public():
@@ -44,12 +45,16 @@ def test_interceptor_current_token_no_runtime_and_public():
 
 
 class CaptureTracer(BaseTracer):
+    run_inline = True
+
     def __init__(self):
         super().__init__()
         self.runs = []
 
     def _persist_run(self, run):
         self.runs.append(run.model_dump())
+        for child in run.child_runs:
+            self._persist_run(child)
 
 
 def test_tool_runtime_per_run_and_traces_without_jwt(monkeypatch):
@@ -86,7 +91,7 @@ def test_tool_runtime_per_run_and_traces_without_jwt(monkeypatch):
     async def fake_tools():
         return [tool]
 
-    monkeypatch.setattr(graph_module, "get_tools", fake_tools)
+    monkeypatch.setattr(specialist, "get_tools", fake_tools)
 
     async def run():
         for token in tokens:
@@ -138,11 +143,11 @@ def test_unavailable_run_does_not_fail(monkeypatch):
     async def unavailable():
         return []
 
-    monkeypatch.setattr(graph_module, "get_tools", unavailable)
+    monkeypatch.setattr(specialist, "get_tools", unavailable)
     result = asyncio.run(
         graph_module.graph.ainvoke({"messages": [HumanMessage("/tool search_products {}")]})
     )
-    assert result["messages"][-1].content == graph_module.UNAVAILABLE_MESSAGE
+    assert result["messages"][-1].content == specialist.UNAVAILABLE_MESSAGE
 
 
 def test_openai_without_tools_receives_unavailability_notice(monkeypatch):
@@ -161,7 +166,7 @@ def test_openai_without_tools_receives_unavailability_notice(monkeypatch):
             received.append(messages)
             return AIMessage(content="Hola, ¿en qué puedo ayudarte?")
 
-    monkeypatch.setattr(graph_module, "get_tools", unavailable)
+    monkeypatch.setattr(specialist, "get_tools", unavailable)
     monkeypatch.setattr(model, "create_model", FakeModel)
     result = asyncio.run(graph_module.graph.ainvoke({"messages": [HumanMessage("hola")]}))
 
@@ -205,7 +210,7 @@ def test_six_iterations_per_turn(monkeypatch):
                 )
             return AIMessage(content="producto real, consultas agotadas")
 
-    monkeypatch.setattr(graph_module, "get_tools", fake_tools)
+    monkeypatch.setattr(specialist, "get_tools", fake_tools)
     monkeypatch.setattr(model, "create_model", LoopModel)
 
     async def run():
@@ -224,6 +229,6 @@ def test_scripted_echo_does_not_need_mcp(monkeypatch):
     async def never_load():
         raise AssertionError("No debe abrir MCP para echo")
 
-    monkeypatch.setattr(graph_module, "get_tools", never_load)
+    monkeypatch.setattr(specialist, "get_tools", never_load)
     result = asyncio.run(graph_module.graph.ainvoke({"messages": [HumanMessage("hola")]}))
     assert result["messages"][-1].content == "eco: hola"
