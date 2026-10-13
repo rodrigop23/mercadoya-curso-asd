@@ -3,9 +3,12 @@
 import asyncio
 import logging
 
+from langchain_core.messages import ToolMessage
 from langchain_mcp_adapters.client import MultiServerMCPClient
+from mcp.types import CallToolResult, TextContent
 
 from agent_service.config import settings
+from agent_service.guardrails.tool import sanitize_tool_message
 
 _client = None
 _tools = None
@@ -23,8 +26,29 @@ async def forward_user_jwt(request, handler):
         user = runtime.config.get("configurable", {}).get("langgraph_auth_user", {})
         token = user.get("token")
         if token:
-            return await handler(request.override(headers={"Authorization": f"Bearer {token}"}))
-    return await handler(request)
+            request = request.override(headers={"Authorization": f"Bearer {token}"})
+    result = await handler(request)
+    config = runtime.config if runtime is not None else {}
+    # Redacta dentro del interceptor, antes de que el adapter emita callbacks de la tool.
+    if isinstance(result, CallToolResult):
+        message = ToolMessage(
+            content=[
+                {"type": "text", "text": block.text}
+                for block in result.content
+                if isinstance(block, TextContent)
+            ],
+            tool_call_id="sanitized",
+            artifact={"structured_content": result.structuredContent},
+        )
+        safe = sanitize_tool_message(message, config)
+        return CallToolResult(
+            content=[TextContent(type="text", text=safe.text)],
+            structuredContent=safe.artifact["structured_content"],
+            isError=result.isError,
+        )
+    if isinstance(result, ToolMessage):
+        return sanitize_tool_message(result, config)
+    return result
 
 
 def client():

@@ -164,3 +164,15 @@ Se revisaron las trazas recientes del proyecto LangSmith y los logs de los dos
 contenedores sin encontrar JWT ni Bearer. El smoke exige además ausencia de los
 JWT concretos de prueba en state, interrupts, resume y logs. Son verificaciones
 locales; no se ejecutó GitHub Actions ni se creó un commit.
+
+## Concurrencia
+
+`resume.py` consulta el hilo y luego Agent Server crea el run. Dos resumes
+simultáneos pueden pasar la validación antes de que cambie el estado del hilo.
+La consulta no es un bloqueo ni una operación atómica con la creación del run.
+
+No hay un efecto doble de negocio. Orders responde 200 a una cancelación
+repetida y la web conserva el primer resultado del carrito por `action_id`.
+Conserva los 50 resultados más recientes por orden de inserción. Una confirmación
+antigua debe rechazarse en el servidor; el registro local tiene una ventana finita.
+Web Locks serializa pestañas del mismo origen cuando está disponible.

@@ -92,3 +92,47 @@ it('no suma una acción aplicada al rehidratar o responder dos veces', async () 
   expect(second.cart.items[0]?.quantity).toBe(2);
   expect(second.cart.items[0]?.unitAmount).toBe(1290);
 });
+
+it('conserva los 50 resultados más recientes por inserción y no reordena un duplicado', async () => {
+  const { applyAgentCartProposalOnce } = await import('./apply-agent-cart-proposal');
+  let cart = { ...empty, agentResults: {} as Record<string, { applied: boolean }> };
+  for (let index = 0; index < 52; index++) {
+    cart = applyAgentCartProposalOnce(
+      cart,
+      { ...proposal, action_id: `action-${index}` },
+      null,
+    ).cart;
+  }
+  const keys = Object.keys(cart.agentResults);
+  expect(keys).toHaveLength(50);
+  expect(keys[0]).toBe('action-2');
+  expect(keys.at(-1)).toBe('action-51');
+  const duplicate = applyAgentCartProposalOnce(
+    cart,
+    { ...proposal, action_id: 'action-2' },
+    product,
+  );
+  expect(duplicate.cart).toBe(cart);
+  expect(Object.keys(duplicate.cart.agentResults)).toEqual(keys);
+  expect(duplicate.result.applied).toBe(false);
+});
+
+it('recorta registros anteriores de más de 50 incluso al recuperar un resultado', async () => {
+  const { applyAgentCartProposalOnce } = await import('./apply-agent-cart-proposal');
+  const agentResults = Object.fromEntries(
+    Array.from({ length: 60 }, (_, index) => [
+      `action-${index}`,
+      { applied: false as const, reason: 'stock' as const },
+    ]),
+  );
+  const cart = { ...empty, agentResults };
+  const outcome = applyAgentCartProposalOnce(
+    cart,
+    { ...proposal, action_id: 'action-59' },
+    product,
+  );
+  expect(Object.keys(outcome.cart.agentResults)).toHaveLength(50);
+  expect(Object.keys(outcome.cart.agentResults)[0]).toBe('action-10');
+  expect(outcome.result).toBe(agentResults['action-59']);
+  expect(outcome.cart.items).toBe(cart.items);
+});

@@ -93,3 +93,22 @@ un pedido pendiente propio, revisa la tarjeta y aprueba; la vista de pedidos deb
 mostrar cancelado. Una confirmación vieja muestra "Esta confirmación ya fue
 respondida" y no aplica otro cambio. Consulta el
 [ADR 0026](../../docs/adr/0026-acciones-con-confirmacion.md).
+
+## Preferencias y avisos del asistente
+
+El estado vacío explica que puedes pedir recordar talla o presupuesto y borrarlos
+cuando quieras. Se gestiona por chat: "Recuerda que uso talla M", "¿qué recuerdas
+de mí?", "olvida mi talla" y "Olvida todo". La memoria pertenece al comprador
+autenticado y se conserva entre hilos; Nuevo hilo conserva sus preferencias.
+No hay una vista adicional de memoria.
+
+Los avisos de privacidad y rechazos aparecen como mensajes normales del
+asistente. Las respuestas llegan completas después del guard de salida. El
+servidor redacta datos personales en el historial antes de persistirlos.
+Los resultados de carrito conservan solo los 50 action_id más recientes por
+inserción; recuperar uno existente no cambia su orden ni aplica otra vez el carrito.
+
+Vitest comprueba el texto renderizado del estado vacío y el límite de resultados.
+La revisión local incluyó el chat a 1280 y 390 píxeles sin desborde horizontal.
+Consulta [ADR 0027](../../docs/adr/0027-guardrails-memoria.md) para las reglas y
+los límites del asistente.

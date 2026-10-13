@@ -31,7 +31,10 @@ async def reply(messages: list[BaseMessage], config: RunnableConfig, tools=None)
     if provider == "scripted":
         last = messages[-1]
         if isinstance(last, ToolMessage):
-            return AIMessage(content=f"resultado: {last.text}")
+            text = last.text.removeprefix("<datos_herramienta>").removesuffix(
+                "</datos_herramienta>"
+            )
+            return AIMessage(content=f"resultado: {text}")
         if last.type == "human" and last.text.startswith("/tool ") and tools:
             try:
                 _, name, raw = last.text.split(" ", 2)
@@ -54,7 +57,7 @@ async def reply(messages: list[BaseMessage], config: RunnableConfig, tools=None)
         return AIMessage(content=MISSING_KEY_MESSAGE)
     # No pasar configurable al cliente: auth_user contiene la credencial del request.
     # callbacks conserva streaming/trazas sin enviar ese token al modelo.
-    model_config: RunnableConfig = {"callbacks": config.get("callbacks")}
+    model_config: RunnableConfig = {"callbacks": config.get("callbacks"), "tags": ["nostream"]}
     model = create_model()
     if tools:
         model = model.bind_tools(tools)

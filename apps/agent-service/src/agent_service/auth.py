@@ -9,6 +9,7 @@ import jwt
 from langgraph_sdk import Auth
 
 from agent_service.config import settings
+from agent_service.guardrails.privacy import sanitize_run_input
 from agent_service.resume import validate_pending_resume
 
 auth = Auth()
@@ -76,9 +77,23 @@ async def authenticate(headers: dict) -> dict:
 @auth.on
 async def add_owner(ctx: Auth.types.AuthContext, value: dict) -> dict:
     if ctx.resource == "threads" and ctx.action == "create_run":
+        sanitize_run_input(value)
         await validate_pending_resume(value)
     owner = ctx.user.identity
     if value.get("metadata") is None:
         value["metadata"] = {}
     value["metadata"]["owner"] = owner
     return {"owner": owner}
+
+
+@auth.on.store
+async def authorize_store(ctx: Auth.types.AuthContext, value: dict):
+    namespace = value.get("namespace")
+    if (
+        not isinstance(namespace, (tuple, list))
+        or len(namespace) != 2
+        or namespace[0] != "memories"
+        or namespace[1] != ctx.user.identity
+    ):
+        raise Auth.exceptions.HTTPException(status_code=403, detail="Memoria no autorizada")
+    return None

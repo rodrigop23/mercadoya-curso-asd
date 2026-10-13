@@ -303,3 +303,51 @@ un único POST, resume duplicado 409 y pedido ajeno sin interrupt. Revisa tambi�
 state, interrupts, resumes y logs. El handler de auth añade el rechazo 409 porque
 Agent Server 0.16.0 devuelve 200 para un segundo resume vacío. Consulta el
 [ADR 0026](../../docs/adr/0026-acciones-con-confirmacion.md).
+
+## Guardrails y preferencias entre hilos
+
+`input_guard` valida longitud, redacta PII, bloquea inyecciones y temas claramente
+ajenos, y ejecuta moderación opcional. Auth redacta la entrada antes del primer
+checkpoint. Los resultados MCP se sanean dentro del interceptor y en el grafo;
+el catálogo no puede cambiar las instrucciones mediante títulos o descripciones.
+`output_guard` comprueba fuga de instrucciones, secretos, PII y precios/stock
+numéricos contra los datos estructurados del turno actual. El modelo usa
+`nostream` y la web recibe el texto completo después de validarlo.
+
+`AGENT_MAX_INPUT_CHARS=2000` admite límites inferiores.
+`AGENT_MODERATION=off` mantiene el comportamiento determinista sin claves;
+con `on` y una clave se consulta `omni-moderation-latest`, con timeout de 3 s.
+Los fallos registran `moderation=skipped`. Logs y trazas registran solo motivos,
+acciones y contadores, sin texto original ni identidad.
+
+Por privacidad, Compose y los configs fijan `LANGSMITH_HIDE_INPUTS=true` y
+`LANGSMITH_HIDE_OUTPUTS=true`. LangSmith conserva tags, metadata y tiempos,
+pero oculta todo el contenido de entradas y salidas. El cuerpo HTTP original
+llega al servidor antes de auth. Una invocación directa del grafo con checkpointer
+o callbacks debe usar `sanitize_run_input` primero.
+
+Pide "Recuerda que uso talla M", "¿qué recuerdas de mí?", "olvida mi talla"
+o "Olvida todo". La memoria solo guarda preferencias de compra de hasta 80
+caracteres, hasta 20 por comprador. Usa el Store del servidor y el namespace
+`("memories", identidad autenticada)`; funciona entre hilos y con Postgres en
+Docker. No usa embeddings. `/store` sigue deshabilitado y auth también protege
+su namespace. Dos escrituras concurrentes sobre la misma clave pueden sustituirse.
+
+En scripted se prueban estas herramientas sin claves:
+
+```text
+/tool remember_preference {"tipo":"talla","valor":"M"}
+/tool list_memories {}
+/tool forget_memory {"key":"preference-01"}
+/tool forget_all_memories {}
+```
+
+El modelo recibe una ventana de los últimos 40 mensajes, desde un mensaje humano,
+sin romper pares de herramientas. Un turno mayor se conserva completo. El state
+persiste íntegro y no hay resumen automático. Las heurísticas de PII, inyección,
+fuga y respaldo de precios tienen límites documentados en
+[ADR 0027](../../docs/adr/0027-guardrails-memoria.md).
+
+Las verificaciones locales del 2026-10-13 incluyen los smokes sin claves y la
+imagen con Postgres y modelo real: memoria en hilo nuevo, aislamiento, borrado,
+checkpoints/logs sin PII y trazas de LangSmith ocultas con tags de guardrails.

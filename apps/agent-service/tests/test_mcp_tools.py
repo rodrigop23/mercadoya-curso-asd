@@ -168,7 +168,7 @@ def test_openai_without_tools_receives_unavailability_notice(monkeypatch):
     assert result["messages"][-1].content == "Hola, ¿en qué puedo ayudarte?"
     assert len(received) == 1
     assert any(message.type == "human" and message.text == "hola" for message in received[0])
-    notice = received[0][-1]
+    notice = received[0][0]
     assert isinstance(notice, SystemMessage)
     assert "El catálogo y los pedidos no están disponibles ahora" in notice.text
     assert "no inventes" in notice.text

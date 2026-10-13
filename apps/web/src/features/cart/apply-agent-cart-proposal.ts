@@ -59,14 +59,25 @@ export function applyAgentCartProposalOnce<
   failure?: CartResult,
 ): { cart: T; result: CartResult } {
   const saved = cart.agentResults[proposal.action_id];
-  if (saved) return { cart, result: saved };
+  if (saved) {
+    const entries = Object.entries(cart.agentResults);
+    return {
+      cart:
+        entries.length > 50
+          ? { ...cart, agentResults: Object.fromEntries(entries.slice(-50)) }
+          : cart,
+      result: saved,
+    };
+  }
   const outcome = failure
     ? { cart, result: failure }
     : applyAgentCartProposal(cart, proposal, product);
   return {
     cart: {
       ...outcome.cart,
-      agentResults: { ...cart.agentResults, [proposal.action_id]: outcome.result },
+      agentResults: Object.fromEntries(
+        Object.entries({ ...cart.agentResults, [proposal.action_id]: outcome.result }).slice(-50),
+      ),
     },
     result: outcome.result,
   };

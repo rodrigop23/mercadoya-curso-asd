@@ -14,10 +14,14 @@ class Settings:
     mcp_url: str
     mcp_internal_token: str
     audience: str
+    moderation: bool
+    max_input_chars: int
 
 
 def settings() -> Settings:
     return Settings(
+        moderation=os.getenv("AGENT_MODERATION", "off") == "on",
+        max_input_chars=max(1, min(2000, int(os.getenv("AGENT_MAX_INPUT_CHARS", "2000")))),
         mcp_url=os.getenv("MCP_URL", "http://localhost:8080/mcp"),
         mcp_internal_token=os.getenv("MCP_INTERNAL_TOKEN", ""),
         model=os.getenv("AGENT_MODEL", "gpt-6-luna"),

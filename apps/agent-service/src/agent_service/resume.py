@@ -20,6 +20,8 @@ async def validate_pending_resume(value):
         raise Auth.exceptions.HTTPException(status_code=409, detail=ALREADY_RESPONDED)
     user = configurable.get("langgraph_auth_user") or {}
     token = user.get("token")
+    if not token:
+        raise Auth.exceptions.HTTPException(status_code=401, detail="Credencial inválida")
     # Cliente ASGI local por llamada, sin claves heredadas ni caché de headers de usuario.
     client = get_client(api_key=None, headers={"Authorization": f"Bearer {token}"})
     try:

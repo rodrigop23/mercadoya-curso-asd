@@ -65,3 +65,21 @@ def test_resume_blocks_historical_checkpoint(monkeypatch):
             )
         )
     assert error.value.status_code == 409
+
+
+@pytest.mark.parametrize("user", [{}, {"identity": "buyer"}, {"token": None}, {"token": ""}])
+def test_resume_requires_token_before_client(monkeypatch, user):
+    monkeypatch.setattr(resume, "get_client", lambda **kwargs: pytest.fail("No crear cliente"))
+    with pytest.raises(Auth.exceptions.HTTPException) as error:
+        asyncio.run(
+            resume.validate_pending_resume(
+                {
+                    "thread_id": "thread",
+                    "kwargs": {
+                        "command": {"resume": True},
+                        "config": {"configurable": {"langgraph_auth_user": user}},
+                    },
+                }
+            )
+        )
+    assert error.value.status_code == 401

@@ -8,10 +8,11 @@ import json
 import os
 from uuid import NAMESPACE_URL, uuid5
 
-from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode
+from langgraph.runtime import Runtime
 from langgraph.types import interrupt
 from pydantic import ValidationError
 
@@ -22,7 +23,15 @@ from agent_service.actions import (
     CancelProposal,
     CartProposal,
 )
+from agent_service.config import settings
+from agent_service.guardrails.input import PII_NOTICE, before_model
+from agent_service.guardrails.moderation import moderate
+from agent_service.guardrails.observability import record_event, record_moderation
+from agent_service.guardrails.output import after_model, structured_data
+from agent_service.guardrails.tool import sanitize_tool_message
+from agent_service.history import trim_history
 from agent_service.mcp_tools import get_tools
+from agent_service.memory import MEMORY_TOOLS, memory_prompt
 from agent_service.model import reply
 from agent_service.prompts import SYSTEM_PROMPT
 
@@ -47,8 +56,94 @@ def tool_iterations(messages):
     return count
 
 
-async def assistant(state: MessagesState, config: RunnableConfig) -> dict:
+class AgentState(MessagesState):
+    input_blocked: bool
+    pii_notice_pending: bool
+
+
+async def input_guard(state: AgentState, config: RunnableConfig):
+    last = state["messages"][-1]
+    if last.type != "human":
+        return {}
+    cfg = settings()
+    decision = before_model(last.text, cfg.max_input_chars)
+    redacted = decision.redacted or last.additional_kwargs.get("guardrail_pii_redacted", False)
+    original_length = last.additional_kwargs.get("guardrail_input_length", len(last.text))
+    if original_length > cfg.max_input_chars and decision.reason != "length":
+        decision = before_model("x" * (cfg.max_input_chars + 1), cfg.max_input_chars)
+    human = HumanMessage(content=before_model(last.text, cfg.max_input_chars).text, id=last.id)
+    messages = [human]
+    if redacted:
+        record_event(config, "input", "pii", "redacted")
+    response = decision.response
+    if decision.reason:
+        record_event(config, "input", decision.reason, "blocked")
+    else:
+        status = await moderate(human.text, enabled=cfg.moderation)
+        record_moderation(config, status)
+        if status == "blocked":
+            response = "No puedo ayudar con ese contenido. ¿Te ayudo con algo de la tienda?"
+            record_event(config, "input", "moderation", "blocked")
+    if response:
+        # No reintroducir instrucciones rechazadas en el prompt de un turno posterior.
+        human.content = "[mensaje bloqueado]"
+        messages.append(AIMessage(content=(PII_NOTICE + "\n" if redacted else "") + response))
+    return {
+        "messages": messages,
+        "input_blocked": bool(response),
+        "pii_notice_pending": redacted and not response,
+    }
+
+
+def guarded_response(response, state, config):
+    # Se valida antes de escribir el resultado del modelo en cualquier checkpoint.
+    if response.tool_calls:
+        from agent_service.guardrails.input import detect_injection
+        from agent_service.guardrails.pii import contains_pii
+
+        raw_args = json.dumps([call["args"] for call in response.tool_calls], ensure_ascii=False)
+        if detect_injection(raw_args):
+            record_event(config, "output", "injection", "blocked")
+            return AIMessage(content="No guardo datos personales", id=response.id)
+        if contains_pii(raw_args):
+            only_memory = all(call["name"] == "remember_preference" for call in response.tool_calls)
+            if not only_memory:
+                record_event(config, "output", "pii", "blocked")
+                return AIMessage(content="No guardo datos personales", id=response.id)
+            from agent_service.guardrails.tool import sanitize_data
+
+            response = response.model_copy(
+                update={"tool_calls": sanitize_data(response.tool_calls)}
+            )
+            record_event(config, "output", "pii", "redacted")
+        # No conservar reasoning ni texto auxiliar sin validar.
+        return AIMessage(content="", tool_calls=response.tool_calls, id=response.id)
+    decision = after_model(
+        response.text, state["messages"], SYSTEM_PROMPT, settings().mcp_internal_token
+    )
+    if decision.reason:
+        record_event(config, "output", decision.reason, decision.action)
+    content = decision.text
+    if state.get("pii_notice_pending"):
+        content = PII_NOTICE + "\n" + content
+    return AIMessage(content=content, id=response.id, additional_kwargs={"output_guarded": True})
+
+
+async def output_guard(state: AgentState, config: RunnableConfig):
+    response = state["messages"][-1]
+    if not response.additional_kwargs.get("output_guarded"):
+        response = guarded_response(response, state, config)
+    return {"messages": [response], "pii_notice_pending": False}
+
+
+async def assistant(state: AgentState, config: RunnableConfig, runtime: Runtime = None) -> dict:
     messages = [SystemMessage(content=SYSTEM_PROMPT), *state["messages"]]
+    store = runtime.store if runtime else None
+    if store is not None:
+        preference_prompt = await memory_prompt(store, config)
+        if preference_prompt:
+            # Un único system inicial permite include_system al recortar el historial.
+            messages[0] = SystemMessage(content=SYSTEM_PROMPT + "\n" + preference_prompt)
     tools = []
     provider = os.getenv("AGENT_MODEL_PROVIDER", "openai")
     last = state["messages"][-1]
@@ -58,45 +153,56 @@ async def assistant(state: MessagesState, config: RunnableConfig) -> dict:
     if scripted_tool or (provider == "openai" and os.getenv("OPENAI_API_KEY")):
         available = await get_tools()
         tools = [*reading_tools(available), *PROPOSAL_TOOLS] if available else []
-        if not tools:
-            if scripted_tool:
-                return {"messages": [AIMessage(content=UNAVAILABLE_MESSAGE)]}
-            messages.append(
-                SystemMessage(
-                    content=(
-                        "El catálogo y los pedidos no están disponibles ahora. "
-                        "Puedes responder consultas generales, pero no inventes productos, "
-                        "precios, stock ni datos de pedidos."
-                    )
+        if store is not None:
+            tools.extend(MEMORY_TOOLS)
+        if not available:
+            if (
+                scripted_tool
+                and last.type == "human"
+                and not any(
+                    last.text.startswith("/tool " + tool.name + " ") for tool in MEMORY_TOOLS
+                )
+            ):
+                return {
+                    "messages": [
+                        guarded_response(AIMessage(content=UNAVAILABLE_MESSAGE), state, config)
+                    ]
+                }
+            messages[0] = SystemMessage(
+                content=messages[0].text
+                + (
+                    "\nEl catálogo y los pedidos no están disponibles ahora. "
+                    "Puedes responder consultas generales, pero no inventes productos, "
+                    "precios, stock ni datos de pedidos."
                 )
             )
     exhausted = tool_iterations(state["messages"]) >= MAX_TOOL_ITERATIONS
     if exhausted:
-        messages.append(
-            SystemMessage(
-                content=(
-                    "Llegaste al límite de consultas de este turno. "
-                    "Responde con los datos obtenidos."
-                )
-            )
+        messages[0] = SystemMessage(
+            content=messages[0].text
+            + ("\nLlegaste al límite de consultas de este turno. Responde con los datos obtenidos.")
         )
-    return {"messages": [await reply(messages, config, tools if not exhausted else [])]}
+    response = await reply(trim_history(messages), config, tools if not exhausted else [])
+    return {"messages": [guarded_response(response, state, config)]}
 
 
 def tool_failure(error: Exception) -> str:
     return "El servicio de consultas no está disponible ahora. Inténtalo de nuevo más tarde."
 
 
-async def tools(state: MessagesState, config: RunnableConfig):
-    return await ToolNode(
-        reading_tools(await get_tools()), handle_tool_errors=tool_failure
-    ).ainvoke(state, config)
+async def tools(state: AgentState, config: RunnableConfig, runtime: Runtime):
+    node = ToolNode(
+        [*reading_tools(await get_tools()), *MEMORY_TOOLS], handle_tool_errors=tool_failure
+    )
+    # Un ToolNode invocado desde un nodo propio necesita el Runtime explícito.
+    result = await node.ainvoke(state, config, runtime=runtime)
+    return {"messages": [sanitize_tool_message(message, config) for message in result["messages"]]}
 
 
 def route_after_assistant(state: MessagesState):
     last = state["messages"][-1]
     if not isinstance(last, AIMessage) or not last.tool_calls:
-        return END
+        return "output_guard"
     return (
         "confirm_action" if any(c["name"] in PROPOSAL_NAMES for c in last.tool_calls) else "tools"
     )
@@ -115,23 +221,26 @@ async def call_mcp(name, args, config):
         },
         config,
     )
-    return result["messages"][0]
+    return sanitize_tool_message(result["messages"][0], config)
 
 
 def tool_data(message):
-    if isinstance(message.artifact, dict) and "structured_content" in message.artifact:
-        return message.artifact["structured_content"]
-    content = message.content
-    if isinstance(content, list):
-        content = "".join(block["text"] for block in content if block.get("type") == "text")
-    return json.loads(content)
+    return structured_data(message)
 
 
 async def confirm_action(state: MessagesState, config: RunnableConfig):
     calls = state["messages"][-1].tool_calls
+    proposal = None
 
     def answer(text, call=calls[0]):
-        return {"messages": [ToolMessage(content=text, tool_call_id=call["id"])]}
+        message = ToolMessage(
+            content=text,
+            tool_call_id=call["id"],
+            artifact={
+                "structured_content": proposal.model_dump(mode="json") if proposal else {},
+            },
+        )
+        return {"messages": [sanitize_tool_message(message, config)]}
 
     if len(calls) != 1:
         return {
@@ -238,11 +347,17 @@ async def confirm_action(state: MessagesState, config: RunnableConfig):
         return answer("No se pudo confirmar la cancelación; consulta el estado del pedido")
 
 
-builder = StateGraph(MessagesState)
+builder = StateGraph(AgentState)
+builder.add_node("input_guard", input_guard)
 builder.add_node("assistant", assistant)
+builder.add_node("output_guard", output_guard)
 builder.add_node("tools", tools)
 builder.add_node("confirm_action", confirm_action)
-builder.add_edge(START, "assistant")
+builder.add_edge(START, "input_guard")
+builder.add_conditional_edges(
+    "input_guard", lambda state: END if state.get("input_blocked") else "assistant"
+)
+builder.add_edge("output_guard", END)
 builder.add_conditional_edges("assistant", route_after_assistant)
 builder.add_edge("tools", "assistant")
 builder.add_edge("confirm_action", "assistant")

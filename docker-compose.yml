@@ -85,6 +85,10 @@ services:
       # El servidor exige un valor al arrancar; Compose evalúa incluso perfiles apagados.
       MCP_INTERNAL_TOKEN: ${MCP_INTERNAL_TOKEN:-}
       AGENT_MODEL_PROVIDER: ${AGENT_MODEL_PROVIDER:-openai}
+      AGENT_MODERATION: ${AGENT_MODERATION:-off}
+      AGENT_MAX_INPUT_CHARS: ${AGENT_MAX_INPUT_CHARS:-2000}
+      LANGSMITH_HIDE_INPUTS: 'true'
+      LANGSMITH_HIDE_OUTPUTS: 'true'
       AGENT_MODEL: ${AGENT_MODEL:-gpt-6-luna}
       AGENT_REASONING_EFFORT: ${AGENT_REASONING_EFFORT:-low}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}

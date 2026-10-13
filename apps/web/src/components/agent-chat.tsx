@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { AgentChatEmptyState } from './agent-chat-empty-state';
 import { AgentConfirmationCard } from './agent-confirmation-card';
 import { useCart } from '@/features/cart/cart-context';
 import {
@@ -267,15 +268,7 @@ function ChatPanel({
               <MessageScrollerContent aria-busy={busy} className="gap-4 px-4 pb-4">
                 {!hasMessages && !stream.isThreadLoading && (
                   <MessageScrollerItem messageId="agent-empty" className="my-auto py-6">
-                    <Marker variant="default">
-                      <MarkerContent className="flex flex-col gap-2">
-                        <p>¿Qué tienes en mente para tu próxima compra?</p>
-                        <p>
-                          Puedo consultar productos y tus pedidos, y proponer agregar al carrito o
-                          cancelar un pedido pendiente. Tú apruebas cada cambio.
-                        </p>
-                      </MarkerContent>
-                    </Marker>
+                    <AgentChatEmptyState />
                   </MessageScrollerItem>
                 )}
                 {transcript.map((row) => (
