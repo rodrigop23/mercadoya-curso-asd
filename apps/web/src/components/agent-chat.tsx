@@ -1,15 +1,31 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useStream } from '@langchain/react';
-import { MessageCircleIcon, PlusIcon, SendIcon, XIcon } from 'lucide-react';
+import { BotIcon, MessageCircleIcon, PlusIcon, SendIcon, XIcon } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@mercadoya/ui/components/alert';
+import { Avatar, AvatarFallback } from '@mercadoya/ui/components/avatar';
+import { Bubble, BubbleContent } from '@mercadoya/ui/components/bubble';
 import { Button } from '@mercadoya/ui/components/button';
 import { Field, FieldGroup, FieldLabel } from '@mercadoya/ui/components/field';
+import { Marker, MarkerContent, MarkerIcon } from '@mercadoya/ui/components/marker';
+import {
+  Message,
+  MessageAvatar,
+  MessageContent,
+  MessageHeader,
+} from '@mercadoya/ui/components/message';
+import {
+  MessageScroller,
+  MessageScrollerButton,
+  MessageScrollerContent,
+  MessageScrollerItem,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+} from '@mercadoya/ui/components/message-scroller';
 import { Separator } from '@mercadoya/ui/components/separator';
 import { Spinner } from '@mercadoya/ui/components/spinner';
 import { Textarea } from '@mercadoya/ui/components/textarea';
-import { cn } from '@mercadoya/ui/lib/utils';
-import { messageText, pendingToolLabel } from '@/lib/agent-messages';
+import { pendingToolLabel, transcriptRows } from '@/lib/agent-messages';
 import { savedThreadFetch } from '@/lib/agent-thread';
 import { API_BASE_URL } from '@/lib/products';
 
@@ -94,8 +110,6 @@ function ChatPanel({
   const [draft, setDraft] = useState('');
   const [localError, setLocalError] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null);
-  const viewport = useRef<HTMLOListElement>(null);
-  const followLatest = useRef(true);
   const [savedThreadId] = useState(threadId);
   const apiUrl = `${API_BASE_URL.replace(/\/$/, '')}/api/agent`;
   const callerOptions = useMemo(
@@ -111,25 +125,20 @@ function ChatPanel({
     transport: 'sse',
     fetch: credentialFetch,
   });
-  // Futuras confirmaciones: stream.interrupts y
-  // stream.respond({ aprobado }, { interruptId: item.id }). Aún no hay acciones.
   const toolLabel = pendingToolLabel(stream.messages);
   const busy = stream.isLoading || stream.isThreadLoading;
   const error = localError || !!stream.error;
-  const messages = stream.messages
-    .filter((message) => ['human', 'ai'].includes(message.type))
-    .map((message) => ({ ...message, text: messageText(message.content) }))
-    .filter((message) => message.text);
+  const rows = transcriptRows(stream.messages, {
+    toolLabel,
+    isLoading: stream.isLoading,
+    isThreadLoading: stream.isThreadLoading,
+  });
+  const hasMessages = rows.some((row) => row.kind === 'message');
+  const status = rows.find((row) => row.kind === 'status');
 
   useEffect(() => {
     if (open) input.current?.focus();
   }, [open]);
-
-  useEffect(() => {
-    if (open && followLatest.current && viewport.current) {
-      viewport.current.scrollTop = viewport.current.scrollHeight;
-    }
-  }, [open, stream.messages]);
 
   return (
     <section
@@ -162,59 +171,83 @@ function ChatPanel({
           Nuevo hilo
         </Button>
       </div>
-      <ol
-        ref={viewport}
-        aria-label="Mensajes del asistente"
-        aria-busy={stream.isThreadLoading}
-        tabIndex={0}
-        onScroll={() => {
-          const element = viewport.current;
-          if (element) {
-            followLatest.current =
-              element.scrollHeight - element.scrollTop - element.clientHeight < 48;
-          }
-        }}
-        className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-4 pb-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-      >
-        {messages.length === 0 && !stream.isThreadLoading && (
-          <li className="my-auto flex flex-col gap-2 py-6 text-sm leading-relaxed">
-            <p className="font-medium">¿Qué tienes en mente para tu próxima compra?</p>
-            <p className="text-muted-foreground">
-              Puedo consultar productos, precios, stock y tus pedidos. Todavía no puedo modificar tu
-              carrito o tus pedidos.
-            </p>
-          </li>
-        )}
-        {messages.map((message, index) => (
-          <li key={message.id ?? index} className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium text-muted-foreground">
-              {message.type === 'human' ? 'Tú' : 'Asistente'}
-            </span>
-            <p
-              className={cn(
-                'whitespace-pre-wrap break-words text-sm leading-relaxed [overflow-wrap:anywhere]',
-                message.type === 'human' && 'rounded-lg bg-muted px-3 py-2',
-              )}
+      {open && (
+        <MessageScrollerProvider
+          // La fila de carga no debe consumir la posición inicial del historial guardado.
+          key={stream.isThreadLoading ? 'loading' : 'transcript'}
+          autoScroll
+          defaultScrollPosition="last-anchor"
+        >
+          <MessageScroller className="flex-1">
+            <MessageScrollerViewport
+              aria-label="Mensajes del asistente"
+              suppressHydrationWarning
+              className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             >
-              {message.text}
-            </p>
-          </li>
-        ))}
-      </ol>
+              <MessageScrollerContent aria-busy={busy} className="gap-4 px-4 pb-4">
+                {!hasMessages && !stream.isThreadLoading && (
+                  <MessageScrollerItem messageId="agent-empty" className="my-auto py-6">
+                    <Marker variant="default">
+                      <MarkerContent className="flex flex-col gap-2">
+                        <p>¿Qué tienes en mente para tu próxima compra?</p>
+                        <p>
+                          Puedo consultar productos, precios, stock y tus pedidos. Todavía no puedo
+                          modificar tu carrito o tus pedidos.
+                        </p>
+                      </MarkerContent>
+                    </Marker>
+                  </MessageScrollerItem>
+                )}
+                {rows.map((row) => (
+                  <MessageScrollerItem
+                    key={row.id}
+                    messageId={row.id}
+                    scrollAnchor={row.kind === 'message' && row.type === 'human'}
+                  >
+                    {row.kind === 'message' ? (
+                      <Message align={row.type === 'human' ? 'end' : 'start'}>
+                        <MessageAvatar aria-hidden="true">
+                          <Avatar>
+                            <AvatarFallback>
+                              {row.type === 'human' ? 'Tú' : <BotIcon />}
+                            </AvatarFallback>
+                          </Avatar>
+                        </MessageAvatar>
+                        <MessageContent>
+                          <MessageHeader>{row.type === 'human' ? 'Tú' : 'Asistente'}</MessageHeader>
+                          <Bubble
+                            variant={row.type === 'human' ? 'default' : 'muted'}
+                            align={row.type === 'human' ? 'end' : 'start'}
+                          >
+                            <BubbleContent className="whitespace-pre-wrap [overflow-wrap:anywhere]">
+                              {row.text}
+                            </BubbleContent>
+                          </Bubble>
+                        </MessageContent>
+                      </Message>
+                    ) : (
+                      <Marker variant="default">
+                        <MarkerIcon>
+                          <Spinner />
+                        </MarkerIcon>
+                        <MarkerContent>{row.text}</MarkerContent>
+                      </Marker>
+                    )}
+                  </MessageScrollerItem>
+                ))}
+              </MessageScrollerContent>
+            </MessageScrollerViewport>
+            <MessageScrollerButton behavior="auto" aria-label="Ir al último mensaje" />
+          </MessageScroller>
+        </MessageScrollerProvider>
+      )}
       <div
         role="status"
         aria-live="polite"
         className="shrink-0 px-4 pb-2 text-xs text-muted-foreground"
       >
-        {busy && (
-          <span className="flex items-center gap-2">
-            <Spinner />
-            {stream.isThreadLoading
-              ? 'Cargando conversación…'
-              : (toolLabel ?? 'Recibiendo respuesta…')}
-          </span>
-        )}
-        {!busy && messages.length > 0 && !error && 'Respuesta recibida.'}
+        {busy && <span className="sr-only">{status?.text}</span>}
+        {!busy && hasMessages && !error && 'Respuesta recibida.'}
       </div>
       {error && (
         <Alert variant="destructive" className="mx-4 mb-3 w-auto shrink-0">
@@ -234,7 +267,6 @@ function ChatPanel({
           const content = draft.trim();
           setLocalError(false);
           setDraft('');
-          followLatest.current = true;
           try {
             await stream.submit({ messages: [{ type: 'human', content }] });
           } catch {
@@ -251,6 +283,17 @@ function ChatPanel({
               id={`${panelId}-message`}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (
+                  event.key === 'Enter' &&
+                  !event.shiftKey &&
+                  !event.nativeEvent.isComposing &&
+                  event.nativeEvent.keyCode !== 229
+                ) {
+                  event.preventDefault();
+                  event.currentTarget.form?.requestSubmit();
+                }
+              }}
               rows={2}
               className="max-h-28 resize-none"
               placeholder="Escribe aquí…"
