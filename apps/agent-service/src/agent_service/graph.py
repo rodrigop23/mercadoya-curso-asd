@@ -24,9 +24,15 @@ from agent_service.actions import (
     CartProposal,
 )
 from agent_service.config import settings
-from agent_service.guardrails.input import PII_NOTICE, before_model
+from agent_service.guardrails.domain import (
+    CLASSIFIER_ERROR_REPLY,
+    ClassificationError,
+    domain_history,
+    get_classifier,
+)
+from agent_service.guardrails.input import OFF_TOPIC_REPLY, PII_NOTICE, before_model
 from agent_service.guardrails.moderation import moderate
-from agent_service.guardrails.observability import record_event, record_moderation
+from agent_service.guardrails.observability import record_domain, record_event, record_moderation
 from agent_service.guardrails.output import after_model, structured_data
 from agent_service.guardrails.privacy import configure_trace_privacy
 from agent_service.guardrails.tool import sanitize_tool_message
@@ -60,6 +66,9 @@ def tool_iterations(messages):
 class AgentState(MessagesState):
     input_blocked: bool
     pii_notice_pending: bool
+    domain_blocked: bool
+    recent_confirmation: bool
+    last_domain_in_domain: bool
 
 
 async def input_guard(state: AgentState, config: RunnableConfig):
@@ -93,6 +102,82 @@ async def input_guard(state: AgentState, config: RunnableConfig):
         "messages": messages,
         "input_blocked": bool(response),
         "pii_notice_pending": redacted and not response,
+        **({"last_domain_in_domain": False} if response else {}),
+    }
+
+
+async def domain_guard(state: AgentState, config: RunnableConfig):
+    last = state["messages"][-1]
+    if last.type != "human":
+        return {"domain_blocked": False}
+    cfg = settings()
+    previous = state["messages"][:-1]
+    history = domain_history(previous)
+    previous_ai = next((item for item in reversed(history) if item["type"] == "ai"), None)
+    if previous_ai is not None and "last_domain_in_domain" in state:
+        previous_ai["in_domain"] = state["last_domain_in_domain"]
+    recent = state.get("recent_confirmation", False) or any(
+        isinstance(message, AIMessage)
+        and any(call["name"] in PROPOSAL_NAMES for call in message.tool_calls)
+        for message in reversed(previous[-2:])
+    )
+    try:
+        decision = await get_classifier().classify(last.text, history, recent)
+    except ClassificationError as error:
+        metadata = {
+            "domain_category": "classifier_error",
+            "domain_in_domain": None,
+            "domain_confidence": None,
+            "domain_in_domain_probability": None,
+            "domain_classifier": cfg.classifier_provider,
+            "domain_model": cfg.classifier_model,
+            "domain_latency_ms": error.latency_ms,
+            "domain_error_subtype": error.subtype,
+            "domain_fail_open": cfg.classifier_fail_open,
+        }
+        record_domain(config, metadata)
+        record_event(config, "domain", "classifier_error", "error")
+        if cfg.classifier_fail_open:
+            return {
+                "domain_blocked": False,
+                "recent_confirmation": False,
+                "last_domain_in_domain": False,
+            }
+        response = CLASSIFIER_ERROR_REPLY
+        # Un fallo no juzga el contenido: conserva el mensaje humano redactado.
+        messages = []
+    else:
+        record_domain(
+            config,
+            {
+                "domain_category": decision.category,
+                "domain_in_domain": decision.in_domain,
+                "domain_confidence": decision.confidence,
+                "domain_in_domain_probability": decision.in_domain_probability,
+                "domain_classifier": decision.classifier,
+                "domain_model": decision.model,
+                "domain_latency_ms": decision.latency_ms,
+            },
+        )
+        record_event(
+            config, "domain", decision.category, "allowed" if decision.in_domain else "blocked"
+        )
+        if decision.in_domain:
+            return {
+                "domain_blocked": False,
+                "recent_confirmation": False,
+                "last_domain_in_domain": True,
+            }
+        response = OFF_TOPIC_REPLY
+        messages = [HumanMessage(content="[mensaje bloqueado]", id=last.id)]
+    if state.get("pii_notice_pending"):
+        response = PII_NOTICE + "\n" + response
+    return {
+        "messages": [*messages, AIMessage(content=response)],
+        "domain_blocked": True,
+        "pii_notice_pending": False,
+        "recent_confirmation": False,
+        "last_domain_in_domain": False,
     }
 
 
@@ -245,7 +330,10 @@ async def confirm_action(state: MessagesState, config: RunnableConfig):
                 "structured_content": proposal.model_dump(mode="json") if proposal else {},
             },
         )
-        return {"messages": [sanitize_tool_message(message, config)]}
+        return {
+            "messages": [sanitize_tool_message(message, config)],
+            "recent_confirmation": proposal is not None,
+        }
 
     if len(calls) != 1:
         return {
@@ -356,13 +444,17 @@ configure_trace_privacy()
 
 builder = StateGraph(AgentState)
 builder.add_node("input_guard", input_guard)
+builder.add_node("domain_guard", domain_guard)
 builder.add_node("assistant", assistant)
 builder.add_node("output_guard", output_guard)
 builder.add_node("tools", tools)
 builder.add_node("confirm_action", confirm_action)
 builder.add_edge(START, "input_guard")
 builder.add_conditional_edges(
-    "input_guard", lambda state: END if state.get("input_blocked") else "assistant"
+    "input_guard", lambda state: END if state.get("input_blocked") else "domain_guard"
+)
+builder.add_conditional_edges(
+    "domain_guard", lambda state: END if state.get("domain_blocked") else "assistant"
 )
 builder.add_edge("output_guard", END)
 builder.add_conditional_edges("assistant", route_after_assistant)

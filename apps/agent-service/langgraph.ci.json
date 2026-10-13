@@ -6,9 +6,12 @@
   "api_version": "0.16.0",
   "env": {
     "AGENT_MODEL_PROVIDER": "echo",
+    "AGENT_CLASSIFIER_PROVIDER": "rules",
+    "AGENT_CLASSIFIER_FAIL_OPEN": "false",
     "LANGSMITH_TRACING": "false"
   },
   "http": {
+    "app": "./src/agent_service/app.py:app",
     "disable_store": true,
     "disable_ui": true,
     "disable_mcp": true,

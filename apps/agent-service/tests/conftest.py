@@ -59,3 +59,11 @@ def identity(monkeypatch):
     server.server_close()
     worker.join(timeout=2)
     jwks_client.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def classifiers_without_network(monkeypatch):
+    monkeypatch.setenv("AGENT_CLASSIFIER_PROVIDER", "rules")
+    monkeypatch.setenv("AGENT_CLASSIFIER_FAIL_OPEN", "false")
+    monkeypatch.delenv("CLOUDFLARE_ACCOUNT_ID", raising=False)
+    monkeypatch.delenv("CLOUDFLARE_API_TOKEN", raising=False)

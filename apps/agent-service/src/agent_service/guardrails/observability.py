@@ -20,8 +20,27 @@ def record_event(config, guardrail: str, reason: str, action: str):
         run.add_metadata(event)
         run.add_tags(tags)
         run = run.parent_run
-    _counts[reason] += 1
-    logger.info(json.dumps({"metric": "guardrail_events_total", **event, "count": _counts[reason]}))
+    key = (guardrail, reason, action)
+    _counts[key] += 1
+    logger.info(
+        json.dumps(
+            {
+                "metric": "guardrail_events_total",
+                **event,
+                **({"category": reason} if guardrail == "domain" else {}),
+                "count": _counts[key],
+            }
+        )
+    )
+
+
+def record_domain(config, metadata: dict):
+    config.setdefault("metadata", {}).update(metadata)
+    run = get_current_run_tree()
+    while run is not None:
+        run.add_metadata(metadata)
+        run = run.parent_run
+    logger.info(json.dumps(metadata))
 
 
 def record_moderation(config, status: str):

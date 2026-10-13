@@ -16,6 +16,10 @@ persistir también entre hilos, con aislamiento por identidad autenticada.
 
 ## Decisión
 
+La tarea 11 sustituye la política de temas descrita aquí por la lista permitida
+con Clef y el nodo `domain_guard`. Véase [ADR 0028](0028-clasificador-dominio-clef.md).
+La redacción de PII, inyección, moderación, salida y aislamiento de memoria se conservan.
+
 Se conserva `StateGraph`. Los middleware `before_agent`, `before_model`,
 `after_model`, `after_agent`, `PIIMiddleware` y `HumanInTheLoopMiddleware` se
 integran con `create_agent`. Migrar afectaría el ruteo, las confirmaciones y el

@@ -8,17 +8,26 @@ from langsmith.utils import tracing_is_enabled
 
 from agent_service.guardrails.pii import redact_pii
 
-TRACE_SECRETS = re.compile(
-    r"eyJ[\w-]+\.[\w-]+\.[\w-]+|Bearer\s+\S+|\bsk-[\w-]+|\blsv2_[\w-]+"
-)
-PRIVATE_FIELDS = {"token", "authorization", "x-mcp-internal-token", "api_key"}
+TRACE_SECRETS = re.compile(r"eyJ[\w-]+\.[\w-]+\.[\w-]+|Bearer\s+\S+|\bsk-[\w-]+|\blsv2_[\w-]+")
+PRIVATE_FIELDS = {
+    "token",
+    "authorization",
+    "x-mcp-internal-token",
+    "api_key",
+    "cloudflare_api_token",
+    "cloudflare_account_id",
+    "account_id",
+    "accountid",
+}
 
 
 def sanitize_trace(value):
     """Sanea copias serializadas, incluidos resultados crudos, metadata y errores."""
     if isinstance(value, dict):
         return {
-            key: "[secreto]" if key.casefold() in PRIVATE_FIELDS else sanitize_trace(child)
+            key: "[secreto]"
+            if key.casefold() in PRIVATE_FIELDS or key.casefold().startswith("cf-aig-")
+            else sanitize_trace(child)
             for key, child in value.items()
         }
     if isinstance(value, list):

@@ -3,6 +3,7 @@ name = "mercadoya-agent-service"
 version = "0.0.0"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+  "httpx==0.28.1",
   "langgraph==1.2.14",
   "langchain-core==1.6.9",
   "langgraph-sdk==0.4.6",

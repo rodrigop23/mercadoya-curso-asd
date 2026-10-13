@@ -9,7 +9,13 @@ from test_mcp_tools import CaptureTracer
 
 from agent_service import graph as module
 from agent_service.auth import add_owner, authorize_store
-from agent_service.guardrails.input import PII_NOTICE, before_model, detect_injection, is_off_topic
+from agent_service.guardrails.domain_rules import RulesClassifier
+from agent_service.guardrails.input import (
+    OFF_TOPIC_REPLY,
+    PII_NOTICE,
+    before_model,
+    detect_injection,
+)
 from agent_service.guardrails.moderation import moderate
 from agent_service.guardrails.observability import record_event
 from agent_service.guardrails.output import UNCONFIRMED, UNCONFIRMED_NOTICE, after_model
@@ -99,7 +105,7 @@ def test_allowed_instructions(text):
     ],
 )
 def test_topics(text, blocked):
-    assert is_off_topic(text) == blocked
+    assert (RulesClassifier().category(text) == "fuera_de_dominio") == blocked
 
 
 def test_length():
@@ -197,7 +203,7 @@ def test_output_false_positive_regressions(text, messages, expected):
     "text,reason",
     [
         ("mi código de descuento no funciona", None),
-        ("escríbeme código en python", "off_topic"),
+        ("escríbeme código en python", None),
         ("código de pedido", None),
         ("código del producto", None),
     ],
@@ -357,15 +363,18 @@ def test_block_without_model(monkeypatch, text, reason):
 
     monkeypatch.setattr(module, "reply", never)
     result = asyncio.run(module.graph.ainvoke({"messages": [HumanMessage(text)]}))
-    assert result["input_blocked"]
-    assert result["messages"][-1].text == before_model(text).response
+    monkeypatch.setenv("AGENT_CLASSIFIER_PROVIDER", "rules")
+    assert result.get("input_blocked") or result.get("domain_blocked")
+    assert result["messages"][-1].text == (
+        OFF_TOPIC_REPLY if reason == "off_topic" else before_model(text).response
+    )
 
 
 def test_privacy_at_server_boundary_checkpoints_callbacks_logs(monkeypatch, caplog):
     monkeypatch.setenv("AGENT_MODEL_PROVIDER", "echo")
     caplog.set_level("INFO")
     raw = (
-        "Mi correo es ana@example.com y mi DNI 12345678, "
+        "Recuerda mi correo ana@example.com y mi DNI 12345678, "
         "teléfono +51 987 654 321 y tarjeta 4111111111111111"
     )
     value = {"kwargs": {"input": {"messages": [{"role": "user", "content": raw, "id": "human"}]}}}
@@ -622,13 +631,20 @@ def test_langsmith_export_redacts_metadata_errors_and_credentials(monkeypatch):
 
     monkeypatch.setattr(Client, "request_with_retries", capture)
     client = Client(
-        api_url="http://unused", api_key="test", auto_batch_tracing=False,
-        anonymizer=sanitize_trace, hide_inputs=False, hide_outputs=False,
+        api_url="http://unused",
+        api_key="test",
+        auto_batch_tracing=False,
+        anonymizer=sanitize_trace,
+        hide_inputs=False,
+        hide_outputs=False,
     )
     run_id = uuid4()
     client.create_run(
-        "privacy", inputs={"text": "150 soles", "token": "private-token"}, run_type="chain",
-        id=run_id, extra={"metadata": {"contact": "ana@example.com"}},
+        "privacy",
+        inputs={"text": "150 soles", "token": "private-token"},
+        run_type="chain",
+        id=run_id,
+        extra={"metadata": {"contact": "ana@example.com"}},
     )
     client.update_run(run_id, error="ana@example.com Bearer private-token")
     serialized = json.dumps(exported)

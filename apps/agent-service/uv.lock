@@ -772,6 +772,7 @@ name = "mercadoya-agent-service"
 version = "0.0.0"
 source = { editable = "." }
 dependencies = [
+    { name = "httpx" },
     { name = "langchain-core" },
     { name = "langchain-mcp-adapters" },
     { name = "langchain-openai" },
@@ -793,6 +794,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "httpx", specifier = "==0.28.1" },
     { name = "langchain-core", specifier = "==1.6.9" },
     { name = "langchain-mcp-adapters", specifier = "==0.3.2" },
     { name = "langchain-openai", specifier = "==1.7.0" },

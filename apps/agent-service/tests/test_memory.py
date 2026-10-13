@@ -105,7 +105,7 @@ def test_twenty_limit_duplicates_and_concurrent_cap():
         for index in range(20):
             assert "Guardé" in await remember(store, "a", valor=f"talla {index}")
         assert "Ya recuerdo" in await remember(store, "a", valor="talla 0")
-        assert "20 preferencias" in await remember(store, "a", valor="una más")
+        assert "20 preferencias" in await remember(store, "a", valor="M")
         assert len(await store.asearch(("memories", "a"), limit=100)) == 20
         assert "Guardé" in await remember(store, "b")
         other = InMemoryStore()

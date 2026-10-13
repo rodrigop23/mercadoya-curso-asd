@@ -179,7 +179,8 @@ del repo. Espera `/ok`, verifica 401 sin token, crea un hilo con JWT válido, ej
 un run eco, comprueba aislamiento, un JWKS caído y ausencia de JWT en state/logs.
 Termina los procesos al acabar. `--port 2025` permite usar otro puerto.
 
-`langgraph.ci.json` fija echo y desactiva tracing con variables no secretas.
+`langgraph.ci.json` fija echo, el clasificador rules y fail_open=false, y desactiva
+tracing con variables no secretas. El smoke retira también las claves Cloudflare.
 `langgraph dev` guarda su estado local en `.langgraph_api/`, ignorado por Git;
 no usa Postgres. El job `agent-smoke` ejecuta esos mismos comandos y no prueba la
 imagen Docker. Desde la raíz, `pnpm --filter @mercadoya/web test` cubre el render de
@@ -309,9 +310,10 @@ Agent Server 0.16.0 devuelve 200 para un segundo resume vacío. Consulta el
 
 ## Guardrails y preferencias entre hilos
 
-`input_guard` valida longitud, redacta PII, bloquea inyecciones y temas claramente
-ajenos, y ejecuta moderación opcional. Auth redacta la entrada antes del primer
-checkpoint. Los resultados MCP se sanean dentro del interceptor y en el grafo;
+`input_guard` redacta PII, valida longitud, bloquea inyecciones y ejecuta
+moderación opcional. `domain_guard` aplica después una lista permitida estricta
+con Cloudflare Clef antes de llamar al modelo o herramientas. Auth redacta la
+entrada antes del primer checkpoint. Los resultados MCP se sanean dentro del interceptor y en el grafo;
 el catálogo no puede cambiar las instrucciones mediante títulos o descripciones.
 `output_guard` comprueba fuga de instrucciones, secretos, PII y precios/stock
 numéricos contra las herramientas de toda la ventana enviada al modelo. También
@@ -322,8 +324,8 @@ Si queda un monto sin respaldo, conserva la respuesta y añade
 `ungrounded_price` y `action=annotated`. Solo reemplaza la respuesta por falta de
 respaldo monetario si todos los montos carecen de evidencia y no hay herramientas
 en esa ventana. Los stocks sin respaldo también reciben un aviso.
-Las consultas sobre códigos de descuento, pedido o producto están permitidas;
-el filtro de programación exige vocabulario como `código fuente` o `python`.
+Las consultas sobre códigos de descuento, pedido o producto están permitidas.
+Los temas ajenos reciben la negativa fija del clasificador de dominio.
 El modelo usa
 `nostream` y la web recibe el texto completo después de validarlo.
 
@@ -380,3 +382,72 @@ de Compose con los flags en `false`. Con claves reales y dos productos temporale
 sin reemplazo ni aviso de montos sin confirmar. LangSmith mostró entradas y
 salidas visibles, con correo y DNI redactados también en la entrada raíz.
 Los productos, el comprador y los hilos de prueba se eliminaron al terminar.
+
+## Clasificador de dominio con Clef
+
+El asistente responde solo sobre compras en MercadoYa. Incluye productos,
+carrito, pedidos, pagos, envíos, preferencias, saludos y seguimientos del historial.
+Los temas ajenos reciben exactamente "Solo puedo ayudarte con compras en MercadoYa:
+productos, carrito, pedidos y tus preferencias." Sin ejecutar el modelo principal
+ni herramientas. El nodo `domain_guard` corre después de PII, longitud, inyección
+y moderación opcional. Las reanudaciones de confirmaciones continúan en
+`confirm_action` y no vuelven a clasificar.
+
+Para crear las credenciales, abre Cloudflare Dashboard, Workers AI, Use REST API,
+Create a Workers AI API Token y copia el Account ID. Un token personalizado
+necesita permisos Workers AI Read y Edit. Guarda ambos en el `.env` local para
+Compose o expórtalos en la terminal. Nunca commitees el token ni lo añadas a logs.
+[Guía REST oficial](https://developers.cloudflare.com/workers-ai/get-started/rest-api/).
+
+- `CLOUDFLARE_ACCOUNT_ID` y `CLOUDFLARE_API_TOKEN`: credenciales para Workers AI.
+- `AGENT_CLASSIFIER_PROVIDER`: `clef` por defecto con openai; `rules` con echo y
+  scripted. Compose fija `clef` por defecto; configura `rules` si haces una demo sin claves.
+- `AGENT_CLASSIFIER_MODEL=clef`: también admite `clef-flash`. Cada modelo usa su
+  endpoint `/ai/run/@cf/cloudflare/<modelo>` y el campo `model` correspondiente.
+- `AGENT_CLASSIFIER_TIMEOUT_S=2`: timeout sin reintentos automáticos.
+- `AGENT_CLASSIFIER_MIN_IN_DOMAIN=0.5`: probabilidad mínima de pertenecer al dominio.
+- `AGENT_CLASSIFIER_FAIL_OPEN=false`: cierra ante un fallo. `true` se reserva al
+  desarrollo local y no se activa en CI ni por defecto en Compose.
+
+Sin credenciales el servicio arranca, registra `classifier=clef_unconfigured`
+y cada consulta recibe "No pude procesar tu mensaje en este momento. Inténtalo
+de nuevo en unos segundos." El mensaje humano redactado queda intacto. Los
+fallos de red, HTTP o formato tienen esa misma política, sin pasar a reglas.
+El cliente HTTP se crea al necesitarlo y el lifespan del Agent Server lo cierra
+al apagar. Cada petición lee su token actual desde el entorno.
+
+Clef recibe seis mensajes human/ai previos ya redactados, con los textos AI
+limitados a 300 caracteres, el mensaje actual y el indicador de confirmación
+reciente. Las preguntas y criterios están en `guardrails/domain.py`; los logs
+contienen solo decisiones, probabilidades, tiempos y contadores. La traza propia
+incluye metadata `domain_*`. No se exportan secretos Cloudflare ni campos `cf-aig-*`.
+
+Desde `apps/agent-service`, con las variables Cloudflare exportadas:
+
+```sh
+uv run python scripts/eval_domain.py
+uv run python scripts/eval_domain.py --model both
+```
+
+El script no carga `.env`. Evalúa secuencialmente con una pausa entre casos e
+imprime precisión de dominio y categoría, matriz, ids de falsos positivos y
+negativos, discrepancias de categoría y latencia p50/p95. Sin claves informa que
+omitió la evaluación y sale 0. No corre en CI. El dataset de 40 casos en
+`evals/domain_cases.jsonl` queda listo para una evaluación posterior en LangSmith.
+Las reglas aciertan los 40 casos sin excepciones.
+
+Workers AI incluye 10.000 neuronas diarias gratis. Clef cuesta USD 0,24 por millón
+de tokens de entrada y clef-flash USD 0,038; no cobran tokens de salida. En Paid,
+el exceso del cupo cuesta USD 0,011 por mil neuronas. Cuarenta casos de unos mil
+tokens cuestan aproximadamente USD 0,0096 con Clef antes del cupo gratuito.
+[Precios oficiales](https://developers.cloudflare.com/workers-ai/platform/pricing/).
+En la evaluación local Clef acertó 100 % del dominio y clef-flash 70 %, por eso
+se mantiene Clef. Consulta el [ADR 0028](../../docs/adr/0028-clasificador-dominio-clef.md)
+para resultados, límites y diferencias observadas en la API real.
+
+Validación local del 2026-10-13: locks, Ruff y 313 tests del agente y 36 del MCP;
+ambos smokes sin claves; Compose válido; imagen final con Clef y modelo principal
+reales. Se verificaron rechazos sin llamadas al modelo, búsqueda con seguimiento,
+carrito y cancelación con confirmación. Se revisaron 78 runs de LangSmith y logs
+del agente/MCP, con metadata de dominio y sin mensajes ni credenciales Cloudflare
+en logs. Los datos temporales de la prueba se eliminaron.
