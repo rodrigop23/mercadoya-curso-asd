@@ -1,0 +1,687 @@
+# Asistente de compras de MercadoYa
+
+Servicio Python 3.12, separado de pnpm y Turbo. El grafo `agent` conversa en español y consulta
+catálogo, stock y pedidos propios mediante cinco herramientas del servidor
+[mercadoya-mcp](../mcp-server/README.md). Propone agregar al carrito o cancelar un pedido pendiente y espera la aprobación
+del comprador con `interrupt`. El router elige compras o postventa dentro del mismo
+grafo, y ambos comparten las preferencias del comprador en el Store.
+
+## Orquestador y especialistas
+
+```mermaid
+flowchart LR
+    START --> input_guard --> domain_guard --> route
+    route --> shopping
+    route --> post_sale
+    subgraph shopping[shopping]
+        sa[assistant] <--> st[tools]
+        sa <--> sc[confirm_action]
+    end
+    subgraph post_sale[post_sale]
+        pa[assistant] <--> pt[tools]
+        pa <--> pc[confirm_action]
+    end
+    sa --> output_guard
+    pa --> output_guard
+    output_guard --> END
+```
+
+Los rechazos de entrada o dominio terminan antes de `route`. Este nodo reutiliza
+la categoría de Clef sin otra llamada al modelo. Productos y carrito seleccionan
+`shopping`; pedidos y pagos/envíos seleccionan `post_sale`. Preferencias y
+conversación conservan `active_agent`, o usan compras en el primer turno.
+Cada especialista recibe su prompt y sus herramientas. El código rechaza lecturas
+y propuestas ajenas incluso si el modelo intenta llamarlas.
+
+En LangSmith, abre un run del proyecto `LANGSMITH_PROJECT` y expande los nodos
+`shopping` o `post_sale`. Filtra por `agent:shopping` o `agent:post_sale` y consulta
+`agent_name` y `route_reason` en metadata. El motivo es la categoría o `sticky`,
+sin texto ni identidad. Los nodos y el modelo conservan esos tags. Para inspeccionar
+un interrupt interno usa `GET /threads/{id}/state?subgraphs=true`; en el SDK,
+`client.threads.get_state(thread_id, subgraphs=True)`. Los runs admiten
+`stream_subgraphs=True`. Studio puede expandir ambos subgrafos del único `agent`.
+
+Al reanudar se repite `confirm_action` desde su inicio, con lecturas idempotentes;
+el padre no repite `domain_guard` ni `route`. El JWT de la solicitud nueva se lee
+después de `interrupt`. Detalles y prueba de la semántica en la
+[ADR 0029](../../docs/adr/0029-multiagente-router.md).
+
+El chat detecta también los interrupts pendientes de los namespaces de compras
+y postventa. No exige que su tool call aparezca aún en los mensajes del padre,
+ya que el subgrafo publica esos mensajes al terminar. Las confirmaciones
+conservan el contrato y la comprobación de vigencia anterior a cada cambio.
+
+## Arranque local con Postgres
+
+Desde la raíz del repo, primero levanta el stack habitual con `pnpm demo:infra`.
+Genera `MCP_INTERNAL_TOKEN` con `openssl rand -hex 32` para el perfil agent.
+Configura una `LANGSMITH_API_KEY` válida en el entorno de Compose o en tu `.env`.
+`OPENAI_API_KEY` permite respuestas del modelo; sin ella el nodo devuelve un mensaje
+claro en español. No se construye ningún cliente OpenAI al importar el grafo.
+
+```sh
+pnpm demo:agent
+curl --fail http://localhost:8000/api/agent/ok
+```
+
+`demo:agent` construye las imágenes del agente y MCP, levanta `agent-service` y sus dependencias del perfil
+`agent`, espera su health y reinicia Kong. Requiere Docker y uv. El comando de build
+equivalente, desde este directorio, fija también el Python del CLI:
+
+```sh
+uvx --python 3.12 --from langgraph-cli==0.4.33 \
+  langgraph build -t mercadoya-agent-service:local
+```
+
+`api_version: "0.16.0"` y `python_version: "3.12"` seleccionan exactamente la imagen
+`langchain/langgraph-api:0.16.0-py3.12`. Compose no vuelve a construirla con un
+Dockerfile alternativo. El puerto directo es `127.0.0.1:8123`; la web usa Kong en
+`http://localhost:8000/api/agent`. `/ok` es público. Los demás endpoints requieren
+el JWT que `identity-auth` obtiene de la cookie y reenvía como Bearer.
+
+`redis` e `agent-db-init` también tienen el perfil `agent`. El stack sin perfil,
+`demo:infra` y `identity-gateway-smoke` no necesitan claves de IA. Kong no depende
+del agente: arranca aunque falte su DNS. El health del agente responde 5xx mientras
+esté apagado; una solicitud protegida sin sesión sigue respondiendo 401.
+
+Para apagar solo el agente, usa `docker compose --profile agent stop agent-service redis`.
+No borres los volúmenes si quieres conservar los hilos. Para aplicar una nueva
+versión de `kong.yml`, usa `docker compose restart kong`. `kong reload` no vuelve
+a cargar el declarativo en este stack DB-less.
+
+## Variables
+
+Compose inyecta las variables. `langgraph.json` no carga ningún `.env`.
+
+- `DATABASE_URI`: DB dedicada `agent_server`, con rol `agent_server`, en Postgres 18.
+- `AGENT_DB_PASSWORD`: password del rol. El default local es `agent_server_local`.
+  El init usa el password literal. Si contiene caracteres reservados de URI, define
+  además `AGENT_DATABASE_URI` con el password codificado para `DATABASE_URI`.
+- `REDIS_URI`: `redis://redis:6379`.
+- `JWKS_URL`: `http://identity:3006/api/auth/jwks` en Docker.
+- `JWT_ISSUER`: `http://localhost:8000`; `JWT_AUDIENCE`: `mercadoya-services`.
+- `AGENT_MODEL_PROVIDER`: `openai` por defecto, `echo` para respuesta determinista
+  o `scripted` para ejecutar `/tool nombre {json}` sin modelo ni claves.
+- `MCP_URL`: `http://localhost:8080/mcp` local, `http://mcp-server:8080/mcp` en Compose.
+- `MCP_INTERNAL_TOKEN`: token de proceso compartido con MCP; no es el JWT del comprador.
+- `AGENT_MODEL`: `gpt-6-luna` por defecto.
+- `AGENT_REASONING_EFFORT`: `low` por defecto. Se pasa solo mediante `reasoning`.
+- `OPENAI_API_KEY`: requerida para llamar OpenAI. No se fija un `max_tokens` bajo.
+- `LANGSMITH_API_KEY`: requerida por la imagen en modo lite incluso con `echo`.
+- `LANGSMITH_PROJECT`: `mercadoya-agent` por defecto.
+- `LANGSMITH_TRACING`: `true` por defecto. Las trazas se activan por entorno.
+- `LANGSMITH_HIDE_INPUTS` y `LANGSMITH_HIDE_OUTPUTS`: `false` por defecto.
+  Activa cada uno con `true` cuando el entorno prohíba enviar ese contenido a
+  LangSmith, incluso redactado. Los tags, metadata y tiempos siguen disponibles.
+
+Después de cambiar variables del entorno de Compose, recrea el contenedor:
+
+```sh
+docker compose --profile agent up -d --force-recreate --wait agent-service
+```
+
+Un `docker compose restart agent-service` conserva el entorno anterior del
+contenedor. Cambiar el modelo o el esfuerzo no requiere modificar código ni imagen.
+
+## Autenticación y aislamiento
+
+`auth.py` replica `packages/jwt-verifier`: RS256, `kid` presente, claims requeridos
+`sub`, `iss`, `aud`, `iat`, `exp`, sujeto no vacío, role `user` o `admin`, sin leeway
+y antigüedad máxima de 300 segundos. Comprueba NumericDate sin coerción de strings,
+así como `nbf` si está presente. PyJWKClient tiene caché de JWKS de 60 segundos,
+timeout de 3 segundos y cooldown de 5 segundos. `cache_keys=True` añade la caché de
+claves por `kid` del patrón validado en el spike. La consulta corre en
+`asyncio.to_thread` para no bloquear el event loop.
+
+Las credenciales inválidas lanzan `Auth.exceptions.HTTPException(401)`. Si falla
+la conexión al JWKS, se lanza un `RuntimeError` con un mensaje fijo sin credenciales.
+En `langgraph-api==0.16.0`, `CustomAuthBackend._authenticate_custom` propaga las
+excepciones generales y el servidor responde 500. El smoke comprueba esa respuesta.
+Una clave ya cacheada puede seguir verificándose mientras el JWKS está caído.
+
+El resultado de auth es `{"identity": sub, "role": role, "token": jwt}`.
+`@auth.on` sobrescribe `metadata.owner` con la identidad autenticada y devuelve
+el filtro `{"owner": identity}`. Esto cubre creación, lectura, búsqueda, actualización
+y runs. Ni un `owner` enviado por el cliente ni conocer el UUID de otro comprador
+dan acceso a un hilo ajeno; la lectura directa responde 404.
+
+El token se entrega por `config["configurable"]["langgraph_auth_user"]`.
+El interceptor `forward_user_jwt` lo lee en el ToolRuntime de cada llamada de
+pedidos y lo reenvía como Authorization. No se agrega a las herramientas públicas.
+El cliente no guarda JWT ni headers de usuario. El nodo `confirm_action` sigue
+este orden para cancelar un pedido aprobado:
+
+```python
+# Orden implementado en confirm_action.
+decision = interrupt(payload)
+user = config["configurable"]["langgraph_auth_user"]
+token = user["token"]
+# Usar el token del request que reanuda, solo para esa llamada autorizada.
+```
+
+Al reanudar, el nodo interrumpido vuelve a ejecutarse con el usuario del request
+nuevo. Los nodos anteriores no vuelven a ejecutarse. Leer el token antes del
+interrupt o en un nodo anterior puede usar una credencial vencida. Nunca guardarlo
+en state, metadata, logs ni argumentos del modelo. La llamada al modelo recibe
+callbacks para streaming y trazas, sin reenviar `configurable`.
+
+## Persistencia
+
+El servidor proporciona el checkpointer; el grafo compila sin uno propio.
+`agent-db-init` ejecuta `infra/postgres/agent-db-init.sql` usando `psql` contra
+la DB administrativa `postgres`. Crea el rol y la DB si faltan, y actualiza el
+password del rol. Puede repetirse sobre un volumen existente. No usa scripts de
+entrypoint ni ejecuta migraciones contra `mercadoya`.
+
+Postgres 18 conserva el volumen del repo en `/var/lib/postgresql`. Redis tiene
+su volumen `redis_data` y AOF. Un restart, o down/up sin `-v`, conserva los hilos.
+Las migraciones del Agent Server crean estas tablas propias en `agent_server`:
+`assistant`, `assistant_versions`, `checkpoint_blobs`, `checkpoint_delete_queue`,
+`checkpoint_writes`, `checkpoints`, `cron`, `run`, `schema_migrations`, `store`,
+`thread` y `thread_ttl`. `disable_store` deshabilita sus rutas, pero no evita que
+el servidor cree la tabla `store`.
+
+```sh
+docker compose exec -T postgres psql -U mercadoya -d agent_server -c '\dt'
+docker compose --profile agent run --rm agent-db-init
+```
+
+## Web
+
+El chat se monta en `RootLayout` solo después de obtener una sesión. Mantiene el
+look de la web y se puede cerrar con Escape. `useStream` 1.2.3 usa SSE, `assistantId:
+'agent'` y un fetch con `credentials: 'include'`. El navegador no obtiene ni guarda
+el JWT. `@langchain/core` 1.2.1 satisface el peer `^1.1.48` de los paquetes fijados.
+
+La web en 5173 usa `API_BASE_URL`, configurado por `VITE_API_URL` y con default
+`http://localhost:8000`, igual que catálogo, pedidos y auth. No usa el origen de
+Vite para el API. El CORS global existente de Kong permite cookies desde 5173 y
+5174 sin cambios. `messageText` renderiza solo strings y bloques `type: "text"`,
+conserva saltos de línea y omite reasoning. El `threadId` se guarda en sessionStorage
+por usuario. Nuevo hilo limpia esa referencia y conserva el hilo anterior en el servidor.
+Un cambio de usuario desmonta el chat anterior.
+
+El chat renderiza `stream.interrupts` como tarjetas y responde con
+`stream.respond({ action_id, approved, result }, { interruptId })`. La web aplica
+el carrito antes de informar el resultado; el grafo ejecuta solo la cancelación
+aprobada. Recargar vuelve a mostrar una confirmación pendiente.
+
+## Tests y smoke sin secretos
+
+Desde este directorio:
+
+```sh
+uv sync --locked
+uv run ruff check
+uv run pytest
+uv run python scripts/smoke.py
+uv run python scripts/smoke.py --tools
+```
+
+El smoke genera una clave RSA, sirve un JWKS local y arranca en segundo plano
+`uv run --locked langgraph dev --config langgraph.ci.json --no-browser --no-reload
+--port 2024`. Vacía OpenAI/LangSmith, retira otras claves heredadas y no lee el `.env`
+del repo. Espera `/ok`, verifica 401 sin token, crea un hilo con JWT válido, ejecuta
+un run eco, comprueba aislamiento, un JWKS caído y ausencia de JWT en state/logs.
+Termina los procesos al acabar. `--port 2025` permite usar otro puerto.
+
+`langgraph.ci.json` fija echo, el clasificador rules y fail_open=false, y desactiva
+tracing con variables no secretas. El smoke retira también las claves Cloudflare.
+`langgraph dev` guarda su estado local en `.langgraph_api/`, ignorado por Git;
+no usa Postgres. El job `agent-smoke` ejecuta esos mismos comandos y no prueba la
+imagen Docker. Desde la raíz, `pnpm --filter @mercadoya/web test` cubre el render de
+mensajes.
+
+## Documentación consultada y límites
+
+Documentación consultada el 2026-10-12:
+[standalone](https://docs.langchain.com/langsmith/deploy-standalone-server),
+[changelog](https://docs.langchain.com/langsmith/agent-server-changelog),
+[CLI y configuración](https://docs.langchain.com/langsmith/cli),
+[dev](https://docs.langchain.com/langsmith/local-dev-testing),
+[auth](https://docs.langchain.com/langsmith/custom-auth),
+[owner](https://docs.langchain.com/langsmith/resource-auth),
+[interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts),
+[ChatOpenAI](https://docs.langchain.com/oss/python/integrations/chat/openai),
+[GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna),
+[razonamiento](https://developers.openai.com/api/docs/guides/latest-model),
+[trazas](https://docs.langchain.com/langsmith/trace-with-langgraph),
+[PyJWT](https://pyjwt.readthedocs.io/en/stable/usage.html#retrieve-rsa-signing-keys-from-a-jwks-endpoint),
+[useStream](https://reference.langchain.com/javascript/langchain-react/getting-started),
+[transportes](https://reference.langchain.com/javascript/langchain-react/transports) y
+[migración v1](https://reference.langchain.com/javascript/langchain-react/migration).
+
+La doc standalone enumera licencia para despliegues; su ejemplo Docker es para
+desarrollo local. El spike validó el modo lite sin license key, con una
+`LANGSMITH_API_KEY` válida y salida a internet al arrancar. Sin esa key o sin red,
+la imagen termina con `License verification failed`. Producción requiere licencia.
+No se presenta lite como alternativa de producción.
+
+La versión mínima de servidor del protocolo v1 de `@langchain/react` no está
+documentada. Se conserva 0.16.0, que el spike probó con cookie, SSE y prefijo Kong.
+El enlace original de Kong declarativo devuelve 404; la referencia vigente es
+[DB-less mode](https://developer.konghq.com/gateway/db-less-mode/).
+
+El JWT dura cinco minutos. Kong vuelve a obtenerlo desde la cookie en cada request;
+no se conserva una credencial entre turnos. Esta base no incorpora renovación propia,
+acciones o memoria de largo plazo.
+
+## Verificación de la integración
+
+La validación local del 2026-10-12 pasó con la imagen fijada y Postgres 18:
+health por Kong, 401 sin sesión, dos compradores con búsquedas y lecturas aisladas,
+owner forzado, mensajes conservados tras restart y tras eliminar/recrear el
+contenedor sin borrar volúmenes. Kong arrancó con el upstream ausente y mantuvo
+identity disponible. Después de recrear el agente se reinició Kong para renovar
+su resolución del upstream, tal como hace `demo:agent`.
+
+En la web de 5173 se verificó la cookie y el streaming de `gpt-6-luna`, con texto
+limpio y saltos de línea. Las trazas aparecieron en el proyecto configurado por
+el entorno de Compose. También pasaron las verificaciones del monorepo, 27 pruebas
+de federación en cada variante dev, preview y manifest, el smoke existente de identity/Kong sin claves de IA y las
+regresiones de Polar con Postgres/NATS dedicados. Estos resultados son locales;
+el job nuevo queda listo para la siguiente ejecución de GitHub Actions.
+
+## Bucle MCP de lectura
+
+`StateGraph` de cada especialista alterna assistant y tools con su propio `ToolNode`.
+Su ruteo desvía propuestas
+al nodo confirm_action antes de ejecutar cualquier herramienta.
+Cuenta hasta seis iteraciones de tools desde el último HumanMessage. Después
+responde con los datos obtenidos, sin herramientas enlazadas al modelo.
+`create_model().bind_tools(tools)` mantiene Responses API con gpt-6-luna y recibe
+solo callbacks, sin configurable. Sin OPENAI_API_KEY se conserva MISSING_KEY_MESSAGE.
+[La documentación oficial de GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna)
+indica usar Responses para function calling con razonamiento.
+
+`mcp_tools.py` crea un MultiServerMCPClient por proceso con el token interno del
+MCP y un interceptor. La carga async es perezosa y cachea únicamente las tools.
+Si MCP no responde, el run devuelve un mensaje de indisponibilidad y la siguiente
+consulta reintenta la carga. Cada ejecución abre su sesión; el JWT se lee del
+runtime de ese run y nunca se añade a argumentos, estado, metadata o caché.
+Las pruebas confirman runtime presente, dos usuarios seguidos y trazas locales
+sin tokens. No hizo falta sustituir ToolNode por un ejecutor propio.
+
+Versiones verificadas en PyPI con uv el 2026-10-12: adapters 0.3.2 y MCP cliente
+1.30.0, sin cambios respecto a lo solicitado. El servidor usa MCP 2.3.0 en otro
+entorno. El test de la app MCP negocia 2025-11-25 con initialize y llama herramientas
+con los adapters reales. No se instala MCP 2.x en esta app.
+
+`--tools` arranca stubs Catalog/Orders junto al JWKS, MCP en otro proceso y
+langgraph dev con scripted, mediante un config temporal que sustituye echo.
+Comprueba productos, pedidos propios de A y B, JWT exacto recibido por Orders,
+404 ajeno como ToolMessage de error, acceso interno del MCP y estados/logs sin
+JWT. Ambos procesos se terminan al salir. CI ejecuta también el smoke echo original.
+Los tests unitarios cubren seis consultas por turno, carga perezosa, reintento y
+fallos sin abortar el run.
+
+La web muestra "Consultando catálogo…" o "Consultando tus pedidos…" mientras
+hay tool_calls pendientes. Oculta los ToolMessages y argumentos. La línea usa
+el status aria-live existente. Las pruebas Vitest incluyen ejecución parcial y
+fin de llamada con error.
+
+El MCP no se publica por Kong. `/api/mcp` responde 404 y el `/mcp` del Agent Server
+permanece deshabilitado. Véase [ADR 0025](../../docs/adr/0025-herramientas-mcp-lectura.md).
+
+Verificación local del cambio 05, el 2026-10-12: locks, ruff y pytest de ambas
+apps; smokes echo y scripted con MCP; typecheck, lint, tests, build y OpenAPI del
+monorepo; identity/Kong; federación dev, preview y manifest; diez pruebas persistentes de
+Catalog y 38 de saga con NATS dedicado. `demo:infra` y `demo:agent` arrancaron.
+Con gpt-6-luna real se verificaron productos y stock en el chat, indicador durante
+la consulta, dos compradores aislados y un pedido ajeno como error. Se consultaron
+27 runs del proyecto LangSmith y los logs Docker, sin JWT ni headers Authorization.
+La comprobación visual cubrió escritorio y móvil sin overflow horizontal.
+Estos resultados son locales; no se ejecutó GitHub Actions desde esta rama sin commit.
+
+
+## Acciones con confirmación
+
+Las herramientas locales `propose_add_to_cart(product_id, quantity)` y
+`propose_cancel_order(order_id)` se prueban también con `/tool` en scripted.
+Cada cambio requiere su propia aprobación. Dos propuestas o una propuesta junto
+a otra llamada se rechazan sin interrumpir. Solo las cinco lecturas MCP se enlazan
+al modelo; `cancel_my_order` queda reservado al nodo después de interrupt.
+
+El contrato Pydantic compartido se exporta desde esta app:
+
+```sh
+uv run python scripts/export_action_schema.py
+```
+
+Pytest falla si el archivo versionado difiere y usa los mismos fixtures que zod.
+`smoke.py --tools` cubre aprobar/rechazar ambas acciones, token nuevo al reanudar,
+un único POST, resume duplicado 409 y pedido ajeno sin interrupt. Revisa también
+state, interrupts, resumes y logs. El handler de auth añade el rechazo 409 porque
+Agent Server 0.16.0 devuelve 200 para un segundo resume vacío. Consulta el
+[ADR 0026](../../docs/adr/0026-acciones-con-confirmacion.md).
+
+## Guardrails y preferencias entre hilos
+
+`input_guard` redacta PII, valida longitud, bloquea inyecciones y ejecuta
+moderación opcional. `domain_guard` aplica después una lista permitida estricta
+con Cloudflare Clef antes de llamar al modelo o herramientas. Auth redacta la
+entrada antes del primer checkpoint. Los resultados MCP se sanean dentro del interceptor y en el grafo;
+el catálogo no puede cambiar las instrucciones mediante títulos o descripciones.
+`output_guard` comprueba fuga de instrucciones, secretos, PII y precios/stock
+numéricos contra las herramientas de toda la ventana enviada al modelo. También
+admite montos del comprador ya redactados, presupuestos de memoria y subtotales
+de precios unitarios por cantidades de 1 a 20. Reconoce miles con coma o espacio.
+Si queda un monto sin respaldo, conserva la respuesta y añade
+"Algunos montos no están confirmados; verifícalos en el catálogo", con
+`ungrounded_price` y `action=annotated`. Solo reemplaza la respuesta por falta de
+respaldo monetario si todos los montos carecen de evidencia y no hay herramientas
+en esa ventana. Los stocks sin respaldo también reciben un aviso.
+Las consultas sobre códigos de descuento, pedido o producto están permitidas.
+Los temas ajenos reciben la negativa fija del clasificador de dominio.
+El modelo usa
+`nostream` y la web recibe el texto completo después de validarlo.
+
+`AGENT_MAX_INPUT_CHARS=2000` admite límites inferiores.
+`AGENT_MODERATION=off` mantiene el comportamiento determinista sin claves;
+con `on` y una clave se consulta `omni-moderation-latest`, con timeout de 3 s.
+Los fallos registran `moderation=skipped`. Los eventos de guardrails registran
+motivos, acciones y contadores, sin texto original ni identidad.
+
+LangSmith muestra entradas y salidas por defecto para depurar y evaluar. Auth
+redacta la entrada antes del run y del primer checkpoint. Al cargar el grafo con
+tracing activo se configura un `Client(anonymizer=sanitize_trace)` global que
+redacta PII y secretos en las copias exportadas de entradas, salidas, metadata y
+errores. Esto cubre también los resultados crudos del proveedor anteriores al
+guard de salida. Los flags de ocultamiento se leen del entorno y no se fijan en
+los configs de LangGraph. Activa `LANGSMITH_HIDE_INPUTS=true` o
+`LANGSMITH_HIDE_OUTPUTS=true` cuando la política del entorno exija omitir todo ese
+contenido, incluso redactado. El cuerpo HTTP original llega al servidor antes
+de auth; los proxies externos deben evitar registrarlo. Una invocación directa
+del grafo con checkpointer o callbacks debe usar `sanitize_run_input` primero.
+
+Pide "Recuerda que uso talla M", "¿qué recuerdas de mí?", "olvida mi talla"
+o "Olvida todo". La memoria solo guarda preferencias de compra de hasta 80
+caracteres, hasta 20 por comprador. Usa el Store del servidor y el namespace
+`("memories", identidad autenticada)`; funciona entre hilos y con Postgres en
+Docker. No usa embeddings. `/store` sigue deshabilitado y auth también protege
+su namespace. Dos escrituras concurrentes sobre la misma clave pueden sustituirse.
+
+En scripted se prueban estas herramientas sin claves:
+
+```text
+/tool remember_preference {"tipo":"talla","valor":"M"}
+/tool list_memories {}
+/tool forget_memory {"key":"preference-01"}
+/tool forget_all_memories {}
+```
+
+El modelo recibe una ventana de los últimos 40 mensajes, desde un mensaje humano,
+sin romper pares de herramientas. Un turno mayor se conserva completo. El state
+persiste íntegro y no hay resumen automático. Las heurísticas de PII, inyección,
+fuga y respaldo de precios tienen límites documentados en
+[ADR 0027](../../docs/adr/0027-guardrails-memoria.md).
+
+Las verificaciones iniciales del 2026-10-13 incluyeron los smokes sin claves y la
+imagen con Postgres y modelo real: memoria en hilo nuevo, aislamiento, borrado,
+checkpoints/logs sin PII y trazas de LangSmith entonces ocultas con tags de guardrails.
+La regresión de falsos positivos cubre presupuestos, subtotales, separadores de
+miles, precios de turnos anteriores y exportaciones redactadas con ambos valores
+de los flags de ocultamiento.
+
+La tarea 10 pasó Ruff, 226 tests pytest, ambos smokes sin claves y la validación
+de Compose con los flags en `false`. Con claves reales y dos productos temporales,
+"busco audífonos por menos de 150 soles" devolvió la lista a S/ 12.90 y S/ 89.90,
+sin reemplazo ni aviso de montos sin confirmar. LangSmith mostró entradas y
+salidas visibles, con correo y DNI redactados también en la entrada raíz.
+Los productos, el comprador y los hilos de prueba se eliminaron al terminar.
+
+## Clasificador de dominio con Clef
+
+El asistente responde solo sobre compras en MercadoYa. Incluye productos,
+carrito, pedidos, pagos, envíos, preferencias, saludos y seguimientos del historial.
+Los temas ajenos reciben exactamente "Solo puedo ayudarte con compras en MercadoYa:
+productos, carrito, pedidos y tus preferencias." Sin ejecutar el modelo principal
+ni herramientas. El nodo `domain_guard` corre después de PII, longitud, inyección
+y moderación opcional. Las reanudaciones de confirmaciones continúan en
+`confirm_action` y no vuelven a clasificar.
+
+Para crear las credenciales, abre Cloudflare Dashboard, Workers AI, Use REST API,
+Create a Workers AI API Token y copia el Account ID. Un token personalizado
+necesita permisos Workers AI Read y Edit. Guarda ambos en el `.env` local para
+Compose o expórtalos en la terminal. Nunca commitees el token ni lo añadas a logs.
+[Guía REST oficial](https://developers.cloudflare.com/workers-ai/get-started/rest-api/).
+
+- `CLOUDFLARE_ACCOUNT_ID` y `CLOUDFLARE_API_TOKEN`: credenciales para Workers AI.
+- `AGENT_CLASSIFIER_PROVIDER`: `clef` por defecto con openai; `rules` con echo y
+  scripted. Compose fija `clef` por defecto; configura `rules` si haces una demo sin claves.
+- `AGENT_CLASSIFIER_MODEL=clef`: también admite `clef-flash`. Cada modelo usa su
+  endpoint `/ai/run/@cf/cloudflare/<modelo>` y el campo `model` correspondiente.
+- `AGENT_CLASSIFIER_TIMEOUT_S=2`: timeout sin reintentos automáticos.
+- `AGENT_CLASSIFIER_MIN_IN_DOMAIN=0.5`: probabilidad mínima de pertenecer al dominio.
+- `AGENT_CLASSIFIER_FAIL_OPEN=false`: cierra ante un fallo. `true` se reserva al
+  desarrollo local y no se activa en CI ni por defecto en Compose.
+
+Sin credenciales el servicio arranca, registra `classifier=clef_unconfigured`
+y cada consulta recibe "No pude procesar tu mensaje en este momento. Inténtalo
+de nuevo en unos segundos." El mensaje humano redactado queda intacto. Los
+fallos de red, HTTP o formato tienen esa misma política, sin pasar a reglas.
+El cliente HTTP se crea al necesitarlo y el lifespan del Agent Server lo cierra
+al apagar. Cada petición lee su token actual desde el entorno.
+
+Clef recibe seis mensajes human/ai previos ya redactados, con los textos AI
+limitados a 300 caracteres, el mensaje actual y el indicador de confirmación
+reciente. Las preguntas y criterios están en `guardrails/domain.py`; los logs
+contienen solo decisiones, probabilidades, tiempos y contadores. La traza propia
+incluye metadata `domain_*`. No se exportan secretos Cloudflare ni campos `cf-aig-*`.
+
+Desde `apps/agent-service`, con las variables Cloudflare exportadas:
+
+```sh
+uv run python scripts/eval_domain.py
+uv run python scripts/eval_domain.py --model both
+```
+
+El script no carga `.env`. Evalúa secuencialmente con una pausa entre casos e
+imprime precisión de dominio y categoría, matriz, ids de falsos positivos y
+negativos, discrepancias de categoría y latencia p50/p95. Sin claves informa que
+omitió la evaluación y sale 0. No corre en CI. El dataset de 40 casos en
+`evals/domain_cases.jsonl` queda listo para una evaluación posterior en LangSmith.
+Las reglas aciertan los 40 casos sin excepciones.
+
+Workers AI incluye 10.000 neuronas diarias gratis. Clef cuesta USD 0,24 por millón
+de tokens de entrada y clef-flash USD 0,038; no cobran tokens de salida. En Paid,
+el exceso del cupo cuesta USD 0,011 por mil neuronas. Cuarenta casos de unos mil
+tokens cuestan aproximadamente USD 0,0096 con Clef antes del cupo gratuito.
+[Precios oficiales](https://developers.cloudflare.com/workers-ai/platform/pricing/).
+En la evaluación local Clef acertó 100 % del dominio y clef-flash 70 %, por eso
+se mantiene Clef. Consulta el [ADR 0028](../../docs/adr/0028-clasificador-dominio-clef.md)
+para resultados, límites y diferencias observadas en la API real.
+
+Validación local del 2026-10-13: locks, Ruff y 313 tests del agente y 36 del MCP;
+ambos smokes sin claves; Compose válido; imagen final con Clef y modelo principal
+reales. Se verificaron rechazos sin llamadas al modelo, búsqueda con seguimiento,
+carrito y cancelación con confirmación. Se revisaron 78 runs de LangSmith y logs
+del agente/MCP, con metadata de dominio y sin mensajes ni credenciales Cloudflare
+en logs. Los datos temporales de la prueba se eliminaron.
+
+## Evaluaciones
+
+El dataset del agente completo es `evals/agent_cases.jsonl`, con 38 casos y cinco
+kinds: dominio, ruteo, herramientas, propuestas y guardrails. Reutiliza 14 casos
+del benchmark de dominio. `scripts/eval_domain.py` sigue evaluando solo Clef con
+sus 40 casos originales. La decisión está en la [ADR 0030](../../docs/adr/0030-evaluaciones-langsmith.md).
+
+Desde `apps/agent-service`, el modo de CI no necesita claves ni servicios:
+
+```sh
+uv sync --locked
+uv run python scripts/eval_agent.py --mode offline
+uv run python scripts/eval_agent.py --mode offline --split capabilities
+```
+
+Offline fuerza scripted, reglas y el MCP falso compartido con los tests. Ignora
+las claves presentes y desactiva tracing. No crea clientes LangSmith ni sube
+resultados. Imprime JSON con medias y muestras por evaluador y por kind, además
+de ids fallidos. Sale con 1 si baja de los umbrales de `evals/thresholds.json` o
+si ocurre un error. `--thresholds archivo.json` permite probar otro conjunto de
+umbrales. El valor por defecto de `--max-concurrency` es 2, con máximo 4.
+
+Este modo comprueba el pipeline, las rutas, los guardrails y que una propuesta
+llegue al primer interrupt sin ejecutarse. `tool_selected` solo verifica comandos
+scripted y exclusiones. No mide la capacidad del modelo para elegir herramientas
+ni la calidad de OpenAI o Clef. El resumen lo indica con
+`tool_selection_measures_model: false`.
+
+### Experimentos locales
+
+Primero levanta `pnpm demo:infra` y `pnpm demo:agent` desde la raíz. El MCP de
+Compose solo escucha dentro de Docker. Para acceder desde el runner del host,
+usa un override temporal que publique únicamente loopback, sin editar Compose,
+Kong ni el servidor MCP:
+
+```sh
+# Desde la raíz del repositorio, con el mismo .env del stack.
+cat > /tmp/mercadoya-eval-mcp.yml <<'YAML'
+services:
+  mcp-server:
+    ports:
+      - "127.0.0.1:8080:8080"
+YAML
+docker compose -f docker-compose.yml -f /tmp/mercadoya-eval-mcp.yml \
+  --profile agent up -d --no-deps mcp-server
+```
+
+Desde `apps/agent-service`, crea la configuración local a partir del ejemplo si
+no tienes `.env.evals`:
+
+```sh
+cp .env.evals.example .env.evals
+```
+
+Completa `.env.evals` con los valores de tu `.env` de la raíz y los datos de demo.
+`uv run --env-file .env.evals` los carga para ese comando; no necesitas exportarlos
+en la terminal. El runner recibe el entorno de uv y no carga archivos por su
+cuenta. El archivo privado queda ignorado por Git; `.env.evals.example` contiene
+las mismas variables sin credenciales.
+
+- `LANGSMITH_API_KEY`, `OPENAI_API_KEY`, `CLOUDFLARE_ACCOUNT_ID` y `CLOUDFLARE_API_TOKEN`.
+- `MCP_INTERNAL_TOKEN`, con el mismo valor que el stack, y `MCP_URL=http://localhost:8080/mcp`.
+- `AGENT_EVAL_BUYER_JWT`, un JWT vigente del comprador de demo autenticado.
+- `AGENT_EVAL_PRODUCT_ID`, UUID de un producto de demo con al menos dos unidades.
+- `AGENT_EVAL_ORDER_ID`, UUID de un pedido propio de demo en estado `pending`.
+
+El JWT de Identity vence en cinco minutos. Renueva ese campo antes de cada
+corrida desde `http://localhost:8000/api/auth/token`, en el navegador con la sesión
+del comprador iniciada. Copia solo el valor de `token` a `AGENT_EVAL_BUYER_JWT`.
+El runner revisa formato y expiración antes de conectar clientes y antes de cada
+caso. Si vence durante la corrida, esos casos quedan en `errors` y la corrida se
+marca incompleta. Este chequeo local no verifica la firma; los servicios siguen
+autenticando cada petición. No copies claves ni JWT al ejemplo ni a los logs.
+
+Los ids sustituyen `{product_id}` y `{order_id}` en los casos. Usa los mismos en
+ambos experimentos. El contenido del producto y el pedido debe ser ficticio.
+Comprueba que el JWT siga vigente antes de cada corrida. El modelo principal se
+elige con `AGENT_MODEL`. `AGENT_EVAL_JUDGE_MODEL` permite elegir otro modelo para
+los jueces; por defecto usa el mismo. El runner local fuerza OpenAI y Clef, incluso
+si la terminal conserva providers de un smoke.
+
+```sh
+cd apps/agent-service
+uv sync --locked --group evals
+uv run --env-file .env.evals --group evals python scripts/sync_agent_dataset.py --tag v2
+# Repetir debe imprimir created=0, updated=0 y deleted=0.
+uv run --env-file .env.evals --group evals python scripts/sync_agent_dataset.py --tag v2
+uv run --env-file .env.evals --group evals python scripts/eval_agent.py --mode langsmith \
+  --experiment-prefix base-v2 --dataset-tag v2 --no-sync
+```
+
+Sin `--no-sync`, el runner sincroniza todo el JSONL antes de evaluar. El filtro
+`--split` selecciona ejemplos para la corrida, no borra otros splits del dataset.
+`--dataset-tag` fija una versión; sin tag se usa `latest`. El sync crea, actualiza
+y retira ejemplos por `metadata.case_id`, y solo modifica los que cambiaron.
+Los tags etiquetan la versión resultante, incluido un sync sin cambios.
+
+El target compila el grafo real en proceso con memoria e hilo nuevos por ejemplo.
+Se detiene en el primer interrupt y nunca lo reanuda. Un espía recoge las lecturas
+MCP saneadas y rechaza cualquier intento de escritura. `executed_writes` incluye
+esos intentos como fallo conservador. Las propuestas no modifican el carrito ni
+cancelan pedidos. Los tags `eval` y `agent:shopping` o `agent:post_sale` permiten
+inspeccionar el especialista en las trazas.
+
+Se publican los evaluadores de código y los jueces `groundedness` y `helpfulness`
+con OpenEvals. Ambos omiten rechazos de dominio o entrada, que ya miden los
+evaluadores de código. Groundedness también se omite sin evidencia MCP útil:
+`[]` y `[{}]` no cuentan como contexto; una consulta exitosa sin resultados,
+como `{"orders": []}`, sí cuenta. En propuestas evalúa solo los hechos del MCP,
+como precio, stock o estado. Helpfulness recibe el historial y la entrada con los
+ids resueltos, y considera la acción y cantidad de la propuesta. El id técnico de
+la acción no forma parte de lo que juzgan. Sus comentarios solo contienen el id,
+sin razonamientos ni excepciones. Los scores de dominio, categoría, ruta, herramienta, propuesta y
+bloqueo aplican a su kind. `no_pii_leak` aplica a todos; `no_invented_price`, a
+herramientas, propuestas y guardrails. Los demás scores quedan nulos. El resumen
+incluye `skipped`, con la cantidad de omisiones por evaluador. Las medias usan
+solo los scores no nulos; un fallo del juez cuenta como error, no como omisión.
+
+Los umbrales locales informan y no bloquean por calidad. Una corrida incompleta
+sí falla. El JSON final incluye `experiment_url`. La metadata registra `models`,
+`classifier`, `classifier_model`, `git_sha`, `dataset_tag`, `prompt_hash`,
+`fixture_hash`, `evaluation_hash` y `judge_model`. Un cambio de prompt sin commit
+cambia su hash; `evaluation_hash` identifica cambios del target y los evaluadores.
+Los jueces están en el grupo opcional `evals`; la imagen de producción no los carga.
+
+### Correcciones de la versión v2
+
+La primera corrida `base` queda conservada sobre `v1`. En `v2`, los nuevos casos
+con historial empiezan con un turno del comprador para que el recorte real del
+modelo conserve la respuesta previa. `product_stock` acepta `check_stock` y
+`get_product`, porque ambas lecturas entregan stock. Se mantienen las exclusiones
+de herramientas, los umbrales y las referencias originales de dominio.
+
+Después de actualizar el JSONL, sincroniza con `--tag v2`, sin reasignar `v1`.
+Usa `base-v2` y `flash-v2` para la comparación. Además del dataset, cambia el
+alcance de los jueces: sus medias no se comparan directamente con las de `v1`.
+
+### Comparar dos experimentos para la demo
+
+Con `.env.evals` completo, el mismo `AGENT_MODEL`, los mismos ids y la versión `v2`:
+
+```sh
+AGENT_CLASSIFIER_MODEL=clef uv run --env-file .env.evals --group evals \
+  python scripts/eval_agent.py --mode langsmith --experiment-prefix base-v2 --dataset-tag v2 --no-sync
+AGENT_CLASSIFIER_MODEL=clef-flash uv run --env-file .env.evals --group evals \
+  python scripts/eval_agent.py --mode langsmith --experiment-prefix flash-v2 --dataset-tag v2 --no-sync
+```
+
+1. En LangSmith abre **Datasets & Experiments** y el dataset `mercadoya-agent-evals`.
+2. Selecciona las dos corridas con prefijos `base-v2` y `flash-v2` y pulsa **Compare**.
+3. En `base-v2`, elige **Set as source experiment**.
+4. Filtra regresiones rojas en `domain_correct` y `route_correct`. Verde indica mejoras.
+5. Abre una fila y cambia a **Traces** para ver ambas ejecuciones. **Diff** compara sus salidas estructuradas.
+
+La [guía de comparación](https://docs.langchain.com/langsmith/compare-experiment-results)
+explica los filtros y el cambio de experimento fuente. También se pueden comparar
+variantes de prompt, manteniendo versión y fixtures para atribuir la diferencia.
+Antes y después de cada corrida revisa el carrito y el estado del pedido de demo
+en la web. Las propuestas deben seguir pendientes, sin cambios aplicados.
+
+### Costo estimado por corrida
+
+Offline no consume trazas ni llamadas a OpenAI o Clef. Para 38 ejemplos reales se
+estiman unas 38 trazas base de aplicación, 37 llamadas Clef, 40 a 60 llamadas del
+agente OpenAI y unas 40 a 55 llamadas OpenAI para los jueces en una corrida típica.
+El máximo es 76 llamadas de jueces si todos los ejemplos aplican a ambos.
+Los rechazos, las lecturas
+y los reintentos cambian el total; las llamadas OpenAI se cobran según modelo y
+tokens. No se promete un monto fijo. El límite existente de seis rondas de
+herramientas permite hasta siete invocaciones del agente por turno.
+
+El runner desactiva el tracing de evaluadores, pero conserva sus feedbacks. Los
+spans hijos del grafo se mantienen dentro de la traza de cada ejemplo. Dos corridas
+representan unas 76 trazas base y 160 a 230 llamadas OpenAI esperadas en total.
+La concurrencia dos reduce presión sobre las APIs, no el número de llamadas.
+El [plan Developer](https://www.langchain.com/pricing) incluye una cuenta, 5k trazas
+base mensuales y 14 días de retención base. Cuenta también las otras demos del
+mes. No configures evaluadores online ni automatizaciones UI para este dataset.
+
+Al terminar, vuelve a la definición normal para retirar el puerto temporal:
+
+```sh
+# Desde la raíz.
+docker compose --profile agent up -d --no-deps --force-recreate mcp-server
+rm /tmp/mercadoya-eval-mcp.yml
+```

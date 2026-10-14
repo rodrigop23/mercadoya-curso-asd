@@ -1,0 +1,40 @@
+{"id": "in_budget", "history": [], "recent_confirmation": false, "input": "busco audífonos por menos de 150 soles", "expected_in_domain": true, "expected_category": "productos"}
+{"id": "in_compare", "history": [], "recent_confirmation": false, "input": "compara estas zapatillas", "expected_in_domain": true, "expected_category": "productos"}
+{"id": "in_other", "history": [{"type": "human", "text": "Busco audífonos baratos"}, {"type": "ai", "text": "Encontré dos productos en el catálogo"}], "recent_confirmation": false, "input": "¿y el otro?", "expected_in_domain": true, "expected_category": "conversacion"}
+{"id": "in_quantity", "history": [{"type": "ai", "text": "Estos audífonos cuestan S/ 50"}], "recent_confirmation": false, "input": "cuánto saldrían 2", "expected_in_domain": true, "expected_category": "conversacion"}
+{"id": "in_yes", "history": [{"type": "ai", "text": "¿Agrego este producto al carrito?"}], "recent_confirmation": true, "input": "sí, ese", "expected_in_domain": true, "expected_category": "conversacion"}
+{"id": "in_thanks", "history": [], "recent_confirmation": false, "input": "gracias", "expected_in_domain": true, "expected_category": "conversacion"}
+{"id": "in_hello", "history": [], "recent_confirmation": false, "input": "hola", "expected_in_domain": true, "expected_category": "conversacion"}
+{"id": "in_capabilities", "history": [], "recent_confirmation": false, "input": "¿qué puedes hacer?", "expected_in_domain": true, "expected_category": "conversacion"}
+{"id": "in_discount", "history": [], "recent_confirmation": false, "input": "mi código de descuento no funciona", "expected_in_domain": true, "expected_category": "pagos_envios"}
+{"id": "in_order_code", "history": [], "recent_confirmation": false, "input": "¿cuál es mi código de pedido?", "expected_in_domain": true, "expected_category": "pedidos"}
+{"id": "in_remember", "history": [], "recent_confirmation": false, "input": "recuerda que uso talla M", "expected_in_domain": true, "expected_category": "preferencias"}
+{"id": "in_memory", "history": [], "recent_confirmation": false, "input": "¿qué recuerdas de mí?", "expected_in_domain": true, "expected_category": "preferencias"}
+{"id": "in_forget", "history": [], "recent_confirmation": false, "input": "olvida mi presupuesto", "expected_in_domain": true, "expected_category": "preferencias"}
+{"id": "in_cancel", "history": [], "recent_confirmation": false, "input": "cancela mi último pedido", "expected_in_domain": true, "expected_category": "pedidos"}
+{"id": "in_delivery", "history": [], "recent_confirmation": false, "input": "¿cuándo llega mi pedido?", "expected_in_domain": true, "expected_category": "pedidos"}
+{"id": "in_yape", "history": [], "recent_confirmation": false, "input": "¿aceptan Yape?", "expected_in_domain": true, "expected_category": "pagos_envios"}
+{"id": "in_cart", "history": [], "recent_confirmation": false, "input": "agrega 2 al carrito", "expected_in_domain": true, "expected_category": "carrito"}
+{"id": "in_stock", "history": [], "recent_confirmation": false, "input": "¿hay stock de la talla 42?", "expected_in_domain": true, "expected_category": "productos"}
+{"id": "in_gift", "history": [], "recent_confirmation": false, "input": "busco un regalo para mi mamá", "expected_in_domain": true, "expected_category": "productos"}
+{"id": "in_shipping", "history": [], "recent_confirmation": false, "input": "¿Qué métodos de envío tienen?", "expected_in_domain": true, "expected_category": "pagos_envios"}
+{"id": "out_homework", "history": [], "recent_confirmation": false, "input": "hazme la tarea de matemáticas", "expected_in_domain": false, "expected_category": "fuera_de_dominio"}
+{"id": "out_integral", "history": [], "recent_confirmation": false, "input": "resuelve esta integral", "expected_in_domain": false, "expected_category": "fuera_de_dominio"}
+{"id": "out_python", "history": [], "recent_confirmation": false, "input": "escríbeme código en python", "expected_in_domain": false, "expected_category": "fuera_de_dominio"}
+{"id": "out_javascript", "history": [], "recent_confirmation": false, "input": "arregla esta función de javascript", "expected_in_domain": false, "expected_category": "fuera_de_dominio"}
+{"id": "out_weather", "history": [], "recent_confirmation": false, "input": "¿qué clima hace hoy en Lima?", "expected_in_domain": false, "expected_category": "fuera_de_dominio"}
+{"id": "out_elections", "history": [], "recent_confirmation": false, "input": "¿quién ganará las elecciones?", "expected_in_domain": false, "expected_category": "fuera_de_dominio"}
+{"id": "out_recipe", "history": [], "recent_confirmation": false, "input": "dame una receta de ceviche", "expected_in_domain": false, "expected_category": "fuera_de_dominio"}
+{"id": "out_capital", "history": [], "recent_confirmation": false, "input": "¿cuál es la capital de Australia?", "expected_in_domain": false, "expected_category": "fuera_de_dominio"}
+{"id": "out_health", "history": [], "recent_confirmation": false, "input": "¿qué síntomas tiene la enfermedad?", "expected_in_domain": false, "expected_category": "fuera_de_dominio"}
+{"id": "out_bitcoin", "history": [], "recent_confirmation": false, "input": "¿debo invertir en bitcoin?", "expected_in_domain": false, "expected_category": "fuera_de_dominio"}
+{"id": "out_translation", "history": [], "recent_confirmation": false, "input": "traduce este texto al inglés", "expected_in_domain": false, "expected_category": "fuera_de_dominio"}
+{"id": "out_poem", "history": [], "recent_confirmation": false, "input": "escribe un poema de amor", "expected_in_domain": false, "expected_category": "fuera_de_dominio"}
+{"id": "out_joke", "history": [], "recent_confirmation": false, "input": "cuéntame un chiste", "expected_in_domain": false, "expected_category": "fuera_de_dominio"}
+{"id": "out_match", "history": [], "recent_confirmation": false, "input": "¿cuál fue el resultado del partido?", "expected_in_domain": false, "expected_category": "fuera_de_dominio"}
+{"id": "out_worldcup", "history": [], "recent_confirmation": false, "input": "¿quién ganó el Mundial?", "expected_in_domain": false, "expected_category": "fuera_de_dominio"}
+{"id": "out_horoscope", "history": [], "recent_confirmation": false, "input": "dime mi horóscopo", "expected_in_domain": false, "expected_category": "fuera_de_dominio"}
+{"id": "out_legal", "history": [], "recent_confirmation": false, "input": "dame consejo legal sobre un divorcio", "expected_in_domain": false, "expected_category": "fuera_de_dominio"}
+{"id": "out_english", "history": [], "recent_confirmation": false, "input": "What is the weather in London today?", "expected_in_domain": false, "expected_category": "fuera_de_dominio"}
+{"id": "out_cartesian", "history": [], "recent_confirmation": false, "input": "explica el producto cartesiano", "expected_in_domain": false, "expected_category": "fuera_de_dominio"}
+{"id": "out_followup", "history": [{"type": "human", "text": "¿Quién ganó el Mundial?"}, {"type": "ai", "text": "El Mundial lo ganó Argentina"}], "recent_confirmation": false, "input": "¿y el otro?", "expected_in_domain": false, "expected_category": "fuera_de_dominio"}

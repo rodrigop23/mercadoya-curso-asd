@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import { test } from 'node:test';
 import { Pool } from 'pg';
+import { parse as parseEnv } from 'dotenv';
 import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
 import { once } from 'node:events';
@@ -17,6 +18,27 @@ import { CheckoutRejected } from '../dist/payment/polar.js';
 // Recursos dedicados; nunca ejecutar sobre DATABASE_URL del desarrollador.
 assert.ok(process.env.PAYMENTS_TEST_DATABASE_URL, 'Configura PAYMENTS_TEST_DATABASE_URL dedicado.');
 assert.ok(process.env.PAYMENTS_TEST_NATS_URL, 'Configura PAYMENTS_TEST_NATS_URL dedicado.');
+// Un schema aislado no aísla NATS: los consumidores activos pueden enviar correo.
+const localEnv = await readFile(new URL('../../../.env', import.meta.url), 'utf8')
+  .then(parseEnv)
+  .catch((error) => {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  });
+if (localEnv) {
+  const endpoint = (value) => {
+    const url = new URL(value);
+    const host = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+      ? 'loopback'
+      : url.hostname;
+    return `${host}:${url.port || '4222'}`;
+  };
+  assert.notEqual(
+    endpoint(process.env.PAYMENTS_TEST_NATS_URL),
+    endpoint(localEnv.NATS_URL || 'nats://localhost:4222'),
+    'PAYMENTS_TEST_NATS_URL apunta al NATS del stack local. Usa un NATS dedicado; no se publicaron eventos.',
+  );
+}
 const base = new Pool({ connectionString: process.env.PAYMENTS_TEST_DATABASE_URL });
 const schema = `polar_test_${randomBytes(8).toString('hex')}`;
 await base.query(`CREATE SCHEMA ${schema}`);
@@ -28,6 +50,7 @@ process.env.EVENT_BUS = 'nats';
 process.env.ORDER_PENDING_TTL_MINUTES = '15';
 process.env.ORDER_EXPIRY_GRACE_SECONDS = '120';
 process.env.POLAR_GET_TIMEOUT_MS = '5000';
+// El handler propio usa stub aunque el entorno o .env configuren envío real.
 process.env.EMAIL_MODE = 'stub';
 process.env.DEMO_NOTIFY_EMAIL = 'saga-test@example.com';
 process.env.NOTIFICATIONS_INVOKE_TOKEN = randomBytes(32).toString('base64url');
@@ -379,6 +402,13 @@ const outcomes = (orderId, subject) =>
   trace.filter((e) => e.payload.orderId === orderId && e.subject === subject);
 
 test('Polar, PostgreSQL, NATS, Inventory y Notifications completan la saga', async (t) => {
+  const notificationLogs = [];
+  const info = console.info.bind(console);
+  t.mock.method(console, 'info', (line) => {
+    const entry = JSON.parse(line);
+    if (entry.step === 'notification.created') notificationLogs.push(entry);
+    info(line);
+  });
   try {
     await t.test(
       'respuesta perdida del producto compartido bloquea nuevos POST y recupera dos pedidos con importes distintos',
@@ -777,6 +807,9 @@ test('Polar, PostgreSQL, NATS, Inventory y Notifications completan la saga', asy
         );
         await until(() => notificationResults.length >= 6);
         assert.ok(notificationResults.every((result) => result.statusCode === 202));
+        assert.equal(notificationLogs.length, notificationResults.length);
+        assert.ok(notificationLogs.every((entry) => entry.emailStatus === 'stub'));
+        assert.ok(notificationLogs.every((entry) => entry.stubReason === 'email_mode_stub'));
       },
     );
     await t.test(

@@ -1,0 +1,83 @@
+# Stack aislado, sin proveedores ni credenciales de servicios externos.
+services:
+  postgres:
+    ports: !override ['127.0.0.1:15432:5432']
+  nats:
+    ports: !reset []
+  inventory:
+    ports: !reset []
+  identity:
+    ports: !reset []
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          'fetch("http://127.0.0.1:3006/api/identity/health").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))',
+        ]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+  catalog:
+    ports: !reset []
+    user: '1000:1000'
+    volumes: !override ['perf_uploads:/app/uploads']
+    environment:
+      PAYMENT_PROVIDER: polar
+      POLAR_ACCESS_TOKEN: perf-unavailable
+  orders:
+    ports: !reset []
+    environment:
+      PAYMENT_PROVIDER: polar
+      POLAR_ACCESS_TOKEN: perf-unavailable
+      POLAR_WEBHOOK_SECRET: perf-unavailable
+  notifications:
+    environment:
+      EMAIL_MODE: stub
+      RESEND_API_KEY: ''
+      RESEND_FROM: ''
+      DEMO_NOTIFY_EMAIL: ''
+      NOTIFICATIONS_FUNCTION_URL: ''
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          'fetch("http://127.0.0.1:3004/api/notifications/health").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))',
+        ]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+  kong:
+    ports: !override ['127.0.0.1:18000:8000']
+  agent-service:
+    image: mercadoya-agent-perf:local
+    build:
+      context: .
+      dockerfile: tests/perf/agent.Dockerfile
+    ports: !reset []
+    environment:
+      AGENT_MODEL_PROVIDER: echo
+      AGENT_CLASSIFIER_PROVIDER: rules
+      AGENT_MODERATION: 'off'
+      OPENAI_API_KEY: ''
+      OPENAI_BASE_URL: ''
+      OPENAI_ORG_ID: ''
+      OPENAI_PROJECT_ID: ''
+      CLOUDFLARE_ACCOUNT_ID: ''
+      CLOUDFLARE_API_TOKEN: ''
+      LANGSMITH_API_KEY: ''
+      LANGSMITH_ENDPOINT: ''
+      LANGSMITH_PROJECT: ''
+      LANGSMITH_TRACING: 'false'
+      LANGCHAIN_API_KEY: ''
+      LANGCHAIN_TRACING_V2: 'false'
+      LANGGRAPH_CLOUD_LICENSE_KEY: ''
+      LANGSMITH_HIDE_INPUTS: 'true'
+      LANGSMITH_HIDE_OUTPUTS: 'true'
+      DATABASE_URI: ''
+      REDIS_URI: ''
+volumes:
+  perf_uploads:

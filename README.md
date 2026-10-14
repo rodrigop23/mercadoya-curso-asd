@@ -22,6 +22,8 @@ El [paquete `@mercadoya/contracts`](packages/contracts/README.md) centraliza sch
 
 ## Arquitectura y decisiones
 
+Las [fitness functions de arquitectura](docs/architecture/fitness-functions.md) verifican rendimiento por Kong, seguridad y límites de imports; la decisión está en [ADR 0031](docs/adr/0031-fitness-functions.md).
+
 La arquitectura actual está descrita en [ADR 0017, Identity y Kong](docs/adr/0017-identity-kong-jwks.md) y [ADR 0018, Catalog/Media](docs/adr/0018-catalog-media-kong.md). Los materiales siguientes documentan las etapas de clase.
 
 Material para el walkthrough:
@@ -307,6 +309,8 @@ pnpm format     # Aplica oxfmt en los paquetes y la configuración de raíz
 
 ```text
 apps/
+  agent-service/   Agente LangGraph con tools de lectura :8123, perfil agent
+  mcp-server/      MCP Python :8080 solo red interna, perfil agent
   catalog-service/ Catalog y Media Hono + Drizzle + imágenes locales :3007
   orders-service/  Proceso Hono para pedidos y consumo NATS
   inventory-service/ Dos despliegues Hono para lectura de reservas; v2 consume NATS
@@ -335,3 +339,20 @@ Se conservan las versiones instaladas en la máquina: Node `v24.14.1` y pnpm `11
 Inventory reserva stock al recibir `orders.placed`. El pedido sigue `pending` tras `inventory.reserved`, que ahora crea el checkout Polar. El webhook publica `payment.succeeded` para confirmarlo o `payment.failed` para rechazarlo. El fallo activa la compensación en Inventory, que restaura stock y publica `inventory.released`. El rechazo por stock no inicia Payment ni libera reservas. La [guía de Payments](apps/orders-service/README.md) documenta sandbox, eventos, reintentos y NATS Core.
 
 El CLI `pnpm demo:saga` usa un checkout Polar sandbox y espera el webhook real. Los requisitos y efectos sobre los datos están en el [README del CLI](scripts/README.md). Notifications envía con Resend y React Email un correo por desenlace: confirmación, rechazo por stock o fallo de pago. También admite modo stub. La guía de sandbox actual está en [Orders/Payments](apps/orders-service/README.md); el ejercicio anterior está en el rama `v3-services`.
+
+## Asistente con herramientas de lectura
+
+El perfil opcional `agent` añade [Agent Server](apps/agent-service/README.md) y
+[MCP interno](apps/mcp-server/README.md). Genera `MCP_INTERNAL_TOKEN` con
+`openssl rand -hex 32` en `.env`, configura OpenAI/LangSmith y ejecuta
+`pnpm demo:agent` después de `pnpm demo:infra`. El chat consulta catálogo, stock
+y pedidos propios. No modifica datos. El agente directo usa `127.0.0.1:8123`,
+la web usa `/api/agent` por Kong y MCP no publica puerto del host ni ruta de Kong.
+Catalog agrega detalle público GET `/api/products/{id}`, documentado en OpenAPI 1.5.0.
+CI prueba el transporte MCP y aislamiento sin claves mediante el proveedor scripted.
+LangSmith muestra entradas y salidas con PII redactada para depurar y evaluar.
+`LANGSMITH_HIDE_INPUTS` y `LANGSMITH_HIDE_OUTPUTS` valen `false` por defecto en
+Compose. Actívalos con `true` cuando el entorno prohíba enviar ese contenido,
+incluso redactado; se conservan tags, metadata y tiempos. Los detalles de redacción
+y guardrails están en [ADR 0027](docs/adr/0027-guardrails-memoria.md).
+La decisión está en [ADR 0025](docs/adr/0025-herramientas-mcp-lectura.md).

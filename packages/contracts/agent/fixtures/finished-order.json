@@ -1,0 +1,13 @@
+{
+  "type": "proposal",
+  "valid": false,
+  "payload": {
+    "kind": "cancel_order",
+    "action_id": "12345678-1234-5678-9234-567812345678",
+    "order_id": "00000000-0000-4000-8000-000000000001",
+    "status": "confirmed",
+    "total_pen": "25.80",
+    "items_count": 2,
+    "created_at": "2026-10-12T10:00:00Z"
+  }
+}

@@ -1,0 +1,203 @@
+{
+  "$defs": {
+    "ActionResume": {
+      "additionalProperties": false,
+      "properties": {
+        "action_id": {
+          "format": "uuid",
+          "title": "Action Id",
+          "type": "string"
+        },
+        "approved": {
+          "title": "Approved",
+          "type": "boolean"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CartResult"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "action_id",
+        "approved"
+      ],
+      "title": "ActionResume",
+      "type": "object"
+    },
+    "CancelProposal": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "cancel_order",
+          "title": "Kind",
+          "type": "string"
+        },
+        "action_id": {
+          "format": "uuid",
+          "title": "Action Id",
+          "type": "string"
+        },
+        "order_id": {
+          "format": "uuid",
+          "title": "Order Id",
+          "type": "string"
+        },
+        "status": {
+          "const": "pending",
+          "title": "Status",
+          "type": "string"
+        },
+        "total_pen": {
+          "anyOf": [
+            {
+              "pattern": "^(0|[1-9][0-9]*)\\.[0-9]{2}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Total Pen"
+        },
+        "items_count": {
+          "minimum": 0,
+          "title": "Items Count",
+          "type": "integer"
+        },
+        "created_at": {
+          "minLength": 1,
+          "title": "Created At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "action_id",
+        "order_id",
+        "status",
+        "total_pen",
+        "items_count",
+        "created_at"
+      ],
+      "title": "CancelProposal",
+      "type": "object"
+    },
+    "CartProposal": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "add_to_cart",
+          "title": "Kind",
+          "type": "string"
+        },
+        "action_id": {
+          "format": "uuid",
+          "title": "Action Id",
+          "type": "string"
+        },
+        "product_id": {
+          "format": "uuid",
+          "title": "Product Id",
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "unit_price_pen": {
+          "pattern": "^(0|[1-9][0-9]*)\\.[0-9]{2}$",
+          "title": "Unit Price Pen",
+          "type": "string"
+        },
+        "quantity": {
+          "maximum": 20,
+          "minimum": 1,
+          "title": "Quantity",
+          "type": "integer"
+        },
+        "stock": {
+          "minimum": 0,
+          "title": "Stock",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "action_id",
+        "product_id",
+        "title",
+        "unit_price_pen",
+        "quantity",
+        "stock"
+      ],
+      "title": "CartProposal",
+      "type": "object"
+    },
+    "CartResult": {
+      "additionalProperties": false,
+      "properties": {
+        "applied": {
+          "title": "Applied",
+          "type": "boolean"
+        },
+        "quantity_in_cart": {
+          "anyOf": [
+            {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Quantity In Cart"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "stock",
+                "cart_full",
+                "checkout_locked",
+                "not_found",
+                "invalid"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "applied"
+      ],
+      "title": "CartResult",
+      "type": "object"
+    }
+  },
+  "anyOf": [
+    {
+      "$ref": "#/$defs/CartProposal"
+    },
+    {
+      "$ref": "#/$defs/CancelProposal"
+    },
+    {
+      "$ref": "#/$defs/ActionResume"
+    }
+  ]
+}

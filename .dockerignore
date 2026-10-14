@@ -6,3 +6,7 @@
 !.env.example
 .git
 apps/catalog-service/uploads
+tests/perf/out
+**/.venv
+**/__pycache__
+**/.import_linter_cache

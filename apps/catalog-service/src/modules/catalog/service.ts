@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lte, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, ilike, lte, or, sql } from 'drizzle-orm';
 
 import { db } from '../../db/index.js';
 import type { MediaContract } from '../media/contract.js';
@@ -10,8 +10,24 @@ import type { CatalogBillingResponse } from '@mercadoya/contracts';
 
 export function createCatalogContract(media: MediaContract): CatalogContract {
   return {
-    async listProducts() {
-      return db.select().from(product).orderBy(desc(product.createdAt));
+    async getProduct(id) {
+      const [found] = await db.select().from(product).where(eq(product.id, id)).limit(1);
+      return found ?? null;
+    },
+
+    async listProducts(filters = {}) {
+      const conditions = [];
+      if (filters.q) {
+        const term = `%${filters.q.replace(/[\\%_]/g, '\\$&')}%`;
+        conditions.push(or(ilike(product.title, term), ilike(product.description, term)));
+      }
+      if (filters.minPrice !== undefined) conditions.push(gte(product.price, filters.minPrice));
+      if (filters.maxPrice !== undefined) conditions.push(lte(product.price, filters.maxPrice));
+      return db
+        .select()
+        .from(product)
+        .where(and(...conditions))
+        .orderBy(desc(product.createdAt));
     },
 
     async createProduct(input: CreateProductInput) {

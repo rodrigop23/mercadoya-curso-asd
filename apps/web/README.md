@@ -54,3 +54,63 @@ Smoke manual con backend real: inicia sesión admin, crea un producto con imagen
 ## Fuentes verificadas
 
 Consulta [ADR 0019](../../docs/adr/0019-catalog-module-federation.md) para las fuentes oficiales, decisiones y límites. Componentes Base UI/ShadCN y aliases en la [guía UI](../../packages/ui/README.md).
+
+
+## Chat y confirmaciones
+
+Las respuestas del asistente usan Markdown con Streamdown diferido, sin HTML ni imágenes y con enlaces solo http(s); los mensajes del comprador conservan texto plano.
+
+Con una sesión y `pnpm demo:agent`, el asistente puede proponer agregar al carrito
+o cancelar un pedido pendiente. Cada acción muestra una tarjeta con Aprobar y
+Rechazar; no se recuerdan decisiones. La cancelación usa el botón destructivo.
+La tarjeta ocupa el pie fijo del chat, en lugar del formulario, y permanece
+visible al recorrer el historial. Al aparecer, el historial muestra el último
+mensaje; el foco pasa a la tarjeta sin desplazar la página. El resultado se
+anuncia por aria-live.
+
+`useStream` consume interrupciones raíz y responde por interruptId. Pydantic y
+zod comparten fixtures en `packages/contracts/agent`; un payload desconocido solo
+se puede rechazar. Una recarga recupera el threadId de sessionStorage y vuelve a
+mostrar las confirmaciones pendientes. El chat espera la decisión antes de
+admitir otro mensaje.
+
+Al aprobar carrito, la web verifica que la interrupción siga pendiente, consulta
+el producto actual y aplica `applyAgentCartProposal` mediante CartContext.
+Respeta stock, 20 líneas y checkout bloqueado; guarda céntimos enteros. localStorage
+conserva líneas y resultado por action_id juntos, para evitar sumar otra vez si
+se pierde el envío de resume. Web Locks serializa respuestas de pestañas del
+mismo origen cuando está disponible. Al cancelar, la web solo reanuda el grafo e
+invalida las queries `orders` tras la respuesta. El JWT nunca pasa al navegador.
+
+```sh
+pnpm --filter @mercadoya/web typecheck
+pnpm --filter @mercadoya/web lint
+pnpm --filter @mercadoya/web test
+pnpm --filter @mercadoya/web build
+```
+
+Prueba manual: pide "agrégame 2 de Palta Hass", recarga antes de decidir y abre
+el chat. Aprobar debe subir el contador; Rechazar debe conservarlo. Pide cancelar
+un pedido pendiente propio, revisa la tarjeta y aprueba; la vista de pedidos debe
+mostrar cancelado. Una confirmación vieja muestra "Esta confirmación ya fue
+respondida" y no aplica otro cambio. Consulta el
+[ADR 0026](../../docs/adr/0026-acciones-con-confirmacion.md).
+
+## Preferencias y avisos del asistente
+
+El estado vacío explica que puedes pedir recordar talla o presupuesto y borrarlos
+cuando quieras. Se gestiona por chat: "Recuerda que uso talla M", "¿qué recuerdas
+de mí?", "olvida mi talla" y "Olvida todo". La memoria pertenece al comprador
+autenticado y se conserva entre hilos; Nuevo hilo conserva sus preferencias.
+No hay una vista adicional de memoria.
+
+Los avisos de privacidad y rechazos aparecen como mensajes normales del
+asistente. Las respuestas llegan completas después del guard de salida. El
+servidor redacta datos personales en el historial antes de persistirlos.
+Los resultados de carrito conservan solo los 50 action_id más recientes por
+inserción; recuperar uno existente no cambia su orden ni aplica otra vez el carrito.
+
+Vitest comprueba el texto renderizado del estado vacío y el límite de resultados.
+La revisión local incluyó el chat a 1280 y 390 píxeles sin desborde horizontal.
+Consulta [ADR 0027](../../docs/adr/0027-guardrails-memoria.md) para las reglas y
+los límites del asistente.

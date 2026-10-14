@@ -3,7 +3,7 @@ services:
     image: postgres:18
     restart: unless-stopped
     ports:
-      - '5432:5432'
+      - '127.0.0.1:5432:5432'
     environment:
       POSTGRES_USER: mercadoya
       POSTGRES_PASSWORD: mercadoya_local
@@ -16,13 +16,115 @@ services:
       timeout: 5s
       retries: 10
 
+  agent-db-init:
+    image: postgres:18
+    profiles: ['agent']
+    restart: 'no'
+    environment:
+      PGHOST: postgres
+      PGUSER: mercadoya
+      PGPASSWORD: mercadoya_local
+      PGDATABASE: postgres
+      AGENT_DB_PASSWORD: ${AGENT_DB_PASSWORD:-agent_server_local}
+    volumes:
+      - ./infra/postgres/agent-db-init.sql:/init/agent-db-init.sql:ro
+    entrypoint: ['psql', '--no-psqlrc', '--file=/init/agent-db-init.sql']
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  redis:
+    image: redis:6
+    profiles: ['agent']
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mcp-server:
+    build: ./apps/mcp-server
+    profiles: ['agent']
+    restart: unless-stopped
+    environment:
+      CATALOG_URL: http://catalog:3007
+      ORDERS_URL: http://orders:3002
+      # El servidor exige un valor al arrancar; Compose evalúa incluso perfiles apagados.
+      MCP_INTERNAL_TOKEN: ${MCP_INTERNAL_TOKEN:-}
+      MCP_PORT: '8080'
+    depends_on:
+      catalog:
+        condition: service_healthy
+      orders:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'python', '-c', 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8080/health", timeout=3)']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  agent-service:
+    image: mercadoya-agent-service:local
+    pull_policy: never
+    profiles: ['agent']
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:8123:8000'
+    environment:
+      DATABASE_URI: ${AGENT_DATABASE_URI:-postgres://agent_server:${AGENT_DB_PASSWORD:-agent_server_local}@postgres:5432/agent_server}
+      REDIS_URI: redis://redis:6379
+      IDENTITY_URL: http://identity:3006
+      JWKS_URL: http://identity:3006/api/auth/jwks
+      JWT_ISSUER: ${JWT_ISSUER:-http://localhost:8000}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-mercadoya-services}
+      MCP_URL: http://mcp-server:8080/mcp
+      # El servidor exige un valor al arrancar; Compose evalúa incluso perfiles apagados.
+      MCP_INTERNAL_TOKEN: ${MCP_INTERNAL_TOKEN:-}
+      AGENT_MODEL_PROVIDER: ${AGENT_MODEL_PROVIDER:-openai}
+      AGENT_MODERATION: ${AGENT_MODERATION:-off}
+      AGENT_MAX_INPUT_CHARS: ${AGENT_MAX_INPUT_CHARS:-2000}
+      AGENT_CLASSIFIER_PROVIDER: ${AGENT_CLASSIFIER_PROVIDER:-clef}
+      AGENT_CLASSIFIER_MODEL: ${AGENT_CLASSIFIER_MODEL:-clef}
+      AGENT_CLASSIFIER_TIMEOUT_S: ${AGENT_CLASSIFIER_TIMEOUT_S:-2}
+      AGENT_CLASSIFIER_MIN_IN_DOMAIN: ${AGENT_CLASSIFIER_MIN_IN_DOMAIN:-0.5}
+      AGENT_CLASSIFIER_FAIL_OPEN: ${AGENT_CLASSIFIER_FAIL_OPEN:-false}
+      CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+      LANGSMITH_HIDE_INPUTS: ${LANGSMITH_HIDE_INPUTS:-false}
+      LANGSMITH_HIDE_OUTPUTS: ${LANGSMITH_HIDE_OUTPUTS:-false}
+      AGENT_MODEL: ${AGENT_MODEL:-gpt-6-luna}
+      AGENT_REASONING_EFFORT: ${AGENT_REASONING_EFFORT:-low}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-mercadoya-agent}
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-true}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mcp-server:
+        condition: service_healthy
+      agent-db-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ['CMD', 'python', '-c', 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/ok", timeout=3)']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
   nats:
     image: nats:2-alpine
     restart: unless-stopped
     command: ['-m', '8222']
     ports:
-      - '4222:4222'
-      - '8222:8222'
+      - '127.0.0.1:4222:4222'
+      - '127.0.0.1:8222:8222'
 
   inventory:
     build:
@@ -66,6 +168,11 @@ services:
         condition: service_healthy
 
   catalog:
+    healthcheck:
+      test: ['CMD', 'node', '-e', 'fetch("http://127.0.0.1:3007/api/catalog/health").then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))']
+      interval: 5s
+      timeout: 5s
+      retries: 10
     user: '${LOCAL_UID:-1000}:${LOCAL_GID:-1000}'
     build:
       context: .
@@ -90,6 +197,11 @@ services:
         condition: service_healthy
 
   orders:
+    healthcheck:
+      test: ['CMD', 'node', '-e', 'fetch("http://127.0.0.1:3002/api/orders/health").then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))']
+      interval: 5s
+      timeout: 5s
+      retries: 10
     build:
       context: .
       dockerfile: apps/orders-service/Dockerfile
@@ -125,7 +237,7 @@ services:
     environment:
       NATS_URL: nats://nats:4222
       EVENT_BUS: nats
-      EMAIL_MODE: ${EMAIL_MODE:-stub}
+      EMAIL_MODE: ${EMAIL_MODE:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       RESEND_FROM: ${RESEND_FROM:-}
       DEMO_NOTIFY_EMAIL: ${DEMO_NOTIFY_EMAIL:-}
@@ -149,7 +261,7 @@ services:
       KONG_PROXY_LISTEN: 0.0.0.0:8000
       KONG_NGINX_HTTP_CLIENT_MAX_BODY_SIZE: 3m
     ports:
-      - '8000:8000'
+      - '127.0.0.1:8000:8000'
     volumes:
       - ./infra/kong/kong.yml:/etc/kong/kong.yml:ro
     depends_on:
@@ -161,3 +273,4 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:

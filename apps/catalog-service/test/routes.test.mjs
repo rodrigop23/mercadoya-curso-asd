@@ -3,7 +3,11 @@ import { test, after } from 'node:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { productsResponseSchema, stockAdjustmentResponseSchema } from '@mercadoya/contracts';
+import {
+  productResponseSchema,
+  productsResponseSchema,
+  stockAdjustmentResponseSchema,
+} from '@mercadoya/contracts';
 
 const uploads = await mkdtemp(join(tmpdir(), 'catalog-media-'));
 process.env.UPLOADS_DIR = uploads;
@@ -49,6 +53,7 @@ function app(authorization = { allowed: true }, overrides = {}) {
   return createCatalogRoutes(
     { requireAdmin: async () => authorization },
     {
+      getProduct: async () => product,
       listProducts: async () => [product],
       createProduct: async () => product,
       updateProduct: async () => product,
@@ -103,6 +108,53 @@ test('no autenticado 401 y buyer 403 antes de ejecutar el CRUD', async () => {
     ]) {
       assert.equal((await routes.request(path, { method })).status, status);
     }
+  }
+});
+test('listado entrega filtros parseados y conserva la llamada sin filtros', async () => {
+  const calls = [];
+  const routes = app(
+    { allowed: true },
+    {
+      getProduct: async () => product,
+      listProducts: async (...args) => {
+        calls.push(args);
+        return [product];
+      },
+    },
+  );
+  for (const path of ['/api/products', '/api/products?q=%20%20&minPrice=&maxPrice=']) {
+    const response = await routes.request(path);
+    assert.equal(response.status, 200);
+    productsResponseSchema.parse(await response.json());
+  }
+  assert.deepEqual(calls, [[], []]);
+  const response = await routes.request('/api/products?q=%20AUD%20&minPrice=20&maxPrice=100.50');
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls[2], [{ q: 'AUD', minPrice: 20, maxPrice: 100.5 }]);
+  await routes.request('/api/products?minPrice=0');
+  assert.deepEqual(calls[3], [{ minPrice: 0 }]);
+});
+
+test('listado rechaza filtros inválidos antes de llamar al contrato', async () => {
+  const routes = app(
+    { allowed: true },
+    {
+      getProduct: async () => product,
+      listProducts: async () => {
+        throw new Error('No debe consultar');
+      },
+    },
+  );
+  for (const query of [
+    'minPrice=abc',
+    'minPrice=-1',
+    'minPrice=50&maxPrice=10',
+    'maxPrice=1.234',
+    `q=${'a'.repeat(101)}`,
+  ]) {
+    const response = await routes.request(`/api/products?${query}`);
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { error: 'Parámetros de búsqueda inválidos.' });
   }
 });
 test('stock mantiene token S2S independiente, validación y DTO', async () => {
@@ -216,4 +268,27 @@ test('el proceso directo limita multipart completo y cuerpos sin Content-Length'
   } finally {
     await closeDb();
   }
+});
+
+test('GET público por id valida UUID, contrato, ausencia y fallo remoto', async () => {
+  const routes = app({ allowed: false, status: 401 });
+  const response = await routes.request(`/api/products/${id}`);
+  assert.equal(response.status, 200);
+  const body = productResponseSchema.parse(await response.json());
+  assert.equal(body.product.id, id);
+  assert.equal((await routes.request('/api/products/invalid')).status, 400);
+  assert.equal(
+    (await app(undefined, { getProduct: async () => null }).request(`/api/products/${id}`)).status,
+    404,
+  );
+  assert.equal(
+    (
+      await app(undefined, {
+        getProduct: async () => {
+          throw new Error('db');
+        },
+      }).request(`/api/products/${id}`)
+    ).status,
+    503,
+  );
 });

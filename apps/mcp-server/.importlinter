@@ -1,0 +1,9 @@
+[importlinter]
+root_package = mercadoya_mcp
+include_external_packages = True
+
+[importlinter:contract:service-boundary]
+name = MCP never imports Agent internals
+type = forbidden
+source_modules = mercadoya_mcp
+forbidden_modules = agent_service

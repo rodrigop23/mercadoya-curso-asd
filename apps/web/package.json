@@ -10,12 +10,17 @@
     "lint": "oxlint .",
     "format": "oxfmt .",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "smoke:federation": "playwright test"
   },
   "dependencies": {
+    "@langchain/core": "1.2.1",
+    "@langchain/langgraph-sdk": "1.12.3",
+    "@langchain/react": "1.2.3",
     "@mercadoya/contracts": "workspace:*",
     "@mercadoya/ui": "workspace:*",
     "@tanstack/react-form": "^1.33.5",
+    "@tanstack/react-pacer": "^0.24.1",
     "@tanstack/react-query": "^5.103.2",
     "@tanstack/react-router": "^1.170.38",
     "better-auth": "^1.7.5",
@@ -34,6 +39,8 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
-    "vite": "^8.3.0"
+    "jsdom": "29.1.1",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.3"
   }
 }
