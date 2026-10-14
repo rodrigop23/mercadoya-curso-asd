@@ -15,6 +15,7 @@ import { ArrowUpIcon, BotIcon, MessageCircleIcon, PlusIcon, XIcon } from 'lucide
 import { Alert, AlertDescription, AlertTitle } from '@mercadoya/ui/components/alert';
 import { Avatar, AvatarFallback } from '@mercadoya/ui/components/avatar';
 import { Bubble, BubbleContent } from '@mercadoya/ui/components/bubble';
+import { AssistantMarkdown } from '@mercadoya/ui/components/markdown';
 import { Button } from '@mercadoya/ui/components/button';
 import { Field, FieldGroup, FieldLabel } from '@mercadoya/ui/components/field';
 import {
@@ -159,6 +160,9 @@ function ChatPanel({
   });
   const confirmation = rows.find((row) => row.kind === 'confirmation');
   const transcript = rows.filter((row) => row.kind !== 'confirmation');
+  const lastAssistant = transcript
+    .filter((row) => row.kind === 'message' && row.type === 'ai')
+    .at(-1);
   const hasConfirmation = !!confirmation;
   const hasMessages = rows.some((row) => row.kind === 'message');
   const status = rows.find((row) => row.kind === 'status');
@@ -295,9 +299,24 @@ function ChatPanel({
                           <Bubble
                             variant={row.type === 'human' ? 'default' : 'muted'}
                             align={row.type === 'human' ? 'end' : 'start'}
+                            className={row.type === 'ai' ? 'w-full max-w-full' : undefined}
                           >
-                            <BubbleContent className="whitespace-pre-wrap [overflow-wrap:anywhere]">
-                              {row.text}
+                            <BubbleContent
+                              className={
+                                row.type === 'human'
+                                  ? 'whitespace-pre-wrap [overflow-wrap:anywhere]'
+                                  : 'min-w-0 [overflow-wrap:anywhere]'
+                              }
+                            >
+                              {row.type === 'human' ? (
+                                row.text
+                              ) : (
+                                <AssistantMarkdown
+                                  streaming={stream.isLoading && row.id === lastAssistant?.id}
+                                >
+                                  {row.text}
+                                </AssistantMarkdown>
+                              )}
                             </BubbleContent>
                           </Bubble>
                         </MessageContent>

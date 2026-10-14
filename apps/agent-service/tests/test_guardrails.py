@@ -163,6 +163,44 @@ def test_output_evidence_all_model_history():
 
 
 @pytest.mark.parametrize(
+    "text",
+    [
+        "**Sonix Air** cuesta **S/ 129**",
+        "| Producto | Precio |\n| --- | --- |\n| Sonix Air | **S/ 129** |",
+        "- **Sonix Air**: S/ 129",
+    ],
+)
+def test_markdown_prices_require_the_same_tool_evidence(text):
+    tool = ToolMessage('{"price_pen": "129"}', tool_call_id="one")
+    valid = after_model(text, [HumanMessage("busca"), tool], SHOPPING_PROMPT)
+    assert valid.text == text
+    assert valid.reason is None
+    without_tools = after_model(text, [HumanMessage("busca")], SHOPPING_PROMPT)
+    assert without_tools.text == UNCONFIRMED
+    assert without_tools.reason == "ungrounded_price"
+    unrelated = ToolMessage('{"price_pen": "99"}', tool_call_id="other")
+    invalid = after_model(text, [HumanMessage("busca"), unrelated], SHOPPING_PROMPT)
+    assert invalid.text == text + "\n\n" + UNCONFIRMED_NOTICE
+    assert invalid.reason == "ungrounded_price"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "**S/ 129**. Contacto: **ana@example.com**",
+        "| Precio | Contacto |\n| --- | --- |\n| **S/ 129** | ana@example.com |",
+        "- **Sonix Air**: S/ 129. Contacto: ana@example.com",
+    ],
+)
+def test_markdown_prices_preserve_pii_redaction(text):
+    tool = ToolMessage('{"price_pen": "129"}', tool_call_id="one")
+    decision = after_model(text, [HumanMessage("busca"), tool], SHOPPING_PROMPT)
+    assert decision.text == text.replace("ana@example.com", "[correo]")
+    assert decision.reason == "pii"
+    assert decision.action == "redacted"
+
+
+@pytest.mark.parametrize(
     "text,messages,expected",
     [
         (

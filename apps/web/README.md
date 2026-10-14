@@ -58,6 +58,8 @@ Consulta [ADR 0019](../../docs/adr/0019-catalog-module-federation.md) para las f
 
 ## Chat y confirmaciones
 
+Las respuestas del asistente usan Markdown con Streamdown diferido, sin HTML ni imágenes y con enlaces solo http(s); los mensajes del comprador conservan texto plano.
+
 Con una sesión y `pnpm demo:agent`, el asistente puede proponer agregar al carrito
 o cancelar un pedido pendiente. Cada acción muestra una tarjeta con Aprobar y
 Rechazar; no se recuerdan decisiones. La cancelación usa el botón destructivo.

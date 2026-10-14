@@ -2,3 +2,5 @@
 
 /* El host genera las clases del slice y carga los tokens una sola vez. */
 @source '../../mf-catalog/src';
+/* pnpm enlaza la dependencia en el workspace que la declara. */
+@source '../../../packages/ui/node_modules/streamdown/dist/*.js';
