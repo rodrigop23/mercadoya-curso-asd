@@ -1,0 +1,34 @@
+# Buildx exporta/importa capas en la cache de Actions, sin registry ni secretos.
+services:
+  catalog:
+    build:
+      cache_from: ['type=gha,scope=fitness-catalog']
+      cache_to: ['type=gha,scope=fitness-catalog,mode=max']
+  identity:
+    build:
+      cache_from: ['type=gha,scope=fitness-identity']
+      cache_to: ['type=gha,scope=fitness-identity,mode=max']
+  inventory:
+    build:
+      cache_from: ['type=gha,scope=fitness-inventory']
+      cache_to: ['type=gha,scope=fitness-inventory,mode=max']
+  orders:
+    build:
+      cache_from: ['type=gha,scope=fitness-orders']
+      cache_to: ['type=gha,scope=fitness-orders,mode=max']
+  notifications:
+    build:
+      cache_from: ['type=gha,scope=fitness-notifications']
+      cache_to: ['type=gha,scope=fitness-notifications,mode=max']
+  kong:
+    build:
+      cache_from: ['type=gha,scope=fitness-kong']
+      cache_to: ['type=gha,scope=fitness-kong,mode=max']
+  mcp-server:
+    build:
+      cache_from: ['type=gha,scope=fitness-mcp']
+      cache_to: ['type=gha,scope=fitness-mcp,mode=max']
+  agent-service:
+    build:
+      cache_from: ['type=gha,scope=fitness-agent']
+      cache_to: ['type=gha,scope=fitness-agent,mode=max']

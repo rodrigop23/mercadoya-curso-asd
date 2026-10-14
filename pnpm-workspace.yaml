@@ -1,7 +1,14 @@
 packages:
   - apps/*
   - packages/*
+overrides:
+  '@modelcontextprotocol/sdk@1.30.0': 1.31.0
+  adm-zip@0.6.0: 0.6.1
+  handlebars@4.7.9: 4.7.10
+  source-map-js@1.2.1: 1.2.2
+  undici@7.29.0: 7.29.1
 allowBuilds:
+  '@swc/core': true
   core-js: false
   esbuild: true
   protobufjs: false

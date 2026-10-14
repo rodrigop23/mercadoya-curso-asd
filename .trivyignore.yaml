@@ -1,0 +1,12 @@
+# Cada excepción exige id, paths, statement y expired_at, como máximo 90 días.
+vulnerabilities:
+  - id: CVE-2026-73231
+    paths: [pnpm-lock.yaml]
+    statement: >-
+      Faker 7.6.0 es transitiva de Redocly 2.0.0, usada solo para validar
+      contratos locales. No procesamos templates fake de entradas externas.
+      El salto a Faker 10.5.0 cambia su API y requiere actualizar Redocly
+      fuera de esta tarea. Revisar actualización del validador antes de vencer.
+    expired_at: '2026-12-31T23:59:59Z'
+misconfigurations: []
+secrets: []

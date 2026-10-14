@@ -3,7 +3,7 @@ services:
     image: postgres:18
     restart: unless-stopped
     ports:
-      - '5432:5432'
+      - '127.0.0.1:5432:5432'
     environment:
       POSTGRES_USER: mercadoya
       POSTGRES_PASSWORD: mercadoya_local
@@ -123,8 +123,8 @@ services:
     restart: unless-stopped
     command: ['-m', '8222']
     ports:
-      - '4222:4222'
-      - '8222:8222'
+      - '127.0.0.1:4222:4222'
+      - '127.0.0.1:8222:8222'
 
   inventory:
     build:
@@ -261,7 +261,7 @@ services:
       KONG_PROXY_LISTEN: 0.0.0.0:8000
       KONG_NGINX_HTTP_CLIENT_MAX_BODY_SIZE: 3m
     ports:
-      - '8000:8000'
+      - '127.0.0.1:8000:8000'
     volumes:
       - ./infra/kong/kong.yml:/etc/kong/kong.yml:ro
     depends_on:

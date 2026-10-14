@@ -21,6 +21,7 @@ dev = [
   "pytest==9.1.1",
   "ruff==0.17.0",
   "jsonschema==4.26.0",
+  "import-linter==2.15",
 ]
 evals = [
     "openevals==0.2.0",

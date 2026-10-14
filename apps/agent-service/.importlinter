@@ -1,0 +1,11 @@
+[importlinter]
+root_package = agent_service
+include_external_packages = True
+
+[importlinter:contract:service-boundary]
+name = Agent only accesses other services through HTTP contracts
+type = forbidden
+source_modules = agent_service
+forbidden_modules =
+    mercadoya_mcp
+    mcp_server

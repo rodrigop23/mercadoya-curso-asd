@@ -15,9 +15,17 @@
     "demo:saga": "turbo run demo:saga --filter @mercadoya/orders-service",
     "test": "turbo run test",
     "openapi:generate": "turbo run openapi:generate --filter=@mercadoya/contracts",
-    "openapi:check": "turbo run openapi:check --filter=@mercadoya/contracts"
+    "openapi:check": "turbo run openapi:check --filter=@mercadoya/contracts",
+    "deps:check": "depcruise apps packages --config .dependency-cruiser.cjs --output-type err",
+    "deps:test": "node --test tests/architecture/imports.test.mjs",
+    "security:scan": "bash scripts/security-scan.sh",
+    "perf:local": "bash scripts/perf.sh local",
+    "perf:ci": "bash scripts/perf.sh ci",
+    "security:test": "python3 tests/security/negative.py"
   },
   "devDependencies": {
+    "@swc/core": "1.16.18",
+    "dependency-cruiser": "18.6.0",
     "esbuild": "0.28.2",
     "oxfmt": "^0.70.0",
     "oxlint": "^1.85.0",

@@ -22,6 +22,8 @@ El [paquete `@mercadoya/contracts`](packages/contracts/README.md) centraliza sch
 
 ## Arquitectura y decisiones
 
+Las [fitness functions de arquitectura](docs/architecture/fitness-functions.md) verifican rendimiento por Kong, seguridad y límites de imports; la decisión está en [ADR 0031](docs/adr/0031-fitness-functions.md).
+
 La arquitectura actual está descrita en [ADR 0017, Identity y Kong](docs/adr/0017-identity-kong-jwks.md) y [ADR 0018, Catalog/Media](docs/adr/0018-catalog-media-kong.md). Los materiales siguientes documentan las etapas de clase.
 
 Material para el walkthrough:
