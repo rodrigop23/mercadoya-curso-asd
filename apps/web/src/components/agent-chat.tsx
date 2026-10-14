@@ -10,13 +10,18 @@ import {
 } from '@/lib/agent-actions';
 import type { TranscriptRow } from '@/lib/agent-messages';
 import { useStream } from '@langchain/react';
-import { BotIcon, MessageCircleIcon, PlusIcon, SendIcon, XIcon } from 'lucide-react';
+import { ArrowUpIcon, BotIcon, MessageCircleIcon, PlusIcon, XIcon } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@mercadoya/ui/components/alert';
 import { Avatar, AvatarFallback } from '@mercadoya/ui/components/avatar';
 import { Bubble, BubbleContent } from '@mercadoya/ui/components/bubble';
 import { Button } from '@mercadoya/ui/components/button';
 import { Field, FieldGroup, FieldLabel } from '@mercadoya/ui/components/field';
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupTextarea,
+} from '@mercadoya/ui/components/input-group';
 import { Marker, MarkerContent, MarkerIcon } from '@mercadoya/ui/components/marker';
 import {
   Message,
@@ -35,7 +40,6 @@ import {
 } from '@mercadoya/ui/components/message-scroller';
 import { Separator } from '@mercadoya/ui/components/separator';
 import { Spinner } from '@mercadoya/ui/components/spinner';
-import { Textarea } from '@mercadoya/ui/components/textarea';
 import { pendingToolLabel, transcriptRows } from '@/lib/agent-messages';
 import { savedThreadFetch } from '@/lib/agent-thread';
 import { API_BASE_URL, type Product } from '@/lib/products';
@@ -232,7 +236,7 @@ function ChatPanel({
           onClose();
         }
       }}
-      className="absolute right-0 bottom-14 flex h-[min(36rem,calc(100dvh-6rem))] w-[min(25rem,calc(100vw-3rem))] flex-col overflow-hidden rounded-xl bg-popover text-popover-foreground shadow-xl"
+      className="absolute right-0 bottom-14 flex h-[min(40rem,calc(100dvh-6rem))] w-[min(25rem,calc(100vw-3rem))] flex-col overflow-hidden rounded-xl bg-popover text-popover-foreground shadow-xl"
     >
       <header className="flex shrink-0 items-start justify-between gap-3 p-4">
         <div className="flex flex-col gap-1">
@@ -368,39 +372,47 @@ function ChatPanel({
           }}
         >
           <FieldGroup>
-            <Field>
-              <FieldLabel htmlFor={`${panelId}-message`}>Tu mensaje</FieldLabel>
-              <Textarea
-                ref={input}
-                id={`${panelId}-message`}
-                disabled={hasConfirmation || busy}
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (
-                    event.key === 'Enter' &&
-                    !event.shiftKey &&
-                    !event.nativeEvent.isComposing &&
-                    event.nativeEvent.keyCode !== 229
-                  ) {
-                    event.preventDefault();
-                    event.currentTarget.form?.requestSubmit();
-                  }
-                }}
-                rows={2}
-                className="max-h-28 resize-none"
-                placeholder="Escribe aquí…"
-              />
+            <Field data-disabled={hasConfirmation || busy}>
+              <FieldLabel className="sr-only" htmlFor={`${panelId}-message`}>
+                Tu mensaje
+              </FieldLabel>
+              <InputGroup variant="muted" className="rounded-2xl p-1">
+                <InputGroupTextarea
+                  ref={input}
+                  id={`${panelId}-message`}
+                  disabled={hasConfirmation || busy}
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (
+                      event.key === 'Enter' &&
+                      !event.shiftKey &&
+                      !event.nativeEvent.isComposing &&
+                      event.nativeEvent.keyCode !== 229
+                    ) {
+                      event.preventDefault();
+                      event.currentTarget.form?.requestSubmit();
+                    }
+                  }}
+                  rows={1}
+                  className="min-h-10 max-h-28 px-3 pt-2"
+                  placeholder="Escribe aquí…"
+                />
+                <InputGroupAddon align="block-end" className="justify-end px-3 pb-2">
+                  <Button
+                    type="submit"
+                    size="icon-lg"
+                    className="rounded-full"
+                    aria-label="Enviar mensaje"
+                    title="Enviar mensaje"
+                    disabled={busy || hasConfirmation || !draft.trim()}
+                  >
+                    {busy ? <Spinner /> : <ArrowUpIcon />}
+                  </Button>
+                </InputGroupAddon>
+              </InputGroup>
             </Field>
           </FieldGroup>
-          <Button
-            type="submit"
-            disabled={busy || hasConfirmation || !draft.trim()}
-            className="self-end"
-          >
-            <SendIcon data-icon="inline-start" />
-            Enviar
-          </Button>
         </form>
       )}
     </section>
