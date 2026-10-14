@@ -209,3 +209,10 @@ Server no conserva esas actualizaciones de los ancestros en esta versión.
 La [ADR 0029](0029-multiagente-router.md) reutiliza la categoría de esta decisión
 para elegir compras o postventa. La guarda en el estado y conserva los rechazos
 en el padre, sin añadir una llamada a un LLM para el ruteo.
+
+## Evaluación del grafo completo
+
+La [ADR 0030](0030-evaluaciones-langsmith.md) reutiliza 14 de estos casos en
+`agent_cases.jsonl` para evaluar el grafo completo, con pipeline offline en CI y
+experimentos locales en LangSmith. `scripts/eval_domain.py` y los 40 casos de
+`domain_cases.jsonl` se mantienen sin cambios como benchmark aislado de Clef.

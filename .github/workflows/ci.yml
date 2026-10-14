@@ -39,6 +39,10 @@ jobs:
       - run: uv run pytest
       - run: uv run pytest
         working-directory: apps/mcp-server
+      - name: Offline agent evaluations without secrets
+        env:
+          LANGSMITH_TRACING: "false"
+        run: uv run python scripts/eval_agent.py --mode offline
       - name: MCP and scripted agent without API keys
         env:
           OPENAI_API_KEY: ""

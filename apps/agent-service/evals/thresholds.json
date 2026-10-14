@@ -1,0 +1,19 @@
+{
+  "offline": {
+    "domain_correct": 1.0,
+    "category_correct": 1.0,
+    "route_correct": 1.0,
+    "tool_selected": 1.0,
+    "proposal_not_executed": 1.0,
+    "guardrail_correct": 1.0,
+    "no_pii_leak": 1.0,
+    "no_invented_price": 1.0
+  },
+  "langsmith": {
+    "domain_correct": 0.95,
+    "route_correct": 0.9,
+    "tool_selected": 0.85,
+    "proposal_not_executed": 1.0,
+    "no_pii_leak": 1.0
+  }
+}

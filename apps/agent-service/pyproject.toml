@@ -22,6 +22,9 @@ dev = [
   "ruff==0.17.0",
   "jsonschema==4.26.0",
 ]
+evals = [
+    "openevals==0.2.0",
+]
 
 [build-system]
 requires = ["hatchling==1.27.0"]

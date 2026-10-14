@@ -5,6 +5,7 @@ cdk.out/
 .env
 .env.*
 !.env.example
+!.env.evals.example
 uploads/
 .DS_Store
 *.tsbuildinfo

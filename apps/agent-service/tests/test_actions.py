@@ -15,6 +15,7 @@ from agent_service import graph as module
 from agent_service.actions import ActionResume, action_adapter, proposal_adapter
 from agent_service.agents import specialist
 from agent_service.agents.shopping import PROPOSAL_NAMES, READ_TOOLS
+from agent_service.evals.fakes import PID, FakeMCP
 from agent_service.prompts import SHOPPING_PROMPT
 
 shopping_assistant = partial(
@@ -27,7 +28,6 @@ shopping_assistant = partial(
 confirm_action = partial(specialist.confirm_action, proposal_names=specialist.PROPOSAL_NAMES)
 
 CONTRACTS = Path(__file__).resolve().parents[3] / "packages/contracts/agent"
-PID = "00000000-0000-4000-8000-000000000001"
 
 
 def test_generated_schema_matches():
@@ -57,7 +57,8 @@ def test_shared_fixtures(path):
 @pytest.mark.parametrize("kind", ["add_to_cart", "cancel_order"])
 @pytest.mark.parametrize("decision", ["approve", "reject", "invalid", "stale"])
 def test_confirm_replays_reads_only_and_current_token(monkeypatch, kind, decision):
-    reads, writes, proposals = [], [], []
+    mcp = FakeMCP()
+    reads, writes, proposals = mcp.reads, mcp.writes, []
     tracer = CaptureTracer()
     monkeypatch.setenv("AGENT_MODEL_PROVIDER", "scripted")
 
@@ -65,24 +66,7 @@ def test_confirm_replays_reads_only_and_current_token(monkeypatch, kind, decisio
         # assistant only needs definitions; actual calls are observed separately here.
         return specialist.PROPOSAL_TOOLS
 
-    async def fake_mcp(name, args, config):
-        token = config["configurable"]["langgraph_auth_user"]["token"]
-        data = {}
-        if name == "get_product":
-            reads.append(token)
-            data = dict(title="Audífonos", price_pen="12.90", stock=7)
-        elif name == "get_my_order":
-            reads.append(token)
-            data = dict(
-                status="pending",
-                total_pen="25.80",
-                items=[dict(quantity=2)],
-                created_at="2026-10-12T10:00:00Z",
-            )
-        elif name == "cancel_my_order":
-            writes.append(token)
-            data = dict(order_id=PID, status="cancelled", already_cancelled=False)
-        return ToolMessage(content=json.dumps(data), tool_call_id="validation")
+    fake_mcp = mcp.call
 
     original_interrupt = specialist.interrupt
 

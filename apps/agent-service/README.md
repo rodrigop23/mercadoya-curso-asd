@@ -498,3 +498,190 @@ reales. Se verificaron rechazos sin llamadas al modelo, búsqueda con seguimient
 carrito y cancelación con confirmación. Se revisaron 78 runs de LangSmith y logs
 del agente/MCP, con metadata de dominio y sin mensajes ni credenciales Cloudflare
 en logs. Los datos temporales de la prueba se eliminaron.
+
+## Evaluaciones
+
+El dataset del agente completo es `evals/agent_cases.jsonl`, con 38 casos y cinco
+kinds: dominio, ruteo, herramientas, propuestas y guardrails. Reutiliza 14 casos
+del benchmark de dominio. `scripts/eval_domain.py` sigue evaluando solo Clef con
+sus 40 casos originales. La decisión está en la [ADR 0030](../../docs/adr/0030-evaluaciones-langsmith.md).
+
+Desde `apps/agent-service`, el modo de CI no necesita claves ni servicios:
+
+```sh
+uv sync --locked
+uv run python scripts/eval_agent.py --mode offline
+uv run python scripts/eval_agent.py --mode offline --split capabilities
+```
+
+Offline fuerza scripted, reglas y el MCP falso compartido con los tests. Ignora
+las claves presentes y desactiva tracing. No crea clientes LangSmith ni sube
+resultados. Imprime JSON con medias y muestras por evaluador y por kind, además
+de ids fallidos. Sale con 1 si baja de los umbrales de `evals/thresholds.json` o
+si ocurre un error. `--thresholds archivo.json` permite probar otro conjunto de
+umbrales. El valor por defecto de `--max-concurrency` es 2, con máximo 4.
+
+Este modo comprueba el pipeline, las rutas, los guardrails y que una propuesta
+llegue al primer interrupt sin ejecutarse. `tool_selected` solo verifica comandos
+scripted y exclusiones. No mide la capacidad del modelo para elegir herramientas
+ni la calidad de OpenAI o Clef. El resumen lo indica con
+`tool_selection_measures_model: false`.
+
+### Experimentos locales
+
+Primero levanta `pnpm demo:infra` y `pnpm demo:agent` desde la raíz. El MCP de
+Compose solo escucha dentro de Docker. Para acceder desde el runner del host,
+usa un override temporal que publique únicamente loopback, sin editar Compose,
+Kong ni el servidor MCP:
+
+```sh
+# Desde la raíz del repositorio, con el mismo .env del stack.
+cat > /tmp/mercadoya-eval-mcp.yml <<'YAML'
+services:
+  mcp-server:
+    ports:
+      - "127.0.0.1:8080:8080"
+YAML
+docker compose -f docker-compose.yml -f /tmp/mercadoya-eval-mcp.yml \
+  --profile agent up -d --no-deps mcp-server
+```
+
+Desde `apps/agent-service`, crea la configuración local a partir del ejemplo si
+no tienes `.env.evals`:
+
+```sh
+cp .env.evals.example .env.evals
+```
+
+Completa `.env.evals` con los valores de tu `.env` de la raíz y los datos de demo.
+`uv run --env-file .env.evals` los carga para ese comando; no necesitas exportarlos
+en la terminal. El runner recibe el entorno de uv y no carga archivos por su
+cuenta. El archivo privado queda ignorado por Git; `.env.evals.example` contiene
+las mismas variables sin credenciales.
+
+- `LANGSMITH_API_KEY`, `OPENAI_API_KEY`, `CLOUDFLARE_ACCOUNT_ID` y `CLOUDFLARE_API_TOKEN`.
+- `MCP_INTERNAL_TOKEN`, con el mismo valor que el stack, y `MCP_URL=http://localhost:8080/mcp`.
+- `AGENT_EVAL_BUYER_JWT`, un JWT vigente del comprador de demo autenticado.
+- `AGENT_EVAL_PRODUCT_ID`, UUID de un producto de demo con al menos dos unidades.
+- `AGENT_EVAL_ORDER_ID`, UUID de un pedido propio de demo en estado `pending`.
+
+El JWT de Identity vence en cinco minutos. Renueva ese campo antes de cada
+corrida desde `http://localhost:8000/api/auth/token`, en el navegador con la sesión
+del comprador iniciada. Copia solo el valor de `token` a `AGENT_EVAL_BUYER_JWT`.
+El runner revisa formato y expiración antes de conectar clientes y antes de cada
+caso. Si vence durante la corrida, esos casos quedan en `errors` y la corrida se
+marca incompleta. Este chequeo local no verifica la firma; los servicios siguen
+autenticando cada petición. No copies claves ni JWT al ejemplo ni a los logs.
+
+Los ids sustituyen `{product_id}` y `{order_id}` en los casos. Usa los mismos en
+ambos experimentos. El contenido del producto y el pedido debe ser ficticio.
+Comprueba que el JWT siga vigente antes de cada corrida. El modelo principal se
+elige con `AGENT_MODEL`. `AGENT_EVAL_JUDGE_MODEL` permite elegir otro modelo para
+los jueces; por defecto usa el mismo. El runner local fuerza OpenAI y Clef, incluso
+si la terminal conserva providers de un smoke.
+
+```sh
+cd apps/agent-service
+uv sync --locked --group evals
+uv run --env-file .env.evals --group evals python scripts/sync_agent_dataset.py --tag v2
+# Repetir debe imprimir created=0, updated=0 y deleted=0.
+uv run --env-file .env.evals --group evals python scripts/sync_agent_dataset.py --tag v2
+uv run --env-file .env.evals --group evals python scripts/eval_agent.py --mode langsmith \
+  --experiment-prefix base-v2 --dataset-tag v2 --no-sync
+```
+
+Sin `--no-sync`, el runner sincroniza todo el JSONL antes de evaluar. El filtro
+`--split` selecciona ejemplos para la corrida, no borra otros splits del dataset.
+`--dataset-tag` fija una versión; sin tag se usa `latest`. El sync crea, actualiza
+y retira ejemplos por `metadata.case_id`, y solo modifica los que cambiaron.
+Los tags etiquetan la versión resultante, incluido un sync sin cambios.
+
+El target compila el grafo real en proceso con memoria e hilo nuevos por ejemplo.
+Se detiene en el primer interrupt y nunca lo reanuda. Un espía recoge las lecturas
+MCP saneadas y rechaza cualquier intento de escritura. `executed_writes` incluye
+esos intentos como fallo conservador. Las propuestas no modifican el carrito ni
+cancelan pedidos. Los tags `eval` y `agent:shopping` o `agent:post_sale` permiten
+inspeccionar el especialista en las trazas.
+
+Se publican los evaluadores de código y los jueces `groundedness` y `helpfulness`
+con OpenEvals. Ambos omiten rechazos de dominio o entrada, que ya miden los
+evaluadores de código. Groundedness también se omite sin evidencia MCP útil:
+`[]` y `[{}]` no cuentan como contexto; una consulta exitosa sin resultados,
+como `{"orders": []}`, sí cuenta. En propuestas evalúa solo los hechos del MCP,
+como precio, stock o estado. Helpfulness recibe el historial y la entrada con los
+ids resueltos, y considera la acción y cantidad de la propuesta. El id técnico de
+la acción no forma parte de lo que juzgan. Sus comentarios solo contienen el id,
+sin razonamientos ni excepciones. Los scores de dominio, categoría, ruta, herramienta, propuesta y
+bloqueo aplican a su kind. `no_pii_leak` aplica a todos; `no_invented_price`, a
+herramientas, propuestas y guardrails. Los demás scores quedan nulos. El resumen
+incluye `skipped`, con la cantidad de omisiones por evaluador. Las medias usan
+solo los scores no nulos; un fallo del juez cuenta como error, no como omisión.
+
+Los umbrales locales informan y no bloquean por calidad. Una corrida incompleta
+sí falla. El JSON final incluye `experiment_url`. La metadata registra `models`,
+`classifier`, `classifier_model`, `git_sha`, `dataset_tag`, `prompt_hash`,
+`fixture_hash`, `evaluation_hash` y `judge_model`. Un cambio de prompt sin commit
+cambia su hash; `evaluation_hash` identifica cambios del target y los evaluadores.
+Los jueces están en el grupo opcional `evals`; la imagen de producción no los carga.
+
+### Correcciones de la versión v2
+
+La primera corrida `base` queda conservada sobre `v1`. En `v2`, los nuevos casos
+con historial empiezan con un turno del comprador para que el recorte real del
+modelo conserve la respuesta previa. `product_stock` acepta `check_stock` y
+`get_product`, porque ambas lecturas entregan stock. Se mantienen las exclusiones
+de herramientas, los umbrales y las referencias originales de dominio.
+
+Después de actualizar el JSONL, sincroniza con `--tag v2`, sin reasignar `v1`.
+Usa `base-v2` y `flash-v2` para la comparación. Además del dataset, cambia el
+alcance de los jueces: sus medias no se comparan directamente con las de `v1`.
+
+### Comparar dos experimentos para la demo
+
+Con `.env.evals` completo, el mismo `AGENT_MODEL`, los mismos ids y la versión `v2`:
+
+```sh
+AGENT_CLASSIFIER_MODEL=clef uv run --env-file .env.evals --group evals \
+  python scripts/eval_agent.py --mode langsmith --experiment-prefix base-v2 --dataset-tag v2 --no-sync
+AGENT_CLASSIFIER_MODEL=clef-flash uv run --env-file .env.evals --group evals \
+  python scripts/eval_agent.py --mode langsmith --experiment-prefix flash-v2 --dataset-tag v2 --no-sync
+```
+
+1. En LangSmith abre **Datasets & Experiments** y el dataset `mercadoya-agent-evals`.
+2. Selecciona las dos corridas con prefijos `base-v2` y `flash-v2` y pulsa **Compare**.
+3. En `base-v2`, elige **Set as source experiment**.
+4. Filtra regresiones rojas en `domain_correct` y `route_correct`. Verde indica mejoras.
+5. Abre una fila y cambia a **Traces** para ver ambas ejecuciones. **Diff** compara sus salidas estructuradas.
+
+La [guía de comparación](https://docs.langchain.com/langsmith/compare-experiment-results)
+explica los filtros y el cambio de experimento fuente. También se pueden comparar
+variantes de prompt, manteniendo versión y fixtures para atribuir la diferencia.
+Antes y después de cada corrida revisa el carrito y el estado del pedido de demo
+en la web. Las propuestas deben seguir pendientes, sin cambios aplicados.
+
+### Costo estimado por corrida
+
+Offline no consume trazas ni llamadas a OpenAI o Clef. Para 38 ejemplos reales se
+estiman unas 38 trazas base de aplicación, 37 llamadas Clef, 40 a 60 llamadas del
+agente OpenAI y unas 40 a 55 llamadas OpenAI para los jueces en una corrida típica.
+El máximo es 76 llamadas de jueces si todos los ejemplos aplican a ambos.
+Los rechazos, las lecturas
+y los reintentos cambian el total; las llamadas OpenAI se cobran según modelo y
+tokens. No se promete un monto fijo. El límite existente de seis rondas de
+herramientas permite hasta siete invocaciones del agente por turno.
+
+El runner desactiva el tracing de evaluadores, pero conserva sus feedbacks. Los
+spans hijos del grafo se mantienen dentro de la traza de cada ejemplo. Dos corridas
+representan unas 76 trazas base y 160 a 230 llamadas OpenAI esperadas en total.
+La concurrencia dos reduce presión sobre las APIs, no el número de llamadas.
+El [plan Developer](https://www.langchain.com/pricing) incluye una cuenta, 5k trazas
+base mensuales y 14 días de retención base. Cuenta también las otras demos del
+mes. No configures evaluadores online ni automatizaciones UI para este dataset.
+
+Al terminar, vuelve a la definición normal para retirar el puerto temporal:
+
+```sh
+# Desde la raíz.
+docker compose --profile agent up -d --no-deps --force-recreate mcp-server
+rm /tmp/mercadoya-eval-mcp.yml
+```
